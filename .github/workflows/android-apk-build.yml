@@ -15,124 +15,87 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-
-      # ---------------------------------------------------------
-      # 1. Checkout repository
-      # ---------------------------------------------------------
-      - name: Checkout source
+      - name: Checkout repository
         uses: actions/checkout@v7
 
-      # ---------------------------------------------------------
-      # 2. Java 17
-      # ---------------------------------------------------------
-      - name: Set up Java 17
+      - name: Setup Java 17
         uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
 
-      # ---------------------------------------------------------
-      # 3. Android SDK
-      # ---------------------------------------------------------
-      - name: Set up Android SDK
+      - name: Setup Android SDK
         uses: android-actions/setup-android@v4
 
-      # ---------------------------------------------------------
-      # 4. Install Android SDK components
-      # ---------------------------------------------------------
-      - name: Install Android SDK components
+      - name: Install Android SDK
         run: |
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platform-tools" \
-                     "platforms;android-35" \
-                     "build-tools;35.0.0"
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
-      # ---------------------------------------------------------
-      # 5. Install Gradle
-      # ---------------------------------------------------------
-      - name: Set up Gradle
+      - name: Setup Gradle 8.7
         uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: '8.7'
 
-      # ---------------------------------------------------------
-      # 6. Find V115 HTML
-      # ---------------------------------------------------------
-      - name: Locate MBMS V115 HTML
+      - name: Find MBMS HTML
         shell: bash
         run: |
           set -e
 
-          echo "Repository files:"
-          find . -maxdepth 3 -type f | sort
-
           HTML_FILE=""
 
-          for f in \
-            "Measurement_Book_Management_System_FINAL_V115_MB_HISTORY_ONLY_DATE-6.html" \
-            "Measurement_Book_Management_System_FINAL_V115.html" \
-            "V115.html" \
-            "index.html"
-          do
-            if [ -f "$f" ]; then
-              HTML_FILE="$f"
-              break
-            fi
-          done
-
-          if [ -z "$HTML_FILE" ]; then
-            HTML_FILE=$(find . -maxdepth 2 -type f -iname "*.html" | head -n 1 || true)
+          if [ -f "Measurement_Book_Management_System_FINAL_V115_MB_HISTORY_ONLY_DATE-6.html" ]; then
+            HTML_FILE="Measurement_Book_Management_System_FINAL_V115_MB_HISTORY_ONLY_DATE-6.html"
+          elif [ -f "Measurement_Book_Management_System_FINAL_V115.html" ]; then
+            HTML_FILE="Measurement_Book_Management_System_FINAL_V115.html"
+          elif [ -f "V115.html" ]; then
+            HTML_FILE="V115.html"
+          elif [ -f "index.html" ]; then
+            HTML_FILE="index.html"
+          else
+            HTML_FILE="$(find . -maxdepth 2 -type f -iname '*.html' | head -n 1)"
           fi
 
           if [ -z "$HTML_FILE" ]; then
-            echo "ERROR: MBMS HTML file was not found."
+            echo "ERROR: MBMS HTML file not found."
             exit 1
           fi
 
-          echo "Found HTML:"
+          echo "HTML file found:"
           echo "$HTML_FILE"
 
           SIZE=$(wc -c < "$HTML_FILE")
 
+          echo "HTML size: $SIZE bytes"
+
           if [ "$SIZE" -lt 10000 ]; then
-            echo "ERROR: HTML file appears too small."
+            echo "ERROR: HTML file is unexpectedly small."
             exit 1
           fi
 
-          echo "HTML size: $SIZE bytes"
-
           echo "MBMS_HTML=$HTML_FILE" >> "$GITHUB_ENV"
 
-      # ---------------------------------------------------------
-      # 7. Basic V115 integrity check
-      # ---------------------------------------------------------
-      - name: Validate MBMS V115 HTML
+      - name: Validate V115 HTML
         shell: bash
         run: |
           set -e
 
           FILE="$MBMS_HTML"
 
-          echo "Checking: $FILE"
+          echo "Validating:"
+          echo "$FILE"
 
-          grep -qi "<html" "$FILE" || {
-            echo "ERROR: <html> tag not found."
-            exit 1
-          }
+          grep -qi "<html" "$FILE"
+          grep -qi "</html>" "$FILE"
 
-          grep -qi "localStorage" "$FILE" || {
+          if grep -qi "localStorage" "$FILE"; then
+            echo "localStorage detected."
+          else
             echo "WARNING: localStorage not detected."
-          }
+          fi
 
-          grep -qi "Measurement Book" "$FILE" || {
-            echo "WARNING: Measurement Book text not detected."
-          }
+          echo "V115 HTML validation passed."
 
-          echo "HTML validation completed."
-
-      # ---------------------------------------------------------
-      # 8. Create Android project
-      # ---------------------------------------------------------
       - name: Create Android project
         shell: bash
         run: |
@@ -140,24 +103,16 @@ jobs:
 
           rm -rf mbms_android
 
+          mkdir -p mbms_android/app/src/main/assets
           mkdir -p mbms_android/app/src/main/java/com/mbms/app
           mkdir -p mbms_android/app/src/main/res/values
-          mkdir -p mbms_android/app/src/main/assets
 
           cp "$MBMS_HTML" \
-             mbms_android/app/src/main/assets/index.html
+            mbms_android/app/src/main/assets/index.html
 
-      # ---------------------------------------------------------
-      # 9. Root build.gradle
-      # ---------------------------------------------------------
-      - name: Create root Gradle files
+      - name: Create Android project files
         shell: bash
         run: |
-          cat > mbms_android/build.gradle <<'EOF'
-          plugins {
-              id 'com.android.application' version '8.6.1' apply false
-          }
-          EOF
 
           cat > mbms_android/settings.gradle <<'EOF'
           pluginManagement {
@@ -180,18 +135,18 @@ jobs:
           include(":app")
           EOF
 
+          cat > mbms_android/build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application' version '8.6.1' apply false
+          }
+          EOF
+
           cat > mbms_android/gradle.properties <<'EOF'
           org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
           android.useAndroidX=true
           android.nonTransitiveRClass=true
           EOF
 
-      # ---------------------------------------------------------
-      # 10. App Gradle
-      # ---------------------------------------------------------
-      - name: Create app Gradle file
-        shell: bash
-        run: |
           cat > mbms_android/app/build.gradle <<'EOF'
           plugins {
               id 'com.android.application'
@@ -210,6 +165,10 @@ jobs:
               }
 
               buildTypes {
+                  debug {
+                      minifyEnabled false
+                  }
+
                   release {
                       minifyEnabled false
                       shrinkResources false
@@ -231,14 +190,34 @@ jobs:
           # MBMS WebView application
           EOF
 
-      # ---------------------------------------------------------
-      # 11. Android Manifest
-      # ---------------------------------------------------------
-      - name: Create Android Manifest
-        shell: bash
-        run: |
+          cat > mbms_android/app/src/main/res/values/strings.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <string name="app_name">MBMS</string>
+          </resources>
+          EOF
+
+          cat > mbms_android/app/src/main/res/values/styles.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+
+              <style name="AppTheme"
+                  parent="android:style/Theme.Material.Light.NoActionBar">
+
+                  <item name="android:fontFamily">sans</item>
+                  <item name="android:windowActionModeOverlay">true</item>
+                  <item name="android:statusBarColor">#1565C0</item>
+                  <item name="android:navigationBarColor">#000000</item>
+                  <item name="android:windowLightStatusBar">false</item>
+
+              </style>
+
+          </resources>
+          EOF
+
           cat > mbms_android/app/src/main/AndroidManifest.xml <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
+
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
               <uses-permission android:name="android.permission.INTERNET" />
@@ -267,57 +246,13 @@ jobs:
           </manifest>
           EOF
 
-      # ---------------------------------------------------------
-      # 12. Strings
-      # ---------------------------------------------------------
-      - name: Create strings
-        shell: bash
-        run: |
-          cat > mbms_android/app/src/main/res/values/strings.xml <<'EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <resources>
-              <string name="app_name">MBMS</string>
-          </resources>
-          EOF
-
-      # ---------------------------------------------------------
-      # 13. Theme
-      # ---------------------------------------------------------
-      - name: Create Android theme
-        shell: bash
-        run: |
-          cat > mbms_android/app/src/main/res/values/styles.xml <<'EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <resources>
-
-              <style name="AppTheme"
-                  parent="android:style/Theme.Material.Light.NoActionBar">
-
-                  <item name="android:fontFamily">sans</item>
-                  <item name="android:windowActionModeOverlay">true</item>
-                  <item name="android:colorAccent">#1976D2</item>
-                  <item name="android:navigationBarColor">#000000</item>
-                  <item name="android:statusBarColor">#1565C0</item>
-                  <item name="android:windowLightStatusBar">false</item>
-
-              </style>
-
-          </resources>
-          EOF
-
-      # ---------------------------------------------------------
-      # 14. MainActivity WebView
-      # ---------------------------------------------------------
-      - name: Create MainActivity
-        shell: bash
-        run: |
           cat > mbms_android/app/src/main/java/com/mbms/app/MainActivity.java <<'EOF'
           package com.mbms.app;
 
           import android.annotation.SuppressLint;
           import android.app.Activity;
+          import android.graphics.Color;
           import android.os.Bundle;
-          import android.view.Window;
           import android.webkit.WebChromeClient;
           import android.webkit.WebSettings;
           import android.webkit.WebView;
@@ -332,12 +267,12 @@ jobs:
               protected void onCreate(Bundle savedInstanceState) {
                   super.onCreate(savedInstanceState);
 
-                  Window window = getWindow();
-                  window.setStatusBarColor(
-                          android.graphics.Color.rgb(21, 101, 192)
+                  getWindow().setStatusBarColor(
+                          Color.rgb(21, 101, 192)
                   );
-                  window.setNavigationBarColor(
-                          android.graphics.Color.BLACK
+
+                  getWindow().setNavigationBarColor(
+                          Color.BLACK
                   );
 
                   webView = new WebView(this);
@@ -355,14 +290,18 @@ jobs:
                   settings.setBuiltInZoomControls(false);
                   settings.setDisplayZoomControls(false);
 
+                  settings.setSupportZoom(false);
+
                   settings.setLoadWithOverviewMode(false);
                   settings.setUseWideViewPort(false);
 
-                  settings.setSupportZoom(false);
+                  webView.setWebViewClient(
+                          new WebViewClient()
+                  );
 
-                  webView.setWebViewClient(new WebViewClient());
-
-                  webView.setWebChromeClient(new WebChromeClient());
+                  webView.setWebChromeClient(
+                          new WebChromeClient()
+                  );
 
                   webView.setVerticalScrollBarEnabled(false);
                   webView.setHorizontalScrollBarEnabled(false);
@@ -401,38 +340,25 @@ jobs:
           }
           EOF
 
-      # ---------------------------------------------------------
-      # 15. Verify generated project
-      # ---------------------------------------------------------
       - name: Verify Android project
         shell: bash
         run: |
           set -e
 
-          echo "===== Project Structure ====="
-          find mbms_android -type f | sort
-
-          echo "===== HTML ====="
-          ls -lh mbms_android/app/src/main/assets/index.html
-
           test -s mbms_android/app/src/main/assets/index.html
-          test -f mbms_android/app/src/main/java/com/mbms/app/MainActivity.java
-          test -f mbms_android/app/src/main/AndroidManifest.xml
+          test -f mbms_android/settings.gradle
+          test -f mbms_android/build.gradle
           test -f mbms_android/app/build.gradle
+          test -f mbms_android/app/src/main/AndroidManifest.xml
+          test -f mbms_android/app/src/main/java/com/mbms/app/MainActivity.java
 
-          echo "Project verification PASSED."
+          echo "Android project verification PASSED."
 
-      # ---------------------------------------------------------
-      # 16. Build Debug APK
-      # ---------------------------------------------------------
-      - name: Build Debug APK
+      - name: Build MBMS Debug APK
         working-directory: mbms_android
         run: |
           gradle --no-daemon --stacktrace :app:assembleDebug
 
-      # ---------------------------------------------------------
-      # 17. Verify APK
-      # ---------------------------------------------------------
       - name: Verify APK
         shell: bash
         run: |
@@ -447,39 +373,33 @@ jobs:
 
           SIZE=$(stat -c%s "$APK")
 
+          echo "APK size: $SIZE bytes"
+
           if [ "$SIZE" -lt 100000 ]; then
-            echo "ERROR: APK appears invalid or too small."
+            echo "ERROR: APK is too small."
             exit 1
           fi
 
-          echo "APK created successfully."
-          echo "APK size: $SIZE bytes"
-
           sha256sum "$APK"
 
-      # ---------------------------------------------------------
-      # 18. Prepare release copy
-      # ---------------------------------------------------------
-      - name: Prepare APK release
+      - name: Prepare APK
         shell: bash
         run: |
           set -e
 
           mkdir -p release
 
-          cp mbms_android/app/build/outputs/apk/debug/app-debug.apk \
-             release/MeasurementBookManagementSystem-V115.apk
+          cp \
+            mbms_android/app/build/outputs/apk/debug/app-debug.apk \
+            release/MeasurementBookManagementSystem-V115.apk
 
-          sha256sum release/MeasurementBookManagementSystem-V115.apk \
-             > release/SHA256.txt
+          sha256sum \
+            release/MeasurementBookManagementSystem-V115.apk \
+            > release/SHA256.txt
 
-          echo "Release files:"
           ls -lh release
 
-      # ---------------------------------------------------------
-      # 19. Upload APK
-      # ---------------------------------------------------------
-      - name: Upload MBMS APK
+      - name: Upload APK
         uses: actions/upload-artifact@v6
         with:
           name: MeasurementBookManagementSystem-V115-APK
@@ -487,24 +407,10 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      # ---------------------------------------------------------
-      # 20. Final message
-      # ---------------------------------------------------------
-      - name: Build completed
+      - name: Build Success
         run: |
-          echo "=============================================="
-          echo " MBMS V115 ANDROID APK BUILD SUCCESSFUL"
-          echo "=============================================="
-          echo "APK Artifact:"
-          echo "MeasurementBookManagementSystem-V115-APK"
-          echo "=============================================="
-      ```
-
-### 4. आता खाली जा
-
-**Commit changes** हिरवे बटण दिसेल.
-
-Commit message:
-
-```text
-Add MBMS Android APK build workflow
+          echo "========================================"
+          echo " MBMS V115 APK BUILD SUCCESSFUL"
+          echo "========================================"
+          echo "MeasurementBookManagementSystem-V115.apk"
+          echo "========================================"
