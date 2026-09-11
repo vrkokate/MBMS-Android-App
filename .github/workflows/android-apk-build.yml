@@ -1,0 +1,510 @@
+name: MBMS Android APK Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build-apk:
+    name: Build MBMS V115 APK
+    runs-on: ubuntu-latest
+
+    steps:
+
+      # ---------------------------------------------------------
+      # 1. Checkout repository
+      # ---------------------------------------------------------
+      - name: Checkout source
+        uses: actions/checkout@v7
+
+      # ---------------------------------------------------------
+      # 2. Java 17
+      # ---------------------------------------------------------
+      - name: Set up Java 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # ---------------------------------------------------------
+      # 3. Android SDK
+      # ---------------------------------------------------------
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+
+      # ---------------------------------------------------------
+      # 4. Install Android SDK components
+      # ---------------------------------------------------------
+      - name: Install Android SDK components
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platform-tools" \
+                     "platforms;android-35" \
+                     "build-tools;35.0.0"
+
+      # ---------------------------------------------------------
+      # 5. Install Gradle
+      # ---------------------------------------------------------
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.7'
+
+      # ---------------------------------------------------------
+      # 6. Find V115 HTML
+      # ---------------------------------------------------------
+      - name: Locate MBMS V115 HTML
+        shell: bash
+        run: |
+          set -e
+
+          echo "Repository files:"
+          find . -maxdepth 3 -type f | sort
+
+          HTML_FILE=""
+
+          for f in \
+            "Measurement_Book_Management_System_FINAL_V115_MB_HISTORY_ONLY_DATE-6.html" \
+            "Measurement_Book_Management_System_FINAL_V115.html" \
+            "V115.html" \
+            "index.html"
+          do
+            if [ -f "$f" ]; then
+              HTML_FILE="$f"
+              break
+            fi
+          done
+
+          if [ -z "$HTML_FILE" ]; then
+            HTML_FILE=$(find . -maxdepth 2 -type f -iname "*.html" | head -n 1 || true)
+          fi
+
+          if [ -z "$HTML_FILE" ]; then
+            echo "ERROR: MBMS HTML file was not found."
+            exit 1
+          fi
+
+          echo "Found HTML:"
+          echo "$HTML_FILE"
+
+          SIZE=$(wc -c < "$HTML_FILE")
+
+          if [ "$SIZE" -lt 10000 ]; then
+            echo "ERROR: HTML file appears too small."
+            exit 1
+          fi
+
+          echo "HTML size: $SIZE bytes"
+
+          echo "MBMS_HTML=$HTML_FILE" >> "$GITHUB_ENV"
+
+      # ---------------------------------------------------------
+      # 7. Basic V115 integrity check
+      # ---------------------------------------------------------
+      - name: Validate MBMS V115 HTML
+        shell: bash
+        run: |
+          set -e
+
+          FILE="$MBMS_HTML"
+
+          echo "Checking: $FILE"
+
+          grep -qi "<html" "$FILE" || {
+            echo "ERROR: <html> tag not found."
+            exit 1
+          }
+
+          grep -qi "localStorage" "$FILE" || {
+            echo "WARNING: localStorage not detected."
+          }
+
+          grep -qi "Measurement Book" "$FILE" || {
+            echo "WARNING: Measurement Book text not detected."
+          }
+
+          echo "HTML validation completed."
+
+      # ---------------------------------------------------------
+      # 8. Create Android project
+      # ---------------------------------------------------------
+      - name: Create Android project
+        shell: bash
+        run: |
+          set -e
+
+          rm -rf mbms_android
+
+          mkdir -p mbms_android/app/src/main/java/com/mbms/app
+          mkdir -p mbms_android/app/src/main/res/values
+          mkdir -p mbms_android/app/src/main/assets
+
+          cp "$MBMS_HTML" \
+             mbms_android/app/src/main/assets/index.html
+
+      # ---------------------------------------------------------
+      # 9. Root build.gradle
+      # ---------------------------------------------------------
+      - name: Create root Gradle files
+        shell: bash
+        run: |
+          cat > mbms_android/build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application' version '8.6.1' apply false
+          }
+          EOF
+
+          cat > mbms_android/settings.gradle <<'EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+
+          rootProject.name = "MBMS-Android-App"
+          include(":app")
+          EOF
+
+          cat > mbms_android/gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          android.nonTransitiveRClass=true
+          EOF
+
+      # ---------------------------------------------------------
+      # 10. App Gradle
+      # ---------------------------------------------------------
+      - name: Create app Gradle file
+        shell: bash
+        run: |
+          cat > mbms_android/app/build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application'
+          }
+
+          android {
+              namespace 'com.mbms.app'
+              compileSdk 35
+
+              defaultConfig {
+                  applicationId 'com.mbms.app'
+                  minSdk 26
+                  targetSdk 35
+                  versionCode 115
+                  versionName '1.15'
+              }
+
+              buildTypes {
+                  release {
+                      minifyEnabled false
+                      shrinkResources false
+                      proguardFiles(
+                          getDefaultProguardFile('proguard-android-optimize.txt'),
+                          'proguard-rules.pro'
+                      )
+                  }
+              }
+
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+          }
+          EOF
+
+          cat > mbms_android/app/proguard-rules.pro <<'EOF'
+          # MBMS WebView application
+          EOF
+
+      # ---------------------------------------------------------
+      # 11. Android Manifest
+      # ---------------------------------------------------------
+      - name: Create Android Manifest
+        shell: bash
+        run: |
+          cat > mbms_android/app/src/main/AndroidManifest.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+              <uses-permission android:name="android.permission.INTERNET" />
+
+              <application
+                  android:allowBackup="true"
+                  android:hardwareAccelerated="true"
+                  android:label="@string/app_name"
+                  android:supportsRtl="true"
+                  android:theme="@style/AppTheme">
+
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:screenOrientation="portrait">
+
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+
+                  </activity>
+
+              </application>
+
+          </manifest>
+          EOF
+
+      # ---------------------------------------------------------
+      # 12. Strings
+      # ---------------------------------------------------------
+      - name: Create strings
+        shell: bash
+        run: |
+          cat > mbms_android/app/src/main/res/values/strings.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <string name="app_name">MBMS</string>
+          </resources>
+          EOF
+
+      # ---------------------------------------------------------
+      # 13. Theme
+      # ---------------------------------------------------------
+      - name: Create Android theme
+        shell: bash
+        run: |
+          cat > mbms_android/app/src/main/res/values/styles.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+
+              <style name="AppTheme"
+                  parent="android:style/Theme.Material.Light.NoActionBar">
+
+                  <item name="android:fontFamily">sans</item>
+                  <item name="android:windowActionModeOverlay">true</item>
+                  <item name="android:colorAccent">#1976D2</item>
+                  <item name="android:navigationBarColor">#000000</item>
+                  <item name="android:statusBarColor">#1565C0</item>
+                  <item name="android:windowLightStatusBar">false</item>
+
+              </style>
+
+          </resources>
+          EOF
+
+      # ---------------------------------------------------------
+      # 14. MainActivity WebView
+      # ---------------------------------------------------------
+      - name: Create MainActivity
+        shell: bash
+        run: |
+          cat > mbms_android/app/src/main/java/com/mbms/app/MainActivity.java <<'EOF'
+          package com.mbms.app;
+
+          import android.annotation.SuppressLint;
+          import android.app.Activity;
+          import android.os.Bundle;
+          import android.view.Window;
+          import android.webkit.WebChromeClient;
+          import android.webkit.WebSettings;
+          import android.webkit.WebView;
+          import android.webkit.WebViewClient;
+
+          public class MainActivity extends Activity {
+
+              private WebView webView;
+
+              @SuppressLint("SetJavaScriptEnabled")
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+
+                  Window window = getWindow();
+                  window.setStatusBarColor(
+                          android.graphics.Color.rgb(21, 101, 192)
+                  );
+                  window.setNavigationBarColor(
+                          android.graphics.Color.BLACK
+                  );
+
+                  webView = new WebView(this);
+
+                  WebSettings settings = webView.getSettings();
+
+                  settings.setJavaScriptEnabled(true);
+                  settings.setDomStorageEnabled(true);
+
+                  settings.setAllowFileAccess(true);
+                  settings.setAllowContentAccess(true);
+
+                  settings.setDatabaseEnabled(true);
+
+                  settings.setBuiltInZoomControls(false);
+                  settings.setDisplayZoomControls(false);
+
+                  settings.setLoadWithOverviewMode(false);
+                  settings.setUseWideViewPort(false);
+
+                  settings.setSupportZoom(false);
+
+                  webView.setWebViewClient(new WebViewClient());
+
+                  webView.setWebChromeClient(new WebChromeClient());
+
+                  webView.setVerticalScrollBarEnabled(false);
+                  webView.setHorizontalScrollBarEnabled(false);
+
+                  setContentView(webView);
+
+                  webView.loadUrl(
+                          "file:///android_asset/index.html"
+                  );
+              }
+
+              @Override
+              public void onBackPressed() {
+
+                  if (webView != null && webView.canGoBack()) {
+                      webView.goBack();
+                  } else {
+                      super.onBackPressed();
+                  }
+              }
+
+              @Override
+              protected void onDestroy() {
+
+                  if (webView != null) {
+                      webView.loadUrl("about:blank");
+                      webView.stopLoading();
+                      webView.setWebChromeClient(null);
+                      webView.setWebViewClient(null);
+                      webView.destroy();
+                      webView = null;
+                  }
+
+                  super.onDestroy();
+              }
+          }
+          EOF
+
+      # ---------------------------------------------------------
+      # 15. Verify generated project
+      # ---------------------------------------------------------
+      - name: Verify Android project
+        shell: bash
+        run: |
+          set -e
+
+          echo "===== Project Structure ====="
+          find mbms_android -type f | sort
+
+          echo "===== HTML ====="
+          ls -lh mbms_android/app/src/main/assets/index.html
+
+          test -s mbms_android/app/src/main/assets/index.html
+          test -f mbms_android/app/src/main/java/com/mbms/app/MainActivity.java
+          test -f mbms_android/app/src/main/AndroidManifest.xml
+          test -f mbms_android/app/build.gradle
+
+          echo "Project verification PASSED."
+
+      # ---------------------------------------------------------
+      # 16. Build Debug APK
+      # ---------------------------------------------------------
+      - name: Build Debug APK
+        working-directory: mbms_android
+        run: |
+          gradle --no-daemon --stacktrace :app:assembleDebug
+
+      # ---------------------------------------------------------
+      # 17. Verify APK
+      # ---------------------------------------------------------
+      - name: Verify APK
+        shell: bash
+        run: |
+          set -e
+
+          APK="mbms_android/app/build/outputs/apk/debug/app-debug.apk"
+
+          if [ ! -f "$APK" ]; then
+            echo "ERROR: APK was not created."
+            exit 1
+          fi
+
+          SIZE=$(stat -c%s "$APK")
+
+          if [ "$SIZE" -lt 100000 ]; then
+            echo "ERROR: APK appears invalid or too small."
+            exit 1
+          fi
+
+          echo "APK created successfully."
+          echo "APK size: $SIZE bytes"
+
+          sha256sum "$APK"
+
+      # ---------------------------------------------------------
+      # 18. Prepare release copy
+      # ---------------------------------------------------------
+      - name: Prepare APK release
+        shell: bash
+        run: |
+          set -e
+
+          mkdir -p release
+
+          cp mbms_android/app/build/outputs/apk/debug/app-debug.apk \
+             release/MeasurementBookManagementSystem-V115.apk
+
+          sha256sum release/MeasurementBookManagementSystem-V115.apk \
+             > release/SHA256.txt
+
+          echo "Release files:"
+          ls -lh release
+
+      # ---------------------------------------------------------
+      # 19. Upload APK
+      # ---------------------------------------------------------
+      - name: Upload MBMS APK
+        uses: actions/upload-artifact@v6
+        with:
+          name: MeasurementBookManagementSystem-V115-APK
+          path: release/
+          if-no-files-found: error
+          retention-days: 30
+
+      # ---------------------------------------------------------
+      # 20. Final message
+      # ---------------------------------------------------------
+      - name: Build completed
+        run: |
+          echo "=============================================="
+          echo " MBMS V115 ANDROID APK BUILD SUCCESSFUL"
+          echo "=============================================="
+          echo "APK Artifact:"
+          echo "MeasurementBookManagementSystem-V115-APK"
+          echo "=============================================="
+      ```
+
+### 4. आता खाली जा
+
+**Commit changes** हिरवे बटण दिसेल.
+
+Commit message:
+
+```text
+Add MBMS Android APK build workflow
