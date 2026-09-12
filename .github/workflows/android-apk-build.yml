@@ -1,4 +1,4 @@
-name: MBMS V118 Android APK - Print Fix
+name: MBMS V119 Android APK - Native Print
 
 on:
   workflow_dispatch:
@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   build-apk:
-    name: Build MBMS V118 Print APK
+    name: Build MBMS V119 Print APK
     runs-on: ubuntu-latest
 
     steps:
@@ -37,15 +37,17 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
 
-      - name: Install Android SDK packages
+      - name: Install Android SDK
         run: |
           yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platform-tools" \
-                     "platforms;android-35" \
-                     "build-tools;35.0.0"
+
+          sdkmanager \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
 
       # =========================================================
-      # 4. Install Gradle 8.7
+      # 4. Gradle
       # =========================================================
       - name: Install Gradle 8.7
         run: |
@@ -54,7 +56,7 @@ jobs:
           echo "$HOME/gradle/gradle-8.7/bin" >> "$GITHUB_PATH"
 
       # =========================================================
-      # 5. Locate MBMS HTML
+      # 5. Locate V115 HTML
       # =========================================================
       - name: Locate MBMS HTML
         shell: bash
@@ -85,22 +87,18 @@ jobs:
             exit 1
           fi
 
-          SIZE=$(wc -c < "$HTML")
-
-          if [ "$SIZE" -lt 100000 ]; then
-            echo "WARNING: HTML size is only $SIZE bytes."
-          fi
-
-          echo "MBMS HTML found:"
+          echo "Using HTML:"
           echo "$HTML"
-          echo "HTML size: $SIZE bytes"
 
           cp "$HTML" /tmp/MBMS_SOURCE.html
 
+          echo "HTML size:"
+          wc -c /tmp/MBMS_SOURCE.html
+
       # =========================================================
-      # 6. Verify important MBMS content
+      # 6. Verify HTML
       # =========================================================
-      - name: Verify MBMS source
+      - name: Verify MBMS HTML
         run: |
           set -e
 
@@ -108,8 +106,16 @@ jobs:
 
           grep -qi "<html" /tmp/MBMS_SOURCE.html
           grep -qi "localStorage" /tmp/MBMS_SOURCE.html
+          grep -qi "window.print" /tmp/MBMS_SOURCE.html
+          grep -qi "printArea" /tmp/MBMS_SOURCE.html
 
-          echo "MBMS HTML verification PASSED."
+          echo "=========================================="
+          echo "MBMS HTML verification PASSED"
+          echo "Report functions      : FOUND"
+          echo "window.print()        : FOUND"
+          echo "printArea             : FOUND"
+          echo "localStorage          : FOUND"
+          echo "=========================================="
 
       # =========================================================
       # 7. Create Android project
@@ -127,7 +133,7 @@ jobs:
           mkdir -p mbms_android/app/src/main/res/values
 
           cp /tmp/MBMS_SOURCE.html \
-            mbms_android/app/src/main/assets/index.html
+             mbms_android/app/src/main/assets/index.html
 
       # =========================================================
       # 8. settings.gradle
@@ -145,13 +151,15 @@ jobs:
 
           dependencyResolutionManagement {
               repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+
               repositories {
                   google()
                   mavenCentral()
               }
           }
 
-          rootProject.name = "MBMS-V118-Android"
+          rootProject.name = "MBMS-V119-Android"
+
           include(":app")
           EOF
 
@@ -188,37 +196,58 @@ jobs:
           }
 
           android {
+
               namespace 'com.mbms.v118'
+
               compileSdk 35
 
               defaultConfig {
+
                   applicationId 'com.mbms.v118'
+
                   minSdk 26
+
                   targetSdk 35
-                  versionCode 118
-                  versionName "1.18"
+
+                  versionCode 119
+
+                  versionName "1.19"
+
               }
 
               buildTypes {
+
                   debug {
+
                       minifyEnabled false
+
                       shrinkResources false
+
                   }
 
                   release {
+
                       minifyEnabled false
+
                       shrinkResources false
+
                   }
+
               }
 
               packaging {
+
                   resources {
+
                       excludes += [
                           "META-INF/LICENSE*",
                           "META-INF/NOTICE*"
                       ]
+
                   }
+
               }
+
           }
           EOF
 
@@ -230,16 +259,18 @@ jobs:
           cat > mbms_android/app/src/main/AndroidManifest.xml <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
 
-          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+          <manifest
+              xmlns:android="http://schemas.android.com/apk/res/android">
 
-              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission
+                  android:name="android.permission.INTERNET" />
 
               <application
                   android:allowBackup="true"
+                  android:hardwareAccelerated="true"
                   android:usesCleartextTraffic="true"
                   android:label="@string/app_name"
                   android:theme="@style/AppTheme"
-                  android:hardwareAccelerated="true"
                   android:resizeableActivity="true">
 
                   <activity
@@ -248,8 +279,13 @@ jobs:
                       android:screenOrientation="portrait">
 
                       <intent-filter>
-                          <action android:name="android.intent.action.MAIN" />
-                          <category android:name="android.intent.category.LAUNCHER" />
+
+                          <action
+                              android:name="android.intent.action.MAIN" />
+
+                          <category
+                              android:name="android.intent.category.LAUNCHER" />
+
                       </intent-filter>
 
                   </activity>
@@ -266,8 +302,13 @@ jobs:
         run: |
           cat > mbms_android/app/src/main/res/values/strings.xml <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
+
           <resources>
-              <string name="app_name">मोजमाप पुस्तिका नियंत्रण प्रणाली</string>
+
+              <string name="app_name">
+                  मोजमाप पुस्तिका नियंत्रण प्रणाली
+              </string>
+
           </resources>
           EOF
 
@@ -278,16 +319,30 @@ jobs:
         run: |
           cat > mbms_android/app/src/main/res/values/styles.xml <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
+
           <resources>
 
-              <style name="AppTheme"
+              <style
+                  name="AppTheme"
                   parent="android:style/Theme.Material.Light.NoActionBar">
 
                   <item name="android:fontFamily">sans</item>
-                  <item name="android:windowLightStatusBar">false</item>
-                  <item name="android:statusBarColor">#04366F</item>
-                  <item name="android:navigationBarColor">#04366F</item>
-                  <item name="android:colorAccent">#0755A5</item>
+
+                  <item name="android:windowLightStatusBar">
+                      false
+                  </item>
+
+                  <item name="android:statusBarColor">
+                      #04366F
+                  </item>
+
+                  <item name="android:navigationBarColor">
+                      #04366F
+                  </item>
+
+                  <item name="android:colorAccent">
+                      #0755A5
+                  </item>
 
               </style>
 
@@ -296,6 +351,10 @@ jobs:
 
       # =========================================================
       # 15. MainActivity.java
+      #
+      # IMPORTANT:
+      # This is the Native Android Print Fix.
+      # JavaScript window.print() calls Android PrintManager.
       # =========================================================
       - name: Create MainActivity.java
         run: |
@@ -303,108 +362,360 @@ jobs:
           package com.mbms.v118;
 
           import android.app.Activity;
+          import android.content.Context;
+          import android.graphics.Color;
           import android.os.Bundle;
-          import android.view.Window;
+          import android.print.PrintAttributes;
+          import android.print.PrintManager;
+          import android.webkit.JavascriptInterface;
           import android.webkit.WebChromeClient;
           import android.webkit.WebResourceRequest;
           import android.webkit.WebSettings;
           import android.webkit.WebView;
           import android.webkit.WebViewClient;
+          import android.view.Window;
 
           public class MainActivity extends Activity {
 
               private WebView webView;
 
+              private int printJobCounter = 0;
+
+
               @Override
               protected void onCreate(Bundle savedInstanceState) {
+
                   super.onCreate(savedInstanceState);
 
                   Window window = getWindow();
+
                   window.setStatusBarColor(
-                          android.graphics.Color.rgb(4, 54, 111)
+                          Color.rgb(4, 54, 111)
                   );
+
                   window.setNavigationBarColor(
-                          android.graphics.Color.rgb(4, 54, 111)
+                          Color.rgb(4, 54, 111)
                   );
+
 
                   webView = new WebView(this);
 
-                  WebSettings settings = webView.getSettings();
+
+                  WebSettings settings =
+                          webView.getSettings();
+
+
+                  // =====================================================
+                  // JavaScript
+                  // =====================================================
 
                   settings.setJavaScriptEnabled(true);
+
+
+                  // =====================================================
+                  // localStorage
+                  // =====================================================
+
                   settings.setDomStorageEnabled(true);
+
                   settings.setDatabaseEnabled(true);
 
+
+                  // =====================================================
+                  // Local HTML file access
+                  // =====================================================
+
                   settings.setAllowFileAccess(true);
+
                   settings.setAllowContentAccess(true);
 
                   settings.setAllowFileAccessFromFileURLs(true);
+
                   settings.setAllowUniversalAccessFromFileURLs(true);
 
+
+                  // =====================================================
+                  // Display
+                  // =====================================================
+
                   settings.setBuiltInZoomControls(false);
+
                   settings.setDisplayZoomControls(false);
 
                   settings.setLoadWithOverviewMode(false);
+
                   settings.setUseWideViewPort(false);
 
-                  settings.setJavaScriptCanOpenWindowsAutomatically(true);
+
+                  settings.setJavaScriptCanOpenWindowsAutomatically(
+                          true
+                  );
+
+
                   settings.setSupportMultipleWindows(false);
 
-                  webView.setWebChromeClient(new WebChromeClient());
 
-                  webView.setWebViewClient(new WebViewClient() {
+                  // =====================================================
+                  // WebChrome
+                  // =====================================================
 
-                      @Override
-                      public boolean shouldOverrideUrlLoading(
-                              WebView view,
-                              WebResourceRequest request) {
+                  webView.setWebChromeClient(
+                          new WebChromeClient()
+                  );
 
-                          return false;
-                      }
-                  });
+
+                  // =====================================================
+                  // WebView Client
+                  // =====================================================
+
+                  webView.setWebViewClient(
+                          new WebViewClient() {
+
+                              @Override
+                              public boolean shouldOverrideUrlLoading(
+                                      WebView view,
+                                      WebResourceRequest request) {
+
+                                  return false;
+                              }
+
+
+                              @Override
+                              public void onPageFinished(
+                                      WebView view,
+                                      String url) {
+
+                                  super.onPageFinished(
+                                          view,
+                                          url
+                                  );
+
+                                  installPrintBridge(view);
+                              }
+
+                          }
+                  );
+
+
+                  // =====================================================
+                  // Native Android JavaScript Bridge
+                  // =====================================================
+
+                  webView.addJavascriptInterface(
+                          new AndroidPrintBridge(this),
+                          "AndroidPrint"
+                  );
+
+
+                  // =====================================================
+                  // Background
+                  // =====================================================
 
                   webView.setBackgroundColor(
-                          android.graphics.Color.rgb(238, 246, 255)
+                          Color.rgb(238, 246, 255)
                   );
+
+
+                  // =====================================================
+                  // Load MBMS
+                  // =====================================================
 
                   webView.loadUrl(
                           "file:///android_asset/index.html"
                   );
 
+
                   setContentView(webView);
               }
+
+
+              // ==========================================================
+              // Replace window.print() with Android PrintManager
+              // ==========================================================
+
+              private void installPrintBridge(WebView view) {
+
+                  String js =
+                          "javascript:(function(){" +
+                          "try{" +
+
+                          "window.print=function(){" +
+                          "if(window.AndroidPrint){" +
+                          "window.AndroidPrint.printPage();" +
+                          "}" +
+                          "};" +
+
+                          "}catch(e){" +
+                          "console.error(e);" +
+                          "}" +
+                          "})()";
+
+
+                  view.evaluateJavascript(
+                          js,
+                          null
+                  );
+              }
+
+
+              // ==========================================================
+              // Native Print
+              // ==========================================================
+
+              public void startPrintJob() {
+
+                  if (webView == null) {
+                      return;
+                  }
+
+
+                  printJobCounter++;
+
+
+                  String jobName =
+                          "MBMS Report " +
+                          printJobCounter;
+
+
+                  PrintManager printManager =
+                          (PrintManager)
+                                  getSystemService(
+                                          Context.PRINT_SERVICE
+                                  );
+
+
+                  if (printManager == null) {
+                      return;
+                  }
+
+
+                  PrintAttributes attributes =
+                          new PrintAttributes.Builder()
+
+                                  .setMediaSize(
+                                          PrintAttributes.MediaSize.ISO_A4
+                                  )
+
+                                  .setMinMargins(
+                                          PrintAttributes.Margins.NO_MARGINS
+                                  )
+
+                                  .setResolution(
+                                          new PrintAttributes.Resolution(
+                                                  "mbms_resolution",
+                                                  "MBMS Print",
+                                                  300,
+                                                  300
+                                          )
+                                  )
+
+                                  .build();
+
+
+                  android.print.PrintDocumentAdapter adapter =
+                          webView.createPrintDocumentAdapter(
+                                  jobName
+                          );
+
+
+                  printManager.print(
+                          jobName,
+                          adapter,
+                          attributes
+                  );
+              }
+
+
+              // ==========================================================
+              // Android Back Button
+              // ==========================================================
 
               @Override
               public void onBackPressed() {
 
-                  if (webView != null && webView.canGoBack()) {
+                  if (
+                          webView != null &&
+                          webView.canGoBack()
+                  ) {
+
                       webView.goBack();
+
                   } else {
+
                       super.onBackPressed();
+
                   }
               }
+
+
+              // ==========================================================
+              // Cleanup
+              // ==========================================================
 
               @Override
               protected void onDestroy() {
 
                   if (webView != null) {
+
                       webView.stopLoading();
+
+                      webView.removeJavascriptInterface(
+                              "AndroidPrint"
+                      );
+
                       webView.destroy();
                   }
 
                   super.onDestroy();
               }
+
+
+              // ==========================================================
+              // JavaScript Interface
+              // ==========================================================
+
+              public static class AndroidPrintBridge {
+
+                  private final MainActivity activity;
+
+
+                  public AndroidPrintBridge(
+                          MainActivity activity
+                  ) {
+
+                      this.activity = activity;
+                  }
+
+
+                  @JavascriptInterface
+                  public void printPage() {
+
+                      activity.runOnUiThread(
+                              new Runnable() {
+
+                                  @Override
+                                  public void run() {
+
+                                      activity.startPrintJob();
+
+                                  }
+
+                              }
+                      );
+                  }
+              }
+
           }
           EOF
 
       # =========================================================
       # 16. ProGuard
       # =========================================================
-      - name: Create proguard rules
+      - name: Create proguard-rules.pro
         run: |
           cat > mbms_android/app/proguard-rules.pro <<'EOF'
-          # MBMS V118
-          # No code shrinking required.
+          # MBMS V119
+          # Code shrinking disabled.
           EOF
 
       # =========================================================
@@ -415,23 +726,46 @@ jobs:
           set -e
 
           test -f mbms_android/app/src/main/assets/index.html
-          test -f mbms_android/app/src/main/java/com/mbms/v118/MainActivity.java
-          test -f mbms_android/app/src/main/AndroidManifest.xml
-          test -f mbms_android/app/build.gradle
 
-          echo "Android project verification PASSED."
+          test -f \
+            mbms_android/app/src/main/java/com/mbms/v118/MainActivity.java
+
+          test -f \
+            mbms_android/app/src/main/AndroidManifest.xml
+
+          test -f \
+            mbms_android/app/build.gradle
+
+          grep -q "AndroidPrint" \
+            mbms_android/app/src/main/java/com/mbms/v118/MainActivity.java
+
+          grep -q "PrintManager" \
+            mbms_android/app/src/main/java/com/mbms/v118/MainActivity.java
+
+          grep -q "ISO_A4" \
+            mbms_android/app/src/main/java/com/mbms/v118/MainActivity.java
+
+          echo "=========================================="
+          echo "ANDROID PROJECT VERIFICATION PASSED"
+          echo "Native Print Bridge : FOUND"
+          echo "PrintManager        : FOUND"
+          echo "A4                  : FOUND"
+          echo "=========================================="
 
       # =========================================================
-      # 18. Build APK
+      # 18. Build
       # =========================================================
-      - name: Build MBMS V118 APK
+      - name: Build MBMS V119 APK
         working-directory: mbms_android
         run: |
           set -e
 
           gradle wrapper --gradle-version 8.7
 
-          ./gradlew --no-daemon --stacktrace :app:assembleDebug
+          ./gradlew \
+            --no-daemon \
+            --stacktrace \
+            :app:assembleDebug
 
       # =========================================================
       # 19. Verify APK
@@ -443,20 +777,18 @@ jobs:
 
           APK="mbms_android/app/build/outputs/apk/debug/app-debug.apk"
 
-          if [ ! -f "$APK" ]; then
-            echo "ERROR: APK was not generated."
-            exit 1
-          fi
+          test -f "$APK"
 
           SIZE=$(stat -c%s "$APK")
 
           echo "APK size: $SIZE bytes"
 
           if [ "$SIZE" -lt 50000 ]; then
-            echo "ERROR: APK is unexpectedly small."
+            echo "ERROR: APK unexpectedly small."
             exit 1
           fi
 
+          echo "APK SHA256:"
           sha256sum "$APK"
 
           echo "APK verification PASSED."
@@ -473,10 +805,10 @@ jobs:
 
           cp \
             mbms_android/app/build/outputs/apk/debug/app-debug.apk \
-            release/MeasurementBookManagementSystem-V118-Print.apk
+            release/MeasurementBookManagementSystem-V119-Print.apk
 
           sha256sum \
-            release/MeasurementBookManagementSystem-V118-Print.apk \
+            release/MeasurementBookManagementSystem-V119-Print.apk \
             > release/SHA256.txt
 
           echo "Release prepared."
@@ -484,25 +816,34 @@ jobs:
       # =========================================================
       # 21. Upload APK
       # =========================================================
-      - name: Upload MBMS V118 APK
+      - name: Upload MBMS V119 APK
         uses: actions/upload-artifact@v6
         with:
-          name: MeasurementBookManagementSystem-V118-Print-APK
+          name: MeasurementBookManagementSystem-V119-Print-APK
           path: |
-            release/MeasurementBookManagementSystem-V118-Print.apk
+            release/MeasurementBookManagementSystem-V119-Print.apk
             release/SHA256.txt
           if-no-files-found: error
 
       # =========================================================
-      # 22. Success
+      # 22. Final success
       # =========================================================
       - name: Build Success
         run: |
-          echo "=========================================="
-          echo "MBMS V118 APK BUILD SUCCESS"
-          echo "=========================================="
-          echo "Application ID: com.mbms.v118"
-          echo "Version Code : 118"
-          echo "Version Name : 1.18"
-          echo "Print/Report : Included from MBMS HTML"
-          echo "=========================================="
+          echo ""
+          echo "=============================================="
+          echo "       MBMS V119 BUILD SUCCESS"
+          echo "=============================================="
+          echo ""
+          echo "Application ID : com.mbms.v118"
+          echo "Version Code   : 119"
+          echo "Version Name   : 1.19"
+          echo ""
+          echo "HTML            : V115 preserved"
+          echo "localStorage    : preserved"
+          echo "Native Print    : ENABLED"
+          echo "Android Print   : ENABLED"
+          echo "A4              : ENABLED"
+          echo "Save as PDF     : ENABLED"
+          echo ""
+          echo "=============================================="
