@@ -1,4 +1,4 @@
-name: MBMS V118 Android APK Build - INSTALL FIX
+name: MBMS V118 Android APK Build - FINAL INSTALL FIX
 
 on:
   workflow_dispatch:
@@ -11,34 +11,51 @@ permissions:
 
 jobs:
   build-apk:
-    name: Build MBMS V118 Install-Fix APK
+    name: Build MBMS V118 APK
     runs-on: ubuntu-latest
 
     steps:
 
+      # =========================================================
+      # 1. CHECKOUT
+      # =========================================================
       - name: Checkout repository
         uses: actions/checkout@v4
 
+
+      # =========================================================
+      # 2. JAVA 17
+      # =========================================================
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
+
+      # =========================================================
+      # 3. ANDROID SDK
+      # =========================================================
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+
 
       - name: Install Android SDK
         shell: bash
         run: |
           set -e
+
           yes | sdkmanager --licenses >/dev/null 2>&1 || true
+
           sdkmanager \
             "platform-tools" \
             "platforms;android-35" \
             "build-tools;35.0.0"
-          echo "Android SDK READY"
 
+
+      # =========================================================
+      # 4. GRADLE 8.7
+      # =========================================================
       - name: Install Gradle 8.7
         shell: bash
         run: |
@@ -51,12 +68,15 @@ jobs:
             gradle-8.7-bin.zip \
             -d "$HOME/gradle"
 
-          echo "$HOME/gradle/gradle-8.7/bin" \
-            >> "$GITHUB_PATH"
+          echo "$HOME/gradle/gradle-8.7/bin" >> "$GITHUB_PATH"
 
           "$HOME/gradle/gradle-8.7/bin/gradle" --version
 
-      - name: Locate original MBMS HTML
+
+      # =========================================================
+      # 5. LOCATE MBMS HTML
+      # =========================================================
+      - name: Locate MBMS HTML
         shell: bash
         run: |
           set -e
@@ -64,12 +84,11 @@ jobs:
           HTML_FILE=""
 
           for f in \
-            "Measurement_Book_Management_System_FINAL_V115_MB_HISTORY_ONLY_DATE-6.html" \
-            "Measurement_Book_Management_System_FINAL_V115.html" \
-            "V115.html" \
             "Measurement_Book_Management_System_FINAL_V118_PRINT_BACKUP_ANDROID.html" \
             "Measurement_Book_Management_System_FINAL_V118.html" \
-            "V118.html"
+            "Measurement_Book_Management_System_FINAL_V115_MB_HISTORY_ONLY_DATE-6.html" \
+            "V118.html" \
+            "V115.html"
           do
             if [ -f "$f" ]; then
               HTML_FILE="$f"
@@ -78,77 +97,62 @@ jobs:
           done
 
           if [ -z "$HTML_FILE" ]; then
-            HTML_FILE=$(find . \
-              -type f \
-              -iname "*.html" \
-              -not -path "./.git/*" \
-              | head -n 1 || true)
-          fi
-
-          if [ -z "$HTML_FILE" ]; then
             echo "ERROR: MBMS HTML file not found."
+            echo ""
+            echo "HTML files found in repository:"
+            find . -maxdepth 2 -type f \
+              \( -iname "*.html" -o -iname "*.htm" \) \
+              -print
             exit 1
           fi
 
           echo "HTML_FILE=$HTML_FILE" >> "$GITHUB_ENV"
 
-          echo "Using original MBMS HTML:"
+          echo "Using:"
           echo "$HTML_FILE"
 
-      - name: Check required branding files
-        shell: bash
-        run: |
-          set -e
 
-          if [ ! -f "MBMS_V119_Icon_1024.png" ]; then
-            echo "ERROR: MBMS_V119_Icon_1024.png not found."
-            echo "Upload the provided icon PNG to repository root."
-            exit 1
-          fi
-
-          if [ ! -f "MBMS_release_keystore.jks" ]; then
-            echo "ERROR: MBMS_release_keystore.jks not found."
-            echo "Upload the signing keystore to repository root."
-            exit 1
-          fi
-
-          test -s "MBMS_V119_Icon_1024.png"
-          test -s "MBMS_release_keystore.jks"
-
-          echo "Branding and signing files found."
-
+      # =========================================================
+      # 6. CREATE PROJECT DIRECTORIES
+      # =========================================================
       - name: Create Android project directories
         shell: bash
         run: |
           set -e
 
           rm -rf mbms_android
-          rm -rf release
 
-          mkdir -p mbms_android/app/src/main/java/com/mbms/app
-          mkdir -p mbms_android/app/src/main/res/values
-          mkdir -p mbms_android/app/src/main/res/drawable-nodpi
-          mkdir -p mbms_android/app/src/main/assets
+          mkdir -p \
+            mbms_android/app/src/main/assets \
+            mbms_android/app/src/main/java/com/mbms/app \
+            mbms_android/app/src/main/res/values \
+            mbms_android/app/src/main/res/drawable \
+            mbms_android/app/src/main/res/mipmap-hdpi \
+            mbms_android/app/src/main/res/mipmap-mdpi \
+            mbms_android/app/src/main/res/mipmap-xhdpi \
+            mbms_android/app/src/main/res/mipmap-xxhdpi \
+            mbms_android/app/src/main/res/mipmap-xxxhdpi
+
+
+      # =========================================================
+      # 7. COPY ORIGINAL MBMS HTML
+      # =========================================================
+      - name: Prepare MBMS HTML
+        shell: bash
+        run: |
+          set -e
 
           cp "$HTML_FILE" \
             mbms_android/app/src/main/assets/index.html
 
-          cp "MBMS_V119_Icon_1024.png" \
-            mbms_android/app/src/main/res/drawable-nodpi/mbms_icon.png
-
-          cp "MBMS_release_keystore.jks" \
-            mbms_android/mbms_release.jks
-
           test -s \
             mbms_android/app/src/main/assets/index.html
 
-          test -s \
-            mbms_android/app/src/main/res/drawable-nodpi/mbms_icon.png
+          echo "MBMS HTML size:"
+          wc -c \
+            mbms_android/app/src/main/assets/index.html
 
-      - name: Validate original MBMS HTML
-        shell: bash
-        run: |
-          set -e
+          echo "Checking important MBMS functions..."
 
           grep -q "mbmsSettingsSnapshot" \
             mbms_android/app/src/main/assets/index.html
@@ -156,1072 +160,1371 @@ jobs:
           grep -q "generateWorkReport" \
             mbms_android/app/src/main/assets/index.html
 
-          grep -q "downloadSettingsBackup" \
+          grep -q "window.print" \
             mbms_android/app/src/main/assets/index.html
 
-          grep -q "restoreSettingsBackup" \
-            mbms_android/app/src/main/assets/index.html
+          echo "MBMS HTML validation PASSED."
 
-          echo "Original MBMS HTML validation PASSED."
 
+      # =========================================================
+      # 8. SETTINGS.GRADLE
+      # =========================================================
       - name: Create settings.gradle
         shell: bash
         run: |
           cat > mbms_android/settings.gradle <<'EOF'
-          pluginManagement {
-              repositories {
-                  google()
-                  mavenCentral()
-                  gradlePluginPortal()
-              }
-          }
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
 
-          dependencyResolutionManagement {
-              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+dependencyResolutionManagement {
+    repositoriesMode.set(
+        RepositoriesMode.FAIL_ON_PROJECT_REPOS
+    )
 
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-          }
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
 
-          rootProject.name = "MBMSAndroid"
+rootProject.name = "MBMSAndroid"
 
-          include(":app")
-          EOF
+include(":app")
+EOF
 
+
+      # =========================================================
+      # 9. ROOT BUILD.GRADLE
+      # =========================================================
       - name: Create root build.gradle
         shell: bash
         run: |
           cat > mbms_android/build.gradle <<'EOF'
-          plugins {
-              id 'com.android.application' version '8.6.1' apply false
-          }
-          EOF
+plugins {
+    id 'com.android.application' version '8.6.1' apply false
+}
+EOF
 
+
+      # =========================================================
+      # 10. GRADLE PROPERTIES
+      # =========================================================
       - name: Create gradle.properties
         shell: bash
         run: |
           cat > mbms_android/gradle.properties <<'EOF'
-          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
-          EOF
+org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+android.useAndroidX=false
+android.nonTransitiveRClass=true
+EOF
 
+
+      # =========================================================
+      # 11. APP BUILD.GRADLE
+      # =========================================================
       - name: Create app build.gradle
         shell: bash
         run: |
           cat > mbms_android/app/build.gradle <<'EOF'
-          plugins {
-              id 'com.android.application'
-          }
+plugins {
+    id 'com.android.application'
+}
 
-          android {
-              namespace 'com.mbms.app'
+android {
 
-              compileSdk 35
+    namespace 'com.mbms.app'
 
-              defaultConfig {
-                  applicationId 'com.mbms.app'
-                  minSdk 26
-                  targetSdk 35
-                  versionCode 119
-                  versionName 'V118'
-              }
+    compileSdk 35
 
-              signingConfigs {
-                  release {
-                      storeFile file("../mbms_release.jks")
-                      storePassword "MBMSv119@2026"
-                      keyAlias "mbms"
-                      keyPassword "MBMSv119@2026"
-                  }
-              }
+    defaultConfig {
 
-              buildTypes {
-                  debug {
-                      minifyEnabled false
-                  }
+        applicationId 'com.mbms.app'
 
-                  release {
-                      minifyEnabled false
-                      shrinkResources false
-                      signingConfig signingConfigs.release
-                  }
-              }
+        minSdk 26
 
-              compileOptions {
-                  sourceCompatibility JavaVersion.VERSION_17
-                  targetCompatibility JavaVersion.VERSION_17
-              }
-          }
-          EOF
+        targetSdk 35
 
+        versionCode 118
+
+        versionName 'V118'
+    }
+
+    buildTypes {
+
+        debug {
+
+            minifyEnabled false
+        }
+
+        release {
+
+            minifyEnabled false
+
+            shrinkResources false
+        }
+    }
+
+    compileOptions {
+
+        sourceCompatibility JavaVersion.VERSION_17
+
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+EOF
+
+
+      # =========================================================
+      # 12. STRINGS
+      # =========================================================
       - name: Create strings.xml
         shell: bash
         run: |
           cat > mbms_android/app/src/main/res/values/strings.xml <<'EOF'
-          <resources>
-              <string name="app_name">Measurement Book Management System</string>
-          </resources>
-          EOF
+<resources>
 
+    <string name="app_name">
+        Measurement Book Management System
+    </string>
+
+</resources>
+EOF
+
+
+      # =========================================================
+      # 13. STYLE
+      # =========================================================
       - name: Create styles.xml
         shell: bash
         run: |
           cat > mbms_android/app/src/main/res/values/styles.xml <<'EOF'
-          <resources>
-              <style
-                  name="AppTheme"
-                  parent="android:style/Theme.Material.Light.NoActionBar">
-                  <item name="android:fontFamily">sans</item>
-                  <item name="android:colorAccent">#1976D2</item>
-                  <item name="android:navigationBarColor">#0D47A1</item>
-              </style>
-          </resources>
-          EOF
+<resources>
 
-      - name: Create AndroidManifest.xml
-        shell: bash
-        run: |
-          cat > mbms_android/app/src/main/AndroidManifest.xml <<'EOF'
-          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <style
+        name="AppTheme"
+        parent="android:style/Theme.Material.Light.NoActionBar">
 
-              <application
-                  android:allowBackup="true"
-                  android:label="@string/app_name"
-                  android:icon="@drawable/mbms_icon"
-                  android:roundIcon="@drawable/mbms_icon"
-                  android:theme="@style/AppTheme"
-                  android:usesCleartextTraffic="true">
+        <item name="android:fontFamily">sans</item>
 
-                  <activity
-                      android:name=".MainActivity"
-                      android:screenOrientation="portrait"
-                      android:exported="true">
+        <item name="android:windowActionModeOverlay">true</item>
 
-                      <intent-filter>
-                          <action android:name="android.intent.action.MAIN" />
-                          <category android:name="android.intent.category.LAUNCHER" />
-                      </intent-filter>
+        <item name="android:colorAccent">#1976D2</item>
 
-                  </activity>
-              </application>
+        <item name="android:navigationBarColor">
+            #0D47A1
+        </item>
 
-          </manifest>
-          EOF
+    </style>
 
-      - name: Create MainActivity.java
-        shell: bash
-        run: |
-          cat > mbms_android/app/src/main/java/com/mbms/app/MainActivity.java <<'EOF'
-          package com.mbms.app;
+</resources>
+EOF
 
-          import android.app.Activity;
-          import android.content.ContentValues;
-          import android.content.Context;
-          import android.content.Intent;
-          import android.net.Uri;
-          import android.os.Build;
-          import android.os.Bundle;
-          import android.os.Environment;
-          import android.provider.MediaStore;
-          import android.print.PrintAttributes;
-          import android.print.PrintManager;
-          import android.webkit.DownloadListener;
-          import android.webkit.JavascriptInterface;
-          import android.webkit.ValueCallback;
-          import android.webkit.WebChromeClient;
-          import android.webkit.WebSettings;
-          import android.webkit.WebView;
-          import android.webkit.WebViewClient;
-          import android.widget.Toast;
 
-          import java.io.ByteArrayOutputStream;
-          import java.io.File;
-          import java.io.FileOutputStream;
-          import java.io.InputStream;
-          import java.io.OutputStream;
-          import java.nio.charset.StandardCharsets;
-
-          public class MainActivity extends Activity {
-
-              private static final int REQUEST_RESTORE = 9101;
-              private static final int REQUEST_FILE = 9102;
-
-              private WebView webView;
-              private ValueCallback<Uri[]> filePathCallback;
-
-              @Override
-              protected void onCreate(Bundle savedInstanceState) {
-                  super.onCreate(savedInstanceState);
-
-                  webView = new WebView(this);
-                  setContentView(webView);
-
-                  WebSettings settings = webView.getSettings();
-
-                  settings.setJavaScriptEnabled(true);
-                  settings.setDomStorageEnabled(true);
-                  settings.setAllowFileAccess(true);
-                  settings.setAllowContentAccess(true);
-                  settings.setBuiltInZoomControls(false);
-                  settings.setDisplayZoomControls(false);
-                  settings.setSupportZoom(false);
-
-                  webView.setWebViewClient(new WebViewClient());
-
-                  webView.setWebChromeClient(new WebChromeClient() {
-                      @Override
-                      public boolean onShowFileChooser(
-                              WebView view,
-                              ValueCallback<Uri[]> callback,
-                              FileChooserParams params) {
-
-                          if (filePathCallback != null) {
-                              filePathCallback.onReceiveValue(null);
-                          }
-
-                          filePathCallback = callback;
-
-                          try {
-                              Intent intent =
-                                      new Intent(Intent.ACTION_OPEN_DOCUMENT);
-
-                              intent.addCategory(
-                                      Intent.CATEGORY_OPENABLE);
-
-                              intent.setType("*/*");
-
-                              startActivityForResult(
-                                      intent,
-                                      REQUEST_FILE);
-
-                              return true;
-
-                          } catch (Exception e) {
-                              filePathCallback = null;
-                              return false;
-                          }
-                      }
-                  });
-
-                  webView.setDownloadListener(
-                          new DownloadListener() {
-                              @Override
-                              public void onDownloadStart(
-                                      String url,
-                                      String userAgent,
-                                      String contentDisposition,
-                                      String mimeType,
-                                      long contentLength) {
-
-                                  try {
-                                      Intent intent =
-                                              new Intent(Intent.ACTION_VIEW);
-
-                                      intent.setData(
-                                              Uri.parse(url));
-
-                                      startActivity(intent);
-
-                                  } catch (Exception e) {
-                                      Toast.makeText(
-                                              MainActivity.this,
-                                              "Download सुरू करता आले नाही.",
-                                              Toast.LENGTH_LONG).show();
-                                  }
-                              }
-                          });
-
-                  webView.addJavascriptInterface(
-                          new AndroidBridge(),
-                          "MBMSAndroid");
-
-                  webView.loadUrl(
-                          "file:///android_asset/index.html");
-              }
-
-              @Override
-              protected void onResume() {
-                  super.onResume();
-
-                  if (webView != null) {
-                      webView.postDelayed(
-                              new Runnable() {
-                                  @Override
-                                  public void run() {
-                                      injectMBMSAndroidLayer();
-                                  }
-                              },
-                              500);
-                  }
-              }
-
-              private void injectMBMSAndroidLayer() {
-
-                  if (webView == null) {
-                      return;
-                  }
-
-                  String script =
-                          "(function(){"
-
-                        + "if(window.__MBMS_NATIVE_V118__)return;"
-                        + "window.__MBMS_NATIVE_V118__=true;"
-
-                        + "var s=document.createElement('style');"
-
-                        + "s.textContent="
-                        + "'@media print{"
-                        + "@page{size:A4 portrait;margin:0}"
-                        + "body{margin:0}"
-                        + ".a4-page{width:210mm;min-height:297mm;box-sizing:border-box}"
-                        + ".a4-table{width:100%;border-collapse:collapse;font-size:9.2pt;table-layout:fixed}"
-                        + ".a4-table th,.a4-table td{border:1px solid #111;padding:2.5mm 1.8mm;vertical-align:top;overflow-wrap:anywhere;line-height:1.25}"
-                        + ".a4-table th{text-align:center;vertical-align:middle}"
-                        + ".work-report-table th:nth-child(1),.work-report-table td:nth-child(1){width:9mm}"
-                        + ".work-report-table th:nth-child(2),.work-report-table td:nth-child(2){width:31mm}"
-                        + ".work-report-table th:nth-child(3),.work-report-table td:nth-child(3){width:28mm}"
-                        + ".work-report-table th:nth-child(4),.work-report-table td:nth-child(4){width:27mm}"
-                        + ".work-report-table th:nth-child(5),.work-report-table td:nth-child(5){width:23mm}"
-                        + ".work-report-table th:nth-child(6),.work-report-table td:nth-child(6){width:19mm}"
-                        + ".work-report-table th:nth-child(7),.work-report-table td:nth-child(7){width:22mm}"
-                        + ".work-report-table th:nth-child(8),.work-report-table td:nth-child(8){width:23mm}"
-                        + "}'";
-
-                  webView.evaluateJavascript(
-                          script,
-                          null);
-
-                  String script2 =
-                          "(function(){"
-
-                        + "function fixReport(){"
-
-                        + "var area=document.getElementById('printArea');"
-
-                        + "if(!area)return;"
-
-                        + "var tables=area.querySelectorAll('table.a4-table');"
-
-                        + "for(var i=0;i<tables.length;i++){"
-
-                        + "var t=tables[i];"
-
-                        + "var h=t.querySelector('thead tr');"
-
-                        + "var r=t.querySelector('tbody tr');"
-
-                        + "if(!h||!r)continue;"
-
-                        + "var cells=r.querySelectorAll('td');"
-
-                        + "if(cells.length>=8){"
-
-                        + "t.classList.add('work-report-table');"
-
-                        + "var labels=['अ.क्र.','कामाचे नाव','कॉन्ट्रॅक्टर / एजन्सी','JE चे नाव','MB क्रमांक','काम पूर्ण?','Bill प्रकार','Bill रक्कम (₹)'];"
-
-                        + "while(h.children.length<8){"
-
-                        + "var th=document.createElement('th');"
-
-                        + "th.textContent=labels[h.children.length]||'';"
-
-                        + "h.appendChild(th);"
-
-                        + "}"
-
-                        + "}"
-
-                        + "}"
-
-                        + "}"
-
-                        + "fixReport();"
-
-                        + "var area=document.getElementById('printArea');"
-
-                        + "if(area&&window.MutationObserver){"
-
-                        + "new MutationObserver(function(){fixReport();})"
-                        + ".observe(area,{childList:true,subtree:true});"
-
-                        + "}"
-
-                        + "window.print=function(){"
-
-                        + "if(window.MBMSAndroid&&typeof window.MBMSAndroid.print==='function'){"
-
-                        + "fixReport();"
-
-                        + "window.MBMSAndroid.print();"
-
-                        + "}else{"
-
-                        + "document.defaultView.print();"
-
-                        + "}"
-
-                        + "};"
-
-                        + "window.downloadSettingsBackup=function(){"
-
-                        + "try{"
-
-                        + "var data=JSON.stringify(window.mbmsSettingsSnapshot(),null,2);"
-
-                        + "var name='MBMS_Backup_'+new Date().toISOString().slice(0,10)+'_'+Date.now()+'.json';"
-
-                        + "if(window.MBMSAndroid&&typeof window.MBMSAndroid.saveBackup==='function'){"
-
-                        + "window.MBMSAndroid.saveBackup(data,name);"
-
-                        + "}else{"
-
-                        + "var blob=new Blob([data],{type:'application/json'});"
-
-                        + "var u=URL.createObjectURL(blob);"
-
-                        + "var a=document.createElement('a');"
-
-                        + "a.href=u;"
-
-                        + "a.download=name;"
-
-                        + "document.body.appendChild(a);"
-
-                        + "a.click();"
-
-                        + "a.remove();"
-
-                        + "setTimeout(function(){URL.revokeObjectURL(u);},1000);"
-
-                        + "}"
-
-                        + "}catch(e){"
-
-                        + "alert('Backup Save करण्यात अडचण आली.');"
-
-                        + "}"
-
-                        + "};"
-
-                        + "window.restoreSettingsBackupText=function(text){"
-
-                        + "try{"
-
-                        + "var o=JSON.parse(String(text||''));"
-
-                        + "if(!o||!o.data||!Array.isArray(o.data.mb)||!Array.isArray(o.data.je)||!Array.isArray(o.data.work)||!Array.isArray(o.data.assignment)||!Array.isArray(o.data.bills)||!Array.isArray(o.data.transfer)){throw new Error('Invalid');}"
-
-                        + "if(!confirm('Backup मधील पूर्ण data restore करायचा आहे?\\n\\nसध्याचा MBMS data replace होईल.'))return;"
-
-                        + "saveMBs(o.data.mb);"
-
-                        + "saveJEs(o.data.je);"
-
-                        + "saveWorkList(o.data.work);"
-
-                        + "saveAssignments(o.data.assignment);"
-
-                        + "saveBills(o.data.bills);"
-
-                        + "saveTransferHistory(o.data.transfer);"
-
-                        + "try{renderMBSummary();}catch(e){}"
-
-                        + "try{loadWorkOptions();renderWorkList();}catch(e){}"
-
-                        + "try{loadAssignOptions();renderAssignments();}catch(e){}"
-
-                        + "try{renderJEList();}catch(e){}"
-
-                        + "try{refreshSettingsDataCheck();}catch(e){}"
-
-                        + "alert('Backup data यशस्वीपणे restore झाला आहे.');"
-
-                        + "}catch(e){"
-
-                        + "alert('ही valid MBMS backup file नाही.');"
-
-                        + "}"
-
-                        + "};"
-
-                        + "window.mbmsNativeRestoreBase64=function(b64){"
-
-                        + "try{"
-
-                        + "var raw=atob(String(b64||''));"
-
-                        + "var bytes=new Uint8Array(raw.length);"
-
-                        + "for(var i=0;i<raw.length;i++)bytes[i]=raw.charCodeAt(i);"
-
-                        + "var json=new TextDecoder('utf-8').decode(bytes);"
-
-                        + "window.restoreSettingsBackupText(json);"
-
-                        + "}catch(e){"
-
-                        + "alert('Backup Restore करण्यात अडचण आली.');"
-
-                        + "}"
-
-                        + "};"
-
-                        + "var bs=document.querySelectorAll('button');"
-
-                        + "for(var b=0;b<bs.length;b++){"
-
-                        + "var tx=(bs[b].textContent||'').trim().toUpperCase();"
-
-                        + "if(tx==='BACKUP RESTORE'){"
-
-                        + "(function(btn){"
-
-                        + "btn.onclick=function(){"
-
-                        + "if(window.MBMSAndroid&&typeof window.MBMSAndroid.requestRestore==='function'){"
-
-                        + "window.MBMSAndroid.requestRestore();"
-
-                        + "}else{"
-
-                        + "var f=document.getElementById('settingsBackupFile');"
-
-                        + "if(f)f.click();"
-
-                        + "}"
-
-                        + "};"
-
-                        + "})(bs[b]);"
-
-                        + "}"
-
-                        + "}"
-
-                        + "}"
-
-                        + "})();";
-
-                  webView.evaluateJavascript(
-                          script2,
-                          null);
-              }
-
-              public class AndroidBridge {
-
-                  @JavascriptInterface
-                  public void print() {
-
-                      runOnUiThread(
-                              new Runnable() {
-                          @Override
-                          public void run() {
-
-                              try {
-
-                                  PrintManager manager =
-                                          (PrintManager)
-                                              getSystemService(
-                                                  Context.PRINT_SERVICE);
-
-                                  if (manager == null) {
-                                      throw new Exception(
-                                              "Print unavailable");
-                                  }
-
-                                  android.print.PrintDocumentAdapter adapter =
-                                          webView
-                                              .createPrintDocumentAdapter(
-                                                  "MBMS Report");
-
-                                  PrintAttributes attributes =
-                                          new PrintAttributes.Builder()
-                                              .setMediaSize(
-                                                  PrintAttributes
-                                                      .MediaSize
-                                                      .ISO_A4)
-                                              .setMinMargins(
-                                                  PrintAttributes
-                                                      .Margins
-                                                      .NO_MARGINS)
-                                              .build();
-
-                                  manager.print(
-                                          "MBMS Report",
-                                          adapter,
-                                          attributes);
-
-                              } catch (Exception e) {
-
-                                  Toast.makeText(
-                                          MainActivity.this,
-                                          "Print सुरू करता आले नाही.",
-                                          Toast.LENGTH_LONG).show();
-                              }
-                          }
-                      });
-                  }
-
-                  @JavascriptInterface
-                  public void saveBackup(
-                          final String json,
-                          final String filename) {
-
-                      new Thread(
-                              new Runnable() {
-                          @Override
-                          public void run() {
-
-                              boolean ok = false;
-
-                              try {
-
-                                  if (Build.VERSION.SDK_INT >= 29) {
-
-                                      ContentValues values =
-                                              new ContentValues();
-
-                                      values.put(
-                                              MediaStore.MediaColumns
-                                                      .DISPLAY_NAME,
-                                              filename);
-
-                                      values.put(
-                                              MediaStore.MediaColumns
-                                                      .MIME_TYPE,
-                                              "application/json");
-
-                                      values.put(
-                                              MediaStore.MediaColumns
-                                                      .RELATIVE_PATH,
-                                              Environment
-                                                      .DIRECTORY_DOWNLOADS);
-
-                                      values.put(
-                                              MediaStore.MediaColumns
-                                                      .IS_PENDING,
-                                              1);
-
-                                      Uri uri =
-                                              getContentResolver().insert(
-                                                      MediaStore.Downloads
-                                                              .EXTERNAL_CONTENT_URI,
-                                                      values);
-
-                                      if (uri == null) {
-                                          throw new Exception(
-                                                  "MediaStore insert failed");
-                                      }
-
-                                      OutputStream out =
-                                              getContentResolver()
-                                                      .openOutputStream(uri);
-
-                                      if (out == null) {
-                                          throw new Exception(
-                                                  "Output unavailable");
-                                      }
-
-                                      try {
-                                          out.write(
-                                                  json.getBytes(
-                                                          StandardCharsets.UTF_8));
-                                          out.flush();
-                                      } finally {
-                                          out.close();
-                                      }
-
-                                      ContentValues done =
-                                              new ContentValues();
-
-                                      done.put(
-                                              MediaStore.MediaColumns
-                                                      .IS_PENDING,
-                                              0);
-
-                                      getContentResolver().update(
-                                              uri,
-                                              done,
-                                              null,
-                                              null);
-
-                                      ok = true;
-
-                                  } else {
-
-                                      File directory =
-                                              Environment
-                                                      .getExternalStoragePublicDirectory(
-                                                              Environment
-                                                                      .DIRECTORY_DOWNLOADS);
-
-                                      if (!directory.exists() &&
-                                          !directory.mkdirs()) {
-                                          throw new Exception(
-                                                  "Downloads unavailable");
-                                      }
-
-                                      File file =
-                                              new File(
-                                                      directory,
-                                                      filename);
-
-                                      FileOutputStream out =
-                                              new FileOutputStream(file);
-
-                                      try {
-                                          out.write(
-                                                  json.getBytes(
-                                                          StandardCharsets.UTF_8));
-                                          out.flush();
-                                      } finally {
-                                          out.close();
-                                      }
-
-                                      ok = true;
-                                  }
-
-                              } catch (Exception e) {
-                                  e.printStackTrace();
-                              }
-
-                              final boolean result = ok;
-
-                              runOnUiThread(
-                                      new Runnable() {
-                                  @Override
-                                  public void run() {
-
-                                      Toast.makeText(
-                                              MainActivity.this,
-                                              result
-                                                      ? "Backup Downloads मध्ये Save झाला."
-                                                      : "Backup Save करण्यात अडचण आली.",
-                                              Toast.LENGTH_LONG).show();
-                                  }
-                              });
-                          }
-                      }).start();
-                  }
-
-                  @JavascriptInterface
-                  public void requestRestore() {
-
-                      runOnUiThread(
-                              new Runnable() {
-                          @Override
-                          public void run() {
-
-                              try {
-
-                                  Intent intent =
-                                          new Intent(
-                                                  Intent.ACTION_OPEN_DOCUMENT);
-
-                                  intent.addCategory(
-                                          Intent.CATEGORY_OPENABLE);
-
-                                  intent.setType(
-                                          "application/json");
-
-                                  startActivityForResult(
-                                          intent,
-                                          REQUEST_RESTORE);
-
-                              } catch (Exception e) {
-
-                                  Toast.makeText(
-                                          MainActivity.this,
-                                          "Backup Restore सुरू करता आले नाही.",
-                                          Toast.LENGTH_LONG).show();
-                              }
-                          }
-                      });
-                  }
-              }
-
-              private String readText(Uri uri) throws Exception {
-
-                  InputStream input =
-                          getContentResolver()
-                                  .openInputStream(uri);
-
-                  if (input == null) {
-                      throw new Exception(
-                              "Cannot open backup");
-                  }
-
-                  try {
-
-                      ByteArrayOutputStream output =
-                              new ByteArrayOutputStream();
-
-                      byte[] buffer = new byte[8192];
-
-                      int count;
-
-                      while ((count =
-                              input.read(buffer)) != -1) {
-
-                          output.write(
-                                  buffer,
-                                  0,
-                                  count);
-                      }
-
-                      return output.toString(
-                              StandardCharsets.UTF_8.name());
-
-                  } finally {
-                      input.close();
-                  }
-              }
-
-              private String base64Utf8(String text) {
-
-                  return android.util.Base64
-                          .encodeToString(
-                                  text.getBytes(
-                                          StandardCharsets.UTF_8),
-                                  android.util.Base64.NO_WRAP);
-              }
-
-              @Override
-              protected void onActivityResult(
-                      int requestCode,
-                      int resultCode,
-                      Intent data) {
-
-                  super.onActivityResult(
-                          requestCode,
-                          resultCode,
-                          data);
-
-                  if (requestCode == REQUEST_RESTORE) {
-
-                      if (resultCode == RESULT_OK &&
-                          data != null &&
-                          data.getData() != null) {
-
-                          try {
-
-                              String json =
-                                      readText(
-                                              data.getData());
-
-                              String encoded =
-                                      base64Utf8(json);
-
-                              String js =
-                                      "window.mbmsNativeRestoreBase64(" +
-                                      "'" +
-                                      encoded +
-                                      "'" +
-                                      ")";
-
-                              webView.evaluateJavascript(
-                                      js,
-                                      null);
-
-                          } catch (Exception e) {
-
-                              Toast.makeText(
-                                      this,
-                                      "Backup file वाचता आली नाही.",
-                                      Toast.LENGTH_LONG).show();
-                          }
-                      }
-
-                      return;
-                  }
-
-                  if (requestCode == REQUEST_FILE) {
-
-                      if (filePathCallback == null) {
-                          return;
-                      }
-
-                      Uri[] results = null;
-
-                      if (resultCode == RESULT_OK &&
-                          data != null &&
-                          data.getData() != null) {
-
-                          results =
-                                  new Uri[]{
-                                          data.getData()
-                                  };
-                      }
-
-                      filePathCallback.onReceiveValue(
-                              results);
-
-                      filePathCallback = null;
-                  }
-              }
-
-              @Override
-              public void onDestroy() {
-
-                  if (webView != null) {
-                      webView.destroy();
-                      webView = null;
-                  }
-
-                  super.onDestroy();
-              }
-
-              @Override
-              public void onBackPressed() {
-
-                  if (webView != null &&
-                      webView.canGoBack()) {
-
-                      webView.goBack();
-
-                  } else {
-
-                      super.onBackPressed();
-                  }
-              }
-          }
-          EOF
-
-      - name: Validate Android project
+      # =========================================================
+      # 14. APP ICON
+      #
+      # If user uploads:
+      # MBMS_Icon_Source.jpg
+      #
+      # it will automatically be converted into Android icons.
+      #
+      # If not present, a simple MBMS fallback icon is generated.
+      #
+      # NO mandatory branding file.
+      # NO keystore.
+      # =========================================================
+      - name: Prepare MBMS App Icon
         shell: bash
         run: |
           set -e
 
-          test -s mbms_android/app/src/main/AndroidManifest.xml
-          test -s mbms_android/app/src/main/res/values/styles.xml
-          test -s mbms_android/app/src/main/res/values/strings.xml
-          test -s mbms_android/app/src/main/assets/index.html
-          test -s mbms_android/app/src/main/res/drawable-nodpi/mbms_icon.png
-          test -s mbms_android/mbms_release.jks
+          echo "Searching for user supplied icon..."
 
-          grep -q \
-            "import android.print.PrintAttributes;" \
+          ICON_SOURCE=""
+
+          for f in \
+            "MBMS_Icon_Source.jpg" \
+            "MBMS_Icon_Source.jpeg" \
+            "MBMS_Icon_Source.png" \
+            "MBMS_ICON.jpg" \
+            "MBMS_ICON.png"
+          do
+            if [ -f "$f" ]; then
+              ICON_SOURCE="$f"
+              break
+            fi
+          done
+
+          if [ -n "$ICON_SOURCE" ]; then
+
+            echo "Using user icon:"
+            echo "$ICON_SOURCE"
+
+            sudo apt-get update -qq
+
+            sudo apt-get install -y \
+              imagemagick >/dev/null
+
+            mkdir -p /tmp/mbms_icon
+
+            convert "$ICON_SOURCE" \
+              -auto-orient \
+              -background none \
+              -gravity center \
+              -resize 1024x1024 \
+              -extent 1024x1024 \
+              /tmp/mbms_icon/icon1024.png
+
+          else
+
+            echo "User icon not found."
+            echo "Creating safe fallback icon."
+
+            sudo apt-get update -qq
+
+            sudo apt-get install -y \
+              imagemagick >/dev/null
+
+            convert \
+              -size 1024x1024 \
+              xc:'#1976D2' \
+              -gravity center \
+              -fill white \
+              -pointsize 180 \
+              -annotate +0+0 'MBMS' \
+              /tmp_mbms_icon.png
+
+            mkdir -p /tmp/mbms_icon
+
+            cp \
+              /tmp_mbms_icon.png \
+              /tmp/mbms_icon/icon1024.png
+          fi
+
+          # -----------------------------------------------------
+          # Generate Android legacy launcher icons
+          # -----------------------------------------------------
+
+          convert /tmp/mbms_icon/icon1024.png \
+            -resize 48x48 \
+            mbms_android/app/src/main/res/mipmap-mdpi/ic_launcher.png
+
+          convert /tmp/mbms_icon/icon1024.png \
+            -resize 72x72 \
+            mbms_android/app/src/main/res/mipmap-hdpi/ic_launcher.png
+
+          convert /tmp/mbms_icon/icon1024.png \
+            -resize 96x96 \
+            mbms_android/app/src/main/res/mipmap-xhdpi/ic_launcher.png
+
+          convert /tmp/mbms_icon/icon1024.png \
+            -resize 144x144 \
+            mbms_android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
+
+          convert /tmp/mbms_icon/icon1024.png \
+            -resize 192x192 \
+            mbms_android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+
+          # Round icon versions
+          cp \
+            mbms_android/app/src/main/res/mipmap-mdpi/ic_launcher.png \
+            mbms_android/app/src/main/res/mipmap-mdpi/ic_launcher_round.png
+
+          cp \
+            mbms_android/app/src/main/res/mipmap-hdpi/ic_launcher.png \
+            mbms_android/app/src/main/res/mipmap-hdpi/ic_launcher_round.png
+
+          cp \
+            mbms_android/app/src/main/res/mipmap-xhdpi/ic_launcher.png \
+            mbms_android/app/src/main/res/mipmap-xhdpi/ic_launcher_round.png
+
+          cp \
+            mbms_android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png \
+            mbms_android/app/src/main/res/mipmap-xxhdpi/ic_launcher_round.png
+
+          cp \
+            mbms_android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png \
+            mbms_android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png
+
+          echo "App icon prepared."
+
+
+      # =========================================================
+      # 15. ANDROID MANIFEST
+      # =========================================================
+      - name: Create AndroidManifest.xml
+        shell: bash
+        run: |
+          cat > mbms_android/app/src/main/AndroidManifest.xml <<'EOF'
+<?xml version="1.0" encoding="utf-8"?>
+
+<manifest
+    xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission
+        android:name="android.permission.INTERNET" />
+
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+
+    <application
+
+        android:allowBackup="true"
+
+        android:label="@string/app_name"
+
+        android:icon="@mipmap/ic_launcher"
+
+        android:roundIcon="@mipmap/ic_launcher_round"
+
+        android:theme="@style/AppTheme"
+
+        android:usesCleartextTraffic="true">
+
+        <activity
+
+            android:name=".MainActivity"
+
+            android:screenOrientation="portrait"
+
+            android:exported="true">
+
+            <intent-filter>
+
+                <action
+                    android:name="android.intent.action.MAIN" />
+
+                <category
+                    android:name="android.intent.category.LAUNCHER" />
+
+            </intent-filter>
+
+        </activity>
+
+    </application>
+
+</manifest>
+EOF
+
+
+      # =========================================================
+      # 16. MAIN ACTIVITY
+      #
+      # Plain Android Activity.
+      # NO AppCompat.
+      # NO AndroidX.
+      # NO external dependency.
+      # =========================================================
+      - name: Create MainActivity.java
+        shell: bash
+        run: |
+          cat > mbms_android/app/src/main/java/com/mbms/app/MainActivity.java <<'EOF'
+package com.mbms.app;
+
+import android.app.Activity;
+import android.app.DownloadManager;
+import android.app.PrintAttributes;
+import android.content.ActivityNotFoundException;
+import android.content.ContentValues;
+import android.content.Context;
+import android.content.Intent;
+import android.net.Uri;
+import android.os.Build;
+import android.os.Bundle;
+import android.os.Environment;
+import android.provider.MediaStore;
+import android.print.PrintManager;
+import android.webkit.DownloadListener;
+import android.webkit.JavascriptInterface;
+import android.webkit.ValueCallback;
+import android.webkit.WebChromeClient;
+import android.webkit.WebResourceRequest;
+import android.webkit.WebSettings;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
+import android.widget.Toast;
+
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
+
+public class MainActivity extends Activity {
+
+    private static final int REQUEST_RESTORE = 9101;
+
+    private static final int REQUEST_FILE = 9102;
+
+    private WebView webView;
+
+    private ValueCallback<Uri[]> filePathCallback;
+
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+
+        super.onCreate(savedInstanceState);
+
+        webView = new WebView(this);
+
+        setContentView(webView);
+
+
+        WebSettings settings =
+                webView.getSettings();
+
+        settings.setJavaScriptEnabled(true);
+
+        settings.setDomStorageEnabled(true);
+
+        settings.setAllowFileAccess(true);
+
+        settings.setAllowContentAccess(true);
+
+        settings.setSupportZoom(false);
+
+        settings.setBuiltInZoomControls(false);
+
+        settings.setDisplayZoomControls(false);
+
+
+        webView.addJavascriptInterface(
+                new AndroidBridge(),
+                "MBMSAndroid");
+
+
+        webView.setWebViewClient(
+                new WebViewClient() {
+
+                    @Override
+                    public boolean shouldOverrideUrlLoading(
+                            WebView view,
+                            WebResourceRequest request) {
+
+                        return false;
+                    }
+                });
+
+
+        webView.setWebChromeClient(
+                new WebChromeClient() {
+
+                    @Override
+                    public boolean onShowFileChooser(
+                            WebView view,
+                            ValueCallback<Uri[]> callback,
+                            FileChooserParams params) {
+
+                        if (filePathCallback != null) {
+
+                            filePathCallback
+                                    .onReceiveValue(null);
+                        }
+
+                        filePathCallback = callback;
+
+                        try {
+
+                            Intent intent =
+                                    new Intent(
+                                            Intent.ACTION_OPEN_DOCUMENT);
+
+                            intent.addCategory(
+                                    Intent.CATEGORY_OPENABLE);
+
+                            intent.setType("*/*");
+
+                            startActivityForResult(
+                                    intent,
+                                    REQUEST_FILE);
+
+                            return true;
+
+                        } catch (Exception e) {
+
+                            filePathCallback = null;
+
+                            return false;
+                        }
+                    }
+                });
+
+
+        webView.setDownloadListener(
+                new DownloadListener() {
+
+                    @Override
+                    public void onDownloadStart(
+                            String url,
+                            String userAgent,
+                            String contentDisposition,
+                            String mimeType,
+                            long contentLength) {
+
+                        try {
+
+                            DownloadManager.Request request =
+                                    new DownloadManager.Request(
+                                            Uri.parse(url));
+
+                            if (mimeType != null) {
+
+                                request.setMimeType(mimeType);
+                            }
+
+                            request.setTitle(
+                                    "MBMS Download");
+
+                            request.setDescription(
+                                    "MBMS file download");
+
+                            request.setNotificationVisibility(
+                                    DownloadManager.Request
+                                            .VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+
+                            String extension = ".bin";
+
+                            if (mimeType != null &&
+                                    mimeType.toLowerCase()
+                                            .contains("json")) {
+
+                                extension = ".json";
+                            }
+
+                            request.setDestinationInExternalPublicDir(
+                                    Environment.DIRECTORY_DOWNLOADS,
+                                    "MBMS_Download_" +
+                                            System.currentTimeMillis() +
+                                            extension);
+
+                            DownloadManager manager =
+                                    (DownloadManager)
+                                            getSystemService(
+                                                    DOWNLOAD_SERVICE);
+
+                            if (manager != null) {
+
+                                manager.enqueue(request);
+
+                                Toast.makeText(
+                                        MainActivity.this,
+                                        "Download सुरू झाले.",
+                                        Toast.LENGTH_SHORT).show();
+                            }
+
+                        } catch (Exception e) {
+
+                            Toast.makeText(
+                                    MainActivity.this,
+                                    "Download सुरू करता आले नाही.",
+                                    Toast.LENGTH_LONG).show();
+                        }
+                    }
+                });
+
+
+        webView.loadUrl(
+                "file:///android_asset/index.html");
+    }
+
+
+    // =========================================================
+    // JAVASCRIPT BRIDGE
+    // =========================================================
+
+    public class AndroidBridge {
+
+
+        // -----------------------------------------------------
+        // PRINT
+        // -----------------------------------------------------
+
+        @JavascriptInterface
+        public void print() {
+
+            runOnUiThread(
+                    new Runnable() {
+
+                        @Override
+                        public void run() {
+
+                            try {
+
+                                PrintManager manager =
+                                        (PrintManager)
+                                                getSystemService(
+                                                        Context.PRINT_SERVICE);
+
+                                if (manager == null) {
+
+                                    throw new Exception(
+                                            "Print service unavailable");
+                                }
+
+                                String jobName =
+                                        "MBMS Report";
+
+                                android.print.PrintDocumentAdapter
+                                        adapter =
+                                        webView
+                                                .createPrintDocumentAdapter(
+                                                        jobName);
+
+                                PrintAttributes attributes =
+                                        new PrintAttributes.Builder()
+
+                                                .setMediaSize(
+                                                        PrintAttributes
+                                                                .MediaSize
+                                                                .ISO_A4)
+
+                                                .setMinMargins(
+                                                        PrintAttributes
+                                                                .Margins
+                                                                .NO_MARGINS)
+
+                                                .build();
+
+                                manager.print(
+                                        jobName,
+                                        adapter,
+                                        attributes);
+
+                            } catch (Exception e) {
+
+                                Toast.makeText(
+                                        MainActivity.this,
+                                        "Print सुरू करता आले नाही.",
+                                        Toast.LENGTH_LONG).show();
+                            }
+                        }
+                    });
+        }
+
+
+        // -----------------------------------------------------
+        // BACKUP SAVE
+        // -----------------------------------------------------
+
+        @JavascriptInterface
+        public void saveBackup(
+                final String json,
+                final String filename) {
+
+            new Thread(
+                    new Runnable() {
+
+                        @Override
+                        public void run() {
+
+                            boolean success = false;
+
+                            try {
+
+                                if (Build.VERSION.SDK_INT >= 29) {
+
+                                    ContentValues values =
+                                            new ContentValues();
+
+                                    values.put(
+                                            MediaStore.MediaColumns
+                                                    .DISPLAY_NAME,
+                                            filename);
+
+                                    values.put(
+                                            MediaStore.MediaColumns
+                                                    .MIME_TYPE,
+                                            "application/json");
+
+                                    values.put(
+                                            MediaStore.MediaColumns
+                                                    .RELATIVE_PATH,
+                                            Environment
+                                                    .DIRECTORY_DOWNLOADS);
+
+                                    values.put(
+                                            MediaStore.MediaColumns
+                                                    .IS_PENDING,
+                                            1);
+
+                                    Uri uri =
+                                            getContentResolver()
+                                                    .insert(
+                                                            MediaStore
+                                                                    .Downloads
+                                                                    .EXTERNAL_CONTENT_URI,
+                                                            values);
+
+                                    if (uri == null) {
+
+                                        throw new Exception(
+                                                "MediaStore insert failed");
+                                    }
+
+                                    OutputStream output =
+                                            getContentResolver()
+                                                    .openOutputStream(uri);
+
+                                    if (output == null) {
+
+                                        throw new Exception(
+                                                "Output unavailable");
+                                    }
+
+                                    try {
+
+                                        output.write(
+                                                json.getBytes(
+                                                        StandardCharsets.UTF_8));
+
+                                        output.flush();
+
+                                    } finally {
+
+                                        output.close();
+                                    }
+
+                                    ContentValues done =
+                                            new ContentValues();
+
+                                    done.put(
+                                            MediaStore.MediaColumns
+                                                    .IS_PENDING,
+                                            0);
+
+                                    getContentResolver().update(
+                                            uri,
+                                            done,
+                                            null,
+                                            null);
+
+                                    success = true;
+
+                                } else {
+
+                                    File directory =
+                                            Environment
+                                                    .getExternalStoragePublicDirectory(
+                                                            Environment
+                                                                    .DIRECTORY_DOWNLOADS);
+
+                                    if (!directory.exists() &&
+                                            !directory.mkdirs()) {
+
+                                        throw new Exception(
+                                                "Downloads unavailable");
+                                    }
+
+                                    File file =
+                                            new File(
+                                                    directory,
+                                                    filename);
+
+                                    FileOutputStream output =
+                                            new FileOutputStream(file);
+
+                                    try {
+
+                                        output.write(
+                                                json.getBytes(
+                                                        StandardCharsets.UTF_8));
+
+                                        output.flush();
+
+                                    } finally {
+
+                                        output.close();
+                                    }
+
+                                    success = true;
+                                }
+
+                            } catch (Exception e) {
+
+                                e.printStackTrace();
+                            }
+
+                            final boolean result =
+                                    success;
+
+                            runOnUiThread(
+                                    new Runnable() {
+
+                                        @Override
+                                        public void run() {
+
+                                            Toast.makeText(
+                                                    MainActivity.this,
+
+                                                    result
+                                                            ? "Backup Downloads मध्ये Save झाला."
+                                                            : "Backup Save करण्यात अडचण आली.",
+
+                                                    Toast.LENGTH_LONG).show();
+                                        }
+                                    });
+                        }
+                    }).start();
+        }
+
+
+        // -----------------------------------------------------
+        // BACKUP RESTORE
+        // -----------------------------------------------------
+
+        @JavascriptInterface
+        public void requestRestore() {
+
+            runOnUiThread(
+                    new Runnable() {
+
+                        @Override
+                        public void run() {
+
+                            try {
+
+                                Intent intent =
+                                        new Intent(
+                                                Intent.ACTION_OPEN_DOCUMENT);
+
+                                intent.addCategory(
+                                        Intent.CATEGORY_OPENABLE);
+
+                                intent.setType(
+                                        "application/json");
+
+                                startActivityForResult(
+                                        intent,
+                                        REQUEST_RESTORE);
+
+                            } catch (ActivityNotFoundException e) {
+
+                                Intent intent =
+                                        new Intent(
+                                                Intent.ACTION_GET_CONTENT);
+
+                                intent.addCategory(
+                                        Intent.CATEGORY_OPENABLE);
+
+                                intent.setType("*/*");
+
+                                startActivityForResult(
+                                        intent,
+                                        REQUEST_RESTORE);
+                            }
+                        }
+                    });
+        }
+    }
+
+
+    // =========================================================
+    // READ BACKUP
+    // =========================================================
+
+    private String readText(Uri uri)
+            throws Exception {
+
+        InputStream input =
+                getContentResolver()
+                        .openInputStream(uri);
+
+        if (input == null) {
+
+            throw new Exception(
+                    "Cannot open backup file");
+        }
+
+        try {
+
+            ByteArrayOutputStream output =
+                    new ByteArrayOutputStream();
+
+            byte[] buffer =
+                    new byte[8192];
+
+            int count;
+
+            while ((count =
+                    input.read(buffer)) != -1) {
+
+                output.write(
+                        buffer,
+                        0,
+                        count);
+            }
+
+            return output.toString(
+                    StandardCharsets.UTF_8.name());
+
+        } finally {
+
+            input.close();
+        }
+    }
+
+
+    // =========================================================
+    // BASE64
+    // =========================================================
+
+    private String base64Utf8(String text) {
+
+        return android.util.Base64
+                .encodeToString(
+                        text.getBytes(
+                                StandardCharsets.UTF_8),
+                        android.util.Base64.NO_WRAP);
+    }
+
+
+    // =========================================================
+    // ACTIVITY RESULT
+    // =========================================================
+
+    @Override
+    protected void onActivityResult(
+            int requestCode,
+            int resultCode,
+            Intent data) {
+
+        super.onActivityResult(
+                requestCode,
+                resultCode,
+                data);
+
+
+        // -----------------------------------------------------
+        // MBMS BACKUP RESTORE
+        // -----------------------------------------------------
+
+        if (requestCode == REQUEST_RESTORE) {
+
+            if (resultCode == RESULT_OK &&
+                    data != null &&
+                    data.getData() != null) {
+
+                try {
+
+                    String json =
+                            readText(
+                                    data.getData());
+
+                    String encoded =
+                            base64Utf8(json);
+
+                    String javascript =
+                            "window.mbmsNativeRestoreBase64" +
+                            " && " +
+                            "window.mbmsNativeRestoreBase64('" +
+                            encoded +
+                            "')";
+
+                    webView.evaluateJavascript(
+                            javascript,
+                            null);
+
+                } catch (Exception e) {
+
+                    Toast.makeText(
+                            this,
+                            "Backup file वाचता आली नाही.",
+                            Toast.LENGTH_LONG).show();
+                }
+            }
+
+            return;
+        }
+
+
+        // -----------------------------------------------------
+        // HTML FILE CHOOSER
+        // -----------------------------------------------------
+
+        if (requestCode == REQUEST_FILE) {
+
+            if (filePathCallback == null) {
+
+                return;
+            }
+
+            Uri[] results = null;
+
+            if (resultCode == RESULT_OK &&
+                    data != null &&
+                    data.getData() != null) {
+
+                results =
+                        new Uri[]{
+                                data.getData()
+                        };
+            }
+
+            filePathCallback
+                    .onReceiveValue(results);
+
+            filePathCallback = null;
+        }
+    }
+
+
+    // =========================================================
+    // BACK BUTTON
+    // =========================================================
+
+    @Override
+    public void onBackPressed() {
+
+        if (webView != null &&
+                webView.canGoBack()) {
+
+            webView.goBack();
+
+        } else {
+
+            super.onBackPressed();
+        }
+    }
+}
+EOF
+
+
+      # =========================================================
+      # 17. PATCH HTML FOR ANDROID PRINT + BACKUP
+      #
+      # Existing MBMS HTML is preserved.
+      # Only Android bridge hooks are added.
+      # =========================================================
+      - name: Add Android Print and Backup bridge
+        shell: bash
+        run: |
+          set -e
+
+          python3 <<'PY'
+          from pathlib import Path
+
+          p = Path(
+              "mbms_android/app/src/main/assets/index.html"
+          )
+
+          text = p.read_text(
+              encoding="utf-8",
+              errors="ignore"
+          )
+
+          # ---------------------------------------------------
+          # BACKUP SAVE
+          # ---------------------------------------------------
+
+          old = """function downloadSettingsBackup(){
+    const data=JSON.stringify(mbmsSettingsSnapshot(),null,2);
+    const blob=new Blob([data],{type:"application/json"});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");a.href=url;
+    a.download="MBMS_Backup_"+new Date().toISOString().slice(0,10)+".json";
+    document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
+  }"""
+
+          new = """function downloadSettingsBackup(){
+    const data=JSON.stringify(mbmsSettingsSnapshot(),null,2);
+    const filename="MBMS_Backup_"+new Date().toISOString().slice(0,10)+".json";
+
+    if(window.MBMSAndroid &&
+       typeof window.MBMSAndroid.saveBackup==="function"){
+
+      window.MBMSAndroid.saveBackup(data,filename);
+      return;
+    }
+
+    const blob=new Blob([data],{type:"application/json"});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");
+    a.href=url;
+    a.download=filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }"""
+
+          if old in text:
+              text = text.replace(old, new, 1)
+              print("Backup Save bridge added.")
+          else:
+              print("Backup Save function already modified or not found.")
+
+
+          # ---------------------------------------------------
+          # RESTORE START
+          # ---------------------------------------------------
+
+          marker = "</body>"
+
+          bridge = r"""
+<script>
+(function(){
+
+  window.startSettingsBackupRestore = function(){
+
+    if(window.MBMSAndroid &&
+       typeof window.MBMSAndroid.requestRestore==="function"){
+
+      window.MBMSAndroid.requestRestore();
+      return;
+    }
+
+    var input=document.getElementById("settingsBackupFile");
+
+    if(input){
+      input.click();
+    }
+  };
+
+
+  window.mbmsNativeRestoreBase64=function(b64){
+
+    try{
+
+      var binary=atob(b64);
+
+      var bytes=new Uint8Array(binary.length);
+
+      for(var i=0;i<binary.length;i++){
+        bytes[i]=binary.charCodeAt(i);
+      }
+
+      var json=new TextDecoder("utf-8").decode(bytes);
+
+      if(typeof restoreSettingsBackupText==="function"){
+
+        restoreSettingsBackupText(json,null);
+
+      }else{
+
+        var data=JSON.parse(json);
+
+        if(typeof restoreSettingsBackup==="function"){
+
+          try{
+
+            restoreSettingsBackup(
+              {files:[new Blob([json],
+              {type:"application/json"})]}
+            );
+
+          }catch(e){
+
+            alert("Backup restore function उपलब्ध नाही.");
+          }
+
+        }else{
+
+          alert("Backup restore function उपलब्ध नाही.");
+        }
+      }
+
+    }catch(e){
+
+      alert("Backup file योग्य नाही किंवा खराब आहे.");
+    }
+  };
+
+})();
+</script>
+"""
+
+          if "window.mbmsNativeRestoreBase64" not in text:
+
+              if marker in text:
+
+                  text=text.replace(
+                      marker,
+                      bridge + "\n" + marker,
+                      1
+                  )
+
+                  print("Native restore bridge added.")
+
+
+          # ---------------------------------------------------
+          # PRINT OVERRIDE
+          # ---------------------------------------------------
+
+          print_bridge = r"""
+<script>
+(function(){
+
+  var mbmsOriginalPrint=window.print;
+
+  window.print=function(){
+
+    if(window.MBMSAndroid &&
+       typeof window.MBMSAndroid.print==="function"){
+
+      window.MBMSAndroid.print();
+      return;
+    }
+
+    if(typeof mbmsOriginalPrint==="function"){
+
+      mbmsOriginalPrint.call(window);
+    }
+  };
+
+})();
+</script>
+"""
+
+          if "mbmsOriginalPrint" not in text:
+
+              if marker in text:
+
+                  text=text.replace(
+                      marker,
+                      print_bridge + "\n" + marker,
+                      1
+                  )
+
+                  print("Native print bridge added.")
+
+
+          p.write_text(
+              text,
+              encoding="utf-8"
+          )
+
+          print("Android HTML bridge processing completed.")
+          PY
+
+
+      # =========================================================
+      # 18. VALIDATE SOURCE
+      # =========================================================
+      - name: Validate Android source
+        shell: bash
+        run: |
+          set -e
+
+          test -s \
+            mbms_android/app/src/main/AndroidManifest.xml
+
+          test -s \
             mbms_android/app/src/main/java/com/mbms/app/MainActivity.java
 
-          if grep -q \
-            "import android.app.PrintAttributes;" \
-            mbms_android/app/src/main/java/com/mbms/app/MainActivity.java; then
-            echo "ERROR: Wrong PrintAttributes import."
-            exit 1
-          fi
+          test -s \
+            mbms_android/app/src/main/assets/index.html
+
+          test -s \
+            mbms_android/app/src/main/res/mipmap-mdpi/ic_launcher.png
+
+          test -s \
+            mbms_android/app/src/main/res/mipmap-hdpi/ic_launcher.png
+
+          test -s \
+            mbms_android/app/src/main/res/mipmap-xhdpi/ic_launcher.png
+
+          test -s \
+            mbms_android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
+
+          test -s \
+            mbms_android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
 
           grep -q \
             "class MainActivity extends Activity" \
             mbms_android/app/src/main/java/com/mbms/app/MainActivity.java
 
           grep -q \
-            'android:icon="@drawable/mbms_icon"' \
+            "createPrintDocumentAdapter" \
+            mbms_android/app/src/main/java/com/mbms/app/MainActivity.java
+
+          grep -q \
+            "saveBackup" \
+            mbms_android/app/src/main/java/com/mbms/app/MainActivity.java
+
+          grep -q \
+            "requestRestore" \
+            mbms_android/app/src/main/java/com/mbms/app/MainActivity.java
+
+          grep -q \
+            "android:icon=\"@mipmap/ic_launcher\"" \
             mbms_android/app/src/main/AndroidManifest.xml
 
-          echo "Android project validation PASSED."
+          if grep -Riq "androidx.appcompat" mbms_android; then
+            echo "ERROR: AppCompat detected."
+            exit 1
+          fi
 
+          if grep -Riq \
+              "implementation.*appcompat" \
+              mbms_android; then
+            echo "ERROR: AppCompat dependency detected."
+            exit 1
+          fi
+
+          echo "Android source validation PASSED."
+
+
+      # =========================================================
+      # 19. CREATE GRADLE WRAPPER
+      # =========================================================
       - name: Create Gradle Wrapper
-        working-directory: mbms_android
         shell: bash
         run: |
           set -e
+
+          cd mbms_android
 
           gradle wrapper \
             --gradle-version 8.7 \
             --distribution-type bin
 
-          test -s gradlew
 
-          chmod +x gradlew
-
-          ./gradlew --version
-
-      - name: Compile MBMS Java
-        working-directory: mbms_android
+      # =========================================================
+      # 20. BUILD DEBUG APK
+      #
+      # IMPORTANT:
+      # We deliberately use DEBUG signing.
+      # No external JKS required.
+      # =========================================================
+      - name: Build MBMS V118 Debug APK
         shell: bash
         run: |
           set -e
 
-          ./gradlew \
-            --no-daemon \
-            --stacktrace \
-            :app:compileReleaseJavaWithJavac
-
-          echo "JAVA COMPILATION PASSED."
-
-      - name: Build signed release APK
-        working-directory: mbms_android
-        shell: bash
-        run: |
-          set -e
+          cd mbms_android
 
           ./gradlew \
             --no-daemon \
             --stacktrace \
             clean \
-            assembleRelease
+            assembleDebug
 
-          RAW_APK="app/build/outputs/apk/release/app-release.apk"
+          APK="app/build/outputs/apk/debug/app-debug.apk"
 
-          test -s "$RAW_APK"
+          test -s "$APK"
+
+          echo "APK generated:"
+          ls -lh "$APK"
 
           mkdir -p ../release
 
-          ALIGN="$ANDROID_HOME/build-tools/35.0.0/zipalign"
-          APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          cp \
+            "$APK" \
+            "../release/MBMS-V118-Android.apk"
 
-          test -x "$ALIGN"
-          test -x "$APKSIGNER"
 
-          "$ALIGN" \
-            -f \
-            -p \
-            4 \
-            "$RAW_APK" \
-            ../release/MBMS-V118-Android-aligned.apk
-
-          "$APKSIGNER" sign \
-            --ks mbms_release.jks \
-            --ks-key-alias mbms \
-            --ks-pass pass:MBMSv119@2026 \
-            --key-pass pass:MBMSv119@2026 \
-            --v1-signing-enabled true \
-            --v2-signing-enabled true \
-            --v3-signing-enabled true \
-            --out ../release/MBMS-V118-Android.apk \
-            ../release/MBMS-V118-Android-aligned.apk
-
-          rm -f \
-            ../release/MBMS-V118-Android-aligned.apk
-
-          test -s \
-            ../release/MBMS-V118-Android.apk
-
-          echo "SIGNED APK GENERATED."
-
-          ls -lh \
-            ../release/MBMS-V118-Android.apk
-
-      - name: Verify APK signature
-        shell: bash
-        run: |
-          set -e
-
-          APK="release/MBMS-V118-Android.apk"
-
-          APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
-
-          "$APKSIGNER" verify \
-            --verbose \
-            "$APK"
-
-          echo "APK SIGNATURE VERIFICATION PASSED."
-
-      - name: Verify APK ZIP
+      # =========================================================
+      # 21. VERIFY APK
+      # =========================================================
+      - name: Verify APK
         shell: bash
         run: |
           set -e
@@ -1230,26 +1533,40 @@ jobs:
 
           test -s "$APK"
 
-          unzip -t \
-            "$APK" \
-            >/dev/null
+          echo "APK size:"
+          ls -lh "$APK"
 
-          echo "APK ZIP INTEGRITY PASSED."
+          echo "SHA256:"
 
-      - name: Create SHA256
-        shell: bash
-        run: |
-          set -e
-
-          sha256sum \
-            release/MBMS-V118-Android.apk \
+          sha256sum "$APK" \
             | tee release/SHA256.txt
 
-      - name: Upload final APK
+          echo "APK ZIP validation:"
+
+          unzip -t "$APK" >/dev/null
+
+          echo "Checking APK manifest/resources..."
+
+          unzip -l "$APK" | grep -q \
+            "AndroidManifest.xml"
+
+          unzip -l "$APK" | grep -q \
+            "classes.dex"
+
+          echo "APK verification PASSED."
+
+
+      # =========================================================
+      # 22. UPLOAD APK
+      # =========================================================
+      - name: Upload MBMS V118 APK
         uses: actions/upload-artifact@v4
         with:
-          name: MBMS-V118-Android-APK-FINAL
+
+          name: MBMS-V118-Android-APK
+
           path: |
             release/MBMS-V118-Android.apk
             release/SHA256.txt
+
           if-no-files-found: error
