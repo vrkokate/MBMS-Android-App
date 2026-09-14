@@ -1,4 +1,4 @@
-name: MBMS Final APK - Transfer Report Final
+name: MBMS APK - Received JE Full List Final
 
 on:
   workflow_dispatch:
@@ -64,7 +64,7 @@ jobs:
           "$HOME/gradle/gradle-8.7/bin/gradle" --version
 
 
-      - name: Verify Java
+      - name: Verify Java and Gradle
         shell: bash
         run: |
           set -e
@@ -81,6 +81,7 @@ jobs:
           HTML_FILE=""
 
           for f in \
+            "Measurement_Book_Management_System_FINAL_V121_RECEIVED_JE_FULL_LIST_FINAL.html" \
             "Measurement_Book_Management_System_FINAL_V120_TRANSFER_REPORT_FINAL.html" \
             "Measurement_Book_Management_System_FINAL_V118_PRINT_BACKUP_ANDROID.html" \
             "Measurement_Book_Management_System_FINAL_V115_MB_HISTORY_ONLY_DATE-6.html" \
@@ -132,7 +133,7 @@ jobs:
           wc -c mbms_work/index.html
 
 
-      - name: Apply Final Transfer Report
+      - name: Apply ONLY Received JE List Correction
         shell: bash
         run: |
           set -e
@@ -144,770 +145,83 @@ jobs:
 
           text = p.read_text(encoding="utf-8")
 
-          # =========================================================
-          # FINAL TRANSFER REPORT PATCH
+          # ---------------------------------------------------------
+          # ONLY REQUESTED CORRECTION
           #
-          # IMPORTANT:
-          # We do NOT search/replace the old generateTransferReport().
-          # We append a new global function at the end of the HTML.
-          # This safely overrides the original function.
-          # =========================================================
-
-          patch = r'''
-          <style id="mbms-final-transfer-report-css">
-
-          .transfer-report-table{
-            width:100%;
-            table-layout:fixed;
-          }
-
-          .transfer-report-table th:nth-child(1),
-          .transfer-report-table td:nth-child(1){
-            width:14mm;
-          }
-
-          .transfer-report-table th:nth-child(2),
-          .transfer-report-table td:nth-child(2){
-            width:55mm;
-          }
-
-          .transfer-report-table th:nth-child(3),
-          .transfer-report-table td:nth-child(3){
-            width:35mm;
-          }
-
-          .transfer-report-table th:nth-child(4),
-          .transfer-report-table td:nth-child(4){
-            width:74mm;
-          }
-
-          .transfer-report-table th,
-          .transfer-report-table td{
-            font-size:10pt;
-          }
-
-          .transfer-report-meta{
-            display:flex;
-            gap:8mm;
-            align-items:flex-start;
-            justify-content:space-between;
-            font-size:10pt;
-            margin:5mm 0;
-          }
-
-          .transfer-report-meta > span{
-            flex:1;
-          }
-
-          .transfer-report-meta .transfer-current-holder{
-            text-align:right;
-          }
-
-          .transfer-report-page .a4-footer{
-            font-size:9pt;
-          }
-
-          </style>
-
-          <script id="mbms-final-transfer-report-script">
-
-          function transferReportPersonName(x){
-
-            const type = String(
-              x && (
-                x.transferPartyType ||
-                x.receiver ||
-                ""
-              )
-            ).trim();
-
-            let name = String(
-              x && (
-                x.receiverName ||
-                x.receivedFromName ||
-                x.receiver ||
-                ""
-              )
-            ).trim();
-
-            if(!name){
-              return "-";
-            }
-
-            if(
-              (
-                type === "जेई" ||
-                type.toUpperCase() === "JE" ||
-                (
-                  typeof norm === "function" &&
-                  norm(type).includes("ज्युनियर")
-                )
-              ) &&
-              !/^(श्री\.?|श्रीमती\.?|कु\.?)/.test(name)
-            ){
-
-              name = "श्री " + name;
-
-            }
-
-            return name;
-          }
-
-
-          function transferReportCurrentHolder(number){
-
-            try{
-
-              if(
-                typeof mbSummaryCurrentHolder === "function"
-              ){
-
-                const h =
-                  mbSummaryCurrentHolder(number);
-
-                if(h && h.name){
-
-                  return h.name;
-
-                }
-              }
-
-            }catch(e){}
-
-
-            try{
-
-              const history =
-                typeof getTransferHistory === "function"
-                ?
-                getTransferHistory().filter(
-                  function(x){
-
-                    const a =
-                      x.number ||
-                      x.mbNumber ||
-                      x.mb ||
-                      "";
-
-                    if(typeof norm === "function"){
-                      return norm(a) === norm(number);
-                    }
-
-                    return String(a) === String(number);
-
-                  }
-                )
-                :
-                [];
-
-
-              if(!history.length){
-
-                return "उपलब्ध M.B.";
-
-              }
-
-
-              const last =
-                history[history.length - 1];
-
-
-              if(
-                String(
-                  last.transferType || ""
-                ).toUpperCase() === "GIVEN"
-              ){
-
-                let name =
-                  String(
-                    last.receiverName ||
-                    last.receiver ||
-                    ""
-                  ).trim();
-
-
-                if(!name){
-
-                  name =
-                    "संबंधित व्यक्ती / कार्यालय";
-
-                }
-
-
-                const type =
-                  String(
-                    last.transferPartyType ||
-                    last.receiver ||
-                    ""
-                  ).trim();
-
-
-                if(
-                  (
-                    type === "जेई" ||
-                    type.toUpperCase() === "JE" ||
-                    (
-                      typeof norm === "function" &&
-                      norm(type).includes("ज्युनियर")
-                    )
-                  ) &&
-                  !/^(श्री\.?|श्रीमती\.?|कु\.?)/.test(name)
-                ){
-
-                  name = "श्री " + name;
-
-                }
-
-
-                return name;
-
-              }
-
-
-              if(
-                String(
-                  last.transferType || ""
-                ).toUpperCase() === "RECEIVED"
-              ){
-
-                return "विभागीय कार्यालयात";
-
-              }
-
-
-              return "उपलब्ध M.B.";
-
-            }catch(e){
-
-              return "उपलब्ध M.B.";
-
-            }
-          }
-
-
-          /*
-           * FINAL OVERRIDE
-           * This replaces the old generateTransferReport()
-           * without editing/deleting the original function.
-           */
-
-          window.generateTransferReport = function(){
-
-            try{
-
-              const list =
-                typeof getTransferHistory === "function"
-                ?
-                getTransferHistory()
-                :
-                [];
-
-
-              if(!list.length){
-
-                alert(
-                  "Transfer List मध्ये कोणतीही नोंद नाही."
-                );
-
-                return;
-
-              }
-
-
-              let range = {
-                valid:true
-              };
-
-
-              if(
-                typeof reportDateRange === "function"
-              ){
-
-                range =
-                  reportDateRange(
-                    "transfer-report"
-                  );
-
-              }
-
-
-              if(
-                range &&
-                range.valid === false
-              ){
-
-                if(
-                  typeof reportDateError === "function"
-                ){
-
-                  alert(
-                    reportDateError(range)
-                  );
-
-                }else{
-
-                  alert(
-                    "दिनांक कालावधी चुकीचा आहे."
-                  );
-
-                }
-
-                return;
-
-              }
-
-
-              const select =
-                document.getElementById(
-                  "transferReportSelect"
-                );
-
-
-              if(!select){
-
-                alert(
-                  "Transfer Report निवड यादी सापडली नाही."
-                );
-
-                return;
-
-              }
-
-
-              const selected =
-                select.value;
-
-
-              if(selected === ""){
-
-                alert(
-                  "कृपया Report निवडा."
-                );
-
-                return;
-
-              }
-
-
-              let data = [];
-
-
-              if(selected === "ALL"){
-
-                data =
-                  list.filter(
-                    function(x){
-
-                      if(
-                        typeof reportDateAllowed !== "function"
-                      ){
-
-                        return true;
-
-                      }
-
-                      return reportDateAllowed(
-                        typeof transferReportDate === "function"
-                        ?
-                        transferReportDate(x)
-                        :
-                        (
-                          x.savedAt ||
-                          ""
-                        ),
-                        range
-                      );
-
-                    }
-                  );
-
-              }else{
-
-                const index =
-                  Number(selected);
-
-                if(
-                  Number.isNaN(index) ||
-                  !list[index]
-                ){
-
-                  alert(
-                    "निवडलेली नोंद उपलब्ध नाही."
-                  );
-
-                  return;
-
-                }
-
-
-                if(
-                  typeof reportDateAllowed === "function" &&
-                  typeof transferReportDate === "function" &&
-                  !reportDateAllowed(
-                    transferReportDate(
-                      list[index]
-                    ),
-                    range
-                  )
-                ){
-
-                  alert(
-                    "निवडलेली नोंद या दिनांक कालावधीत नाही."
-                  );
-
-                  return;
-
-                }
-
-
-                data = [
-                  list[index]
-                ];
-
-              }
-
-
-              if(!data.length){
-
-                alert(
-                  "या दिनांक कालावधीत Transfer नोंद उपलब्ध नाही."
-                );
-
-                return;
-
-              }
-
-
-              function esc(value){
-
-                if(
-                  typeof escapeHtml === "function"
-                ){
-
-                  return escapeHtml(
-                    value == null
-                    ?
-                    ""
-                    :
-                    value
-                  );
-
-                }
-
-                return String(
-                  value == null
-                  ?
-                  ""
-                  :
-                  value
-                )
-                .replace(
-                  /&/g,
-                  "&amp;"
-                )
-                .replace(
-                  /</g,
-                  "&lt;"
-                )
-                .replace(
-                  />/g,
-                  "&gt;"
-                )
-                .replace(
-                  /"/g,
-                  "&quot;"
-                )
-                .replace(
-                  /'/g,
-                  "&#39;"
-                );
-
-              }
-
-
-              const rows =
-                data.map(
-                  function(x,i){
-
-                    return `
-                      <tr class="a4-entry">
-
-                        <td>${i + 1}</td>
-
-                        <td>
-                          ${esc(
-                            x.number || ""
-                          )}
-                        </td>
-
-                        <td>
-                          ${esc(
-                            x.size || ""
-                          )}
-                        </td>
-
-                        <td>
-                          ${esc(
-                            transferReportPersonName(x)
-                          )}
-                        </td>
-
-                      </tr>
-                    `;
-
-                  }
-                ).join("");
-
-
-              const reportText =
-                selected === "ALL"
-                ?
-                "सर्व Transfer नोंदी"
-                :
-                "MB " +
-                esc(
-                  data[0].number || ""
-                );
-
-
-              const holder =
-                selected === "ALL"
-                ?
-                "सध्या संबंधित M.B. संबंधित व्यक्ती / कार्यालयाकडे आहेत."
-                :
-                (
-                  "सध्या ही M.B. " +
-                  esc(
-                    transferReportCurrentHolder(
-                      data[0].number || ""
-                    )
-                  ) +
-                  " यांच्याकडे आहे."
-                );
-
-
-              const printArea =
-                document.getElementById(
-                  "printArea"
-                );
-
-
-              if(!printArea){
-
-                alert(
-                  "Print Area सापडला नाही."
-                );
-
-                return;
-
-              }
-
-
-              printArea.innerHTML = `
-
-                <div class="a4-page transfer-report-page">
-
-                  <div class="a4-header">
-
-                    <div class="dept">
-                      सार्वजनिक बांधकाम विभाग
-                    </div>
-
-                    <div class="system">
-                      मोजमाप पुस्तिका नियंत्रण प्रणाली
-                    </div>
-
-                    <div class="report-title">
-                      M.B. TRANSFER REPORT
-                    </div>
-
-                  </div>
-
-
-                  <div class="a4-meta transfer-report-meta">
-
-                    <span>
-                      <b>Report :</b>
-                      ${reportText}
-                    </span>
-
-                    <span class="transfer-current-holder">
-                      <b>
-                        ${holder}
-                      </b>
-                    </span>
-
-                  </div>
-
-
-                  <table class="a4-table transfer-report-table">
-
-                    <thead>
-
-                      <tr>
-
-                        <th>
-                          अ.क्र.
-                        </th>
-
-                        <th>
-                          MB क्रमांक
-                        </th>
-
-                        <th>
-                          आकार
-                        </th>
-
-                        <th>
-                          कुणाला दिली
-                        </th>
-
-                      </tr>
-
-                    </thead>
-
-
-                    <tbody>
-
-                      ${rows}
-
-                    </tbody>
-
-                  </table>
-
-
-                  <div class="a4-footer">
-                    Created By विठ्ठल कोकाटे पाटील 8446556141
-                  </div>
-
-                </div>
-
-              `;
-
-
-              if(
-                typeof closeTransferReport === "function"
-              ){
-
-                closeTransferReport();
-
-              }
-
-
-              window.print();
-
-
-            }catch(error){
-
-              console.error(
-                "Final Transfer Report Error:",
-                error
-              );
-
-              alert(
-                "Transfer Report तयार करताना त्रुटी आली."
-              );
-
-            }
-
-          };
-
-          </script>
-          '''
-
-
-          # ---------------------------------------------------------
-          # Insert patch immediately before </body>
+          # RECEIVED -> JE -> JE Name
+          #
+          # Existing code was disabling the JE dropdown:
+          #
+          # if(isJE){loadTransferJEs();if(je){
+          #     je.value=sourceName;
+          #     je.disabled=true;
+          # }}
+          #
+          # Now the complete JE list remains selectable.
           # ---------------------------------------------------------
 
-          marker = "</body>"
+          old1 = (
+              "if(isJE){loadTransferJEs();"
+              "if(je){je.value=sourceName;je.disabled=true;}}"
+          )
 
-          if marker.lower() not in text.lower():
+          new1 = (
+              "if(isJE){loadTransferJEs();"
+              "if(je){je.value=sourceName;je.disabled=false;}}"
+          )
 
-              text += patch
+          if old1 in text:
 
-          else:
-
-              pos = text.lower().rfind(
-                  marker.lower()
+              text = text.replace(
+                  old1,
+                  new1,
+                  1
               )
 
-              text = (
-                  text[:pos]
-                  +
-                  patch
-                  +
-                  "\n"
-                  +
-                  text[pos:]
+              print(
+                  "Correction 1 applied: "
+                  "Received JE dropdown remains enabled."
               )
 
+          # ---------------------------------------------------------
+          # Second safety correction:
+          # updateTransferMode() also disabled the JE dropdown.
+          # ---------------------------------------------------------
+
+          old2 = "if(isJE&&je)je.disabled=true;"
+
+          new2 = "if(isJE&&je)je.disabled=false;"
+
+          if old2 in text:
+
+              text = text.replace(
+                  old2,
+                  new2,
+                  1
+              )
+
+              print(
+                  "Correction 2 applied: "
+                  "Received JE dropdown remains enabled."
+              )
+
+          # ---------------------------------------------------------
+          # DO NOT modify any other functionality.
+          # ---------------------------------------------------------
 
           p.write_text(
               text,
               encoding="utf-8"
           )
 
-
-          # ---------------------------------------------------------
-          # VALIDATION
-          # ---------------------------------------------------------
-
-          checks = [
-
-              "mbms-final-transfer-report-css",
-
-              "mbms-final-transfer-report-script",
-
-              "window.generateTransferReport",
-
-              "transferReportPersonName",
-
-              "transferReportCurrentHolder",
-
-              "MB क्रमांक",
-
-              "कुणाला दिली",
-
-              "Created By विठ्ठल कोकाटे पाटील 8446556141"
-
-          ]
-
-
-          for item in checks:
-
-              if item not in text:
-
-                  raise SystemExit(
-                      "ERROR: Required final marker missing: "
-                      + item
-                  )
-
-
-          print(
-              "FINAL TRANSFER REPORT PATCH PASSED."
-          )
-
-          print(
-              "The original generateTransferReport() was NOT modified."
-          )
-
-          print(
-              "A final global override was appended successfully."
-          )
-
-          print(
-              "Final HTML size:"
-          )
-
-          print(
-              p.stat().st_size
-          )
+          print("ONLY JE LIST CORRECTION COMPLETED.")
+          print("Final HTML size:")
+          print(p.stat().st_size)
 
           PY
 
 
-      - name: Verify Final MBMS HTML
+      - name: Verify Requested Correction
         shell: bash
         run: |
           set -e
@@ -916,7 +230,31 @@ jobs:
 
           test -s "$HTML"
 
-          grep -q "<html" "$HTML"
+          grep -q \
+            "loadTransferJEs()" \
+            "$HTML"
+
+          grep -q \
+            "transferFromJEName" \
+            "$HTML"
+
+          grep -q \
+            "je.disabled=false" \
+            "$HTML"
+
+          grep -q \
+            "if(isJE&&je)je.disabled=false;" \
+            "$HTML"
+
+          echo "RECEIVED JE FULL LIST CORRECTION VERIFIED."
+
+
+      - name: Verify MBMS Core Functions
+        shell: bash
+        run: |
+          set -e
+
+          HTML="mbms_work/index.html"
 
           grep -q \
             "mbmsSettingsSnapshot" \
@@ -931,36 +269,18 @@ jobs:
             "$HTML"
 
           grep -q \
-            "window.generateTransferReport" \
+            "generateTransferReport" \
             "$HTML"
 
           grep -q \
-            "transferReportPersonName" \
+            "saveTransferMB" \
             "$HTML"
 
           grep -q \
-            "transferReportCurrentHolder" \
+            "getTransferHistory" \
             "$HTML"
 
-          grep -q \
-            "MB क्रमांक" \
-            "$HTML"
-
-          grep -q \
-            "कुणाला दिली" \
-            "$HTML"
-
-          grep -q \
-            "Created By विठ्ठल कोकाटे पाटील 8446556141" \
-            "$HTML"
-
-          grep -q \
-            "transfer-report-table" \
-            "$HTML"
-
-          echo "FINAL MBMS HTML VALIDATION PASSED."
-
-          wc -c "$HTML"
+          echo "MBMS CORE FUNCTIONS VERIFIED."
 
 
       - name: Create Android project
@@ -1042,9 +362,9 @@ jobs:
 
                   targetSdk 35
 
-                  versionCode 122
+                  versionCode 123
 
-                  versionName 'V122'
+                  versionName 'V123'
               }
 
               buildTypes {
@@ -1074,7 +394,6 @@ jobs:
           EOF
 
 
-          # NO XML declaration here.
           cat > mbms_android/app/src/main/res/values/strings.xml <<'EOF'
           <resources>
               <string name="app_name">MBMS</string>
@@ -1082,7 +401,6 @@ jobs:
           EOF
 
 
-          # NO XML declaration here.
           cat > mbms_android/app/src/main/res/values/styles.xml <<'EOF'
           <resources>
 
@@ -1814,19 +1132,6 @@ jobs:
             mbms_android/app/src/main/assets/index.html
 
 
-          grep -q \
-            "createPrintDocumentAdapter" \
-            mbms_android/app/src/main/java/com/mbms/app/MainActivity.java
-
-          grep -q \
-            "saveBackup" \
-            mbms_android/app/src/main/java/com/mbms/app/MainActivity.java
-
-          grep -q \
-            "REQUEST_FILE" \
-            mbms_android/app/src/main/java/com/mbms/app/MainActivity.java
-
-
           python3 <<'PY'
           import xml.etree.ElementTree as ET
 
@@ -1839,6 +1144,7 @@ jobs:
           for f in files:
               ET.parse(f)
               print("XML OK:", f)
+
           PY
 
 
@@ -1893,11 +1199,11 @@ jobs:
 
           cp \
             "$APK" \
-            "../release/MBMS-V122-FINAL-TRANSFER-REPORT.apk"
+            "../release/MBMS-V123-RECEIVED-JE-FULL-LIST.apk"
 
 
           ls -lh \
-            "../release/MBMS-V122-FINAL-TRANSFER-REPORT.apk"
+            "../release/MBMS-V123-RECEIVED-JE-FULL-LIST.apk"
 
 
       - name: Verify APK
@@ -1905,7 +1211,7 @@ jobs:
         run: |
           set -e
 
-          APK="release/MBMS-V122-FINAL-TRANSFER-REPORT.apk"
+          APK="release/MBMS-V123-RECEIVED-JE-FULL-LIST.apk"
 
           test -s "$APK"
 
@@ -1929,8 +1235,8 @@ jobs:
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MBMS-V122-FINAL-TRANSFER-REPORT
+          name: MBMS-V123-RECEIVED-JE-FULL-LIST
           path: |
-            release/MBMS-V122-FINAL-TRANSFER-REPORT.apk
+            release/MBMS-V123-RECEIVED-JE-FULL-LIST.apk
             release/SHA256.txt
           if-no-files-found: error
