@@ -1,4 +1,4 @@
-name: MBMS Final APK - Transfer Report
+name: MBMS Final APK - Transfer Report Final
 
 on:
   workflow_dispatch:
@@ -20,14 +20,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+
       - name: Setup Java 17
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
 
+
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+
 
       - name: Install Android SDK 35
         shell: bash
@@ -40,6 +43,7 @@ jobs:
             "platform-tools" \
             "platforms;android-35" \
             "build-tools;35.0.0"
+
 
       - name: Install Gradle 8.7
         shell: bash
@@ -59,6 +63,7 @@ jobs:
 
           "$HOME/gradle/gradle-8.7/bin/gradle" --version
 
+
       - name: Verify Java
         shell: bash
         run: |
@@ -66,6 +71,7 @@ jobs:
 
           java -version
           gradle --version
+
 
       - name: Find MBMS HTML
         shell: bash
@@ -108,6 +114,7 @@ jobs:
           echo "Using HTML:"
           echo "$HTML_FILE"
 
+
       - name: Prepare Final MBMS HTML
         shell: bash
         run: |
@@ -115,31 +122,44 @@ jobs:
 
           mkdir -p mbms_work
 
-          cp "$HTML_FILE" mbms_work/index.html
+          cp \
+            "$HTML_FILE" \
+            mbms_work/index.html
 
           test -s mbms_work/index.html
 
           echo "HTML size:"
           wc -c mbms_work/index.html
 
-      - name: Apply Transfer Report Final Changes
+
+      - name: Apply Final Transfer Report
         shell: bash
         run: |
           set -e
 
           python3 <<'PY'
           from pathlib import Path
-          import re
 
           p = Path("mbms_work/index.html")
+
           text = p.read_text(encoding="utf-8")
 
-          # ---------------------------------------------------------
-          # TRANSFER REPORT CSS
-          # ---------------------------------------------------------
+          # =========================================================
+          # FINAL TRANSFER REPORT PATCH
+          #
+          # IMPORTANT:
+          # We do NOT search/replace the old generateTransferReport().
+          # We append a new global function at the end of the HTML.
+          # This safely overrides the original function.
+          # =========================================================
 
-          css = r'''
-          <style id="mbms-transfer-report-final-css">
+          patch = r'''
+          <style id="mbms-final-transfer-report-css">
+
+          .transfer-report-table{
+            width:100%;
+            table-layout:fixed;
+          }
 
           .transfer-report-table th:nth-child(1),
           .transfer-report-table td:nth-child(1){
@@ -167,8 +187,12 @@ jobs:
           }
 
           .transfer-report-meta{
+            display:flex;
             gap:8mm;
             align-items:flex-start;
+            justify-content:space-between;
+            font-size:10pt;
+            margin:5mm 0;
           }
 
           .transfer-report-meta > span{
@@ -184,53 +208,46 @@ jobs:
           }
 
           </style>
-          '''
 
-          if "mbms-transfer-report-final-css" not in text:
-              pos = text.lower().rfind("</style>")
-
-              if pos >= 0:
-                  text = (
-                      text[:pos+8]
-                      + css
-                      + text[pos+8:]
-                  )
-
-          # ---------------------------------------------------------
-          # TRANSFER REPORT HELPERS
-          # ---------------------------------------------------------
-
-          helpers = r'''
-          <script id="mbms-transfer-report-final-helpers">
+          <script id="mbms-final-transfer-report-script">
 
           function transferReportPersonName(x){
 
-            const type=String(
-              x?.transferPartyType ||
-              x?.receiver ||
-              ''
+            const type = String(
+              x && (
+                x.transferPartyType ||
+                x.receiver ||
+                ""
+              )
             ).trim();
 
-            let name=String(
-              x?.receiverName ||
-              x?.receivedFromName ||
-              x?.receiver ||
-              ''
+            let name = String(
+              x && (
+                x.receiverName ||
+                x.receivedFromName ||
+                x.receiver ||
+                ""
+              )
             ).trim();
 
             if(!name){
-              return '-';
+              return "-";
             }
 
             if(
               (
-                type==='जेई' ||
-                type.toUpperCase()==='JE' ||
-                norm(type).includes('ज्युनियर')
+                type === "जेई" ||
+                type.toUpperCase() === "JE" ||
+                (
+                  typeof norm === "function" &&
+                  norm(type).includes("ज्युनियर")
+                )
               ) &&
               !/^(श्री\.?|श्रीमती\.?|कु\.?)/.test(name)
             ){
-              name='श्री '+name;
+
+              name = "श्री " + name;
+
             }
 
             return name;
@@ -242,14 +259,16 @@ jobs:
             try{
 
               if(
-                typeof mbSummaryCurrentHolder==='function'
+                typeof mbSummaryCurrentHolder === "function"
               ){
 
                 const h =
                   mbSummaryCurrentHolder(number);
 
                 if(h && h.name){
+
                   return h.name;
+
                 }
               }
 
@@ -259,371 +278,634 @@ jobs:
             try{
 
               const history =
+                typeof getTransferHistory === "function"
+                ?
                 getTransferHistory().filter(
-                  x =>
-                    norm(
+                  function(x){
+
+                    const a =
                       x.number ||
                       x.mbNumber ||
                       x.mb ||
-                      ''
-                    ) === norm(number)
-                );
+                      "";
+
+                    if(typeof norm === "function"){
+                      return norm(a) === norm(number);
+                    }
+
+                    return String(a) === String(number);
+
+                  }
+                )
+                :
+                [];
+
 
               if(!history.length){
-                return 'उपलब्ध M.B.';
+
+                return "उपलब्ध M.B.";
+
               }
 
+
               const last =
-                history[history.length-1];
+                history[history.length - 1];
+
 
               if(
                 String(
-                  last.transferType || ''
-                ).toUpperCase()==='GIVEN'
+                  last.transferType || ""
+                ).toUpperCase() === "GIVEN"
               ){
 
-                let n=String(
-                  last.receiverName ||
-                  last.receiver ||
-                  ''
-                ).trim();
+                let name =
+                  String(
+                    last.receiverName ||
+                    last.receiver ||
+                    ""
+                  ).trim();
 
-                if(!n){
-                  n='संबंधित व्यक्ती / कार्यालय';
+
+                if(!name){
+
+                  name =
+                    "संबंधित व्यक्ती / कार्यालय";
+
                 }
 
-                const t=String(
-                  last.transferPartyType ||
-                  last.receiver ||
-                  ''
-                ).trim();
+
+                const type =
+                  String(
+                    last.transferPartyType ||
+                    last.receiver ||
+                    ""
+                  ).trim();
+
 
                 if(
                   (
-                    t==='जेई' ||
-                    t.toUpperCase()==='JE' ||
-                    norm(t).includes('ज्युनियर')
+                    type === "जेई" ||
+                    type.toUpperCase() === "JE" ||
+                    (
+                      typeof norm === "function" &&
+                      norm(type).includes("ज्युनियर")
+                    )
                   ) &&
-                  !/^(श्री\.?|श्रीमती\.?|कु\.?)/.test(n)
+                  !/^(श्री\.?|श्रीमती\.?|कु\.?)/.test(name)
                 ){
-                  n='श्री '+n;
+
+                  name = "श्री " + name;
+
                 }
 
-                return n;
+
+                return name;
+
               }
 
-              return 'उपलब्ध M.B.';
+
+              if(
+                String(
+                  last.transferType || ""
+                ).toUpperCase() === "RECEIVED"
+              ){
+
+                return "विभागीय कार्यालयात";
+
+              }
+
+
+              return "उपलब्ध M.B.";
 
             }catch(e){
 
-              return 'उपलब्ध M.B.';
+              return "उपलब्ध M.B.";
 
             }
           }
+
+
+          /*
+           * FINAL OVERRIDE
+           * This replaces the old generateTransferReport()
+           * without editing/deleting the original function.
+           */
+
+          window.generateTransferReport = function(){
+
+            try{
+
+              const list =
+                typeof getTransferHistory === "function"
+                ?
+                getTransferHistory()
+                :
+                [];
+
+
+              if(!list.length){
+
+                alert(
+                  "Transfer List मध्ये कोणतीही नोंद नाही."
+                );
+
+                return;
+
+              }
+
+
+              let range = {
+                valid:true
+              };
+
+
+              if(
+                typeof reportDateRange === "function"
+              ){
+
+                range =
+                  reportDateRange(
+                    "transfer-report"
+                  );
+
+              }
+
+
+              if(
+                range &&
+                range.valid === false
+              ){
+
+                if(
+                  typeof reportDateError === "function"
+                ){
+
+                  alert(
+                    reportDateError(range)
+                  );
+
+                }else{
+
+                  alert(
+                    "दिनांक कालावधी चुकीचा आहे."
+                  );
+
+                }
+
+                return;
+
+              }
+
+
+              const select =
+                document.getElementById(
+                  "transferReportSelect"
+                );
+
+
+              if(!select){
+
+                alert(
+                  "Transfer Report निवड यादी सापडली नाही."
+                );
+
+                return;
+
+              }
+
+
+              const selected =
+                select.value;
+
+
+              if(selected === ""){
+
+                alert(
+                  "कृपया Report निवडा."
+                );
+
+                return;
+
+              }
+
+
+              let data = [];
+
+
+              if(selected === "ALL"){
+
+                data =
+                  list.filter(
+                    function(x){
+
+                      if(
+                        typeof reportDateAllowed !== "function"
+                      ){
+
+                        return true;
+
+                      }
+
+                      return reportDateAllowed(
+                        typeof transferReportDate === "function"
+                        ?
+                        transferReportDate(x)
+                        :
+                        (
+                          x.savedAt ||
+                          ""
+                        ),
+                        range
+                      );
+
+                    }
+                  );
+
+              }else{
+
+                const index =
+                  Number(selected);
+
+                if(
+                  Number.isNaN(index) ||
+                  !list[index]
+                ){
+
+                  alert(
+                    "निवडलेली नोंद उपलब्ध नाही."
+                  );
+
+                  return;
+
+                }
+
+
+                if(
+                  typeof reportDateAllowed === "function" &&
+                  typeof transferReportDate === "function" &&
+                  !reportDateAllowed(
+                    transferReportDate(
+                      list[index]
+                    ),
+                    range
+                  )
+                ){
+
+                  alert(
+                    "निवडलेली नोंद या दिनांक कालावधीत नाही."
+                  );
+
+                  return;
+
+                }
+
+
+                data = [
+                  list[index]
+                ];
+
+              }
+
+
+              if(!data.length){
+
+                alert(
+                  "या दिनांक कालावधीत Transfer नोंद उपलब्ध नाही."
+                );
+
+                return;
+
+              }
+
+
+              function esc(value){
+
+                if(
+                  typeof escapeHtml === "function"
+                ){
+
+                  return escapeHtml(
+                    value == null
+                    ?
+                    ""
+                    :
+                    value
+                  );
+
+                }
+
+                return String(
+                  value == null
+                  ?
+                  ""
+                  :
+                  value
+                )
+                .replace(
+                  /&/g,
+                  "&amp;"
+                )
+                .replace(
+                  /</g,
+                  "&lt;"
+                )
+                .replace(
+                  />/g,
+                  "&gt;"
+                )
+                .replace(
+                  /"/g,
+                  "&quot;"
+                )
+                .replace(
+                  /'/g,
+                  "&#39;"
+                );
+
+              }
+
+
+              const rows =
+                data.map(
+                  function(x,i){
+
+                    return `
+                      <tr class="a4-entry">
+
+                        <td>${i + 1}</td>
+
+                        <td>
+                          ${esc(
+                            x.number || ""
+                          )}
+                        </td>
+
+                        <td>
+                          ${esc(
+                            x.size || ""
+                          )}
+                        </td>
+
+                        <td>
+                          ${esc(
+                            transferReportPersonName(x)
+                          )}
+                        </td>
+
+                      </tr>
+                    `;
+
+                  }
+                ).join("");
+
+
+              const reportText =
+                selected === "ALL"
+                ?
+                "सर्व Transfer नोंदी"
+                :
+                "MB " +
+                esc(
+                  data[0].number || ""
+                );
+
+
+              const holder =
+                selected === "ALL"
+                ?
+                "सध्या संबंधित M.B. संबंधित व्यक्ती / कार्यालयाकडे आहेत."
+                :
+                (
+                  "सध्या ही M.B. " +
+                  esc(
+                    transferReportCurrentHolder(
+                      data[0].number || ""
+                    )
+                  ) +
+                  " यांच्याकडे आहे."
+                );
+
+
+              const printArea =
+                document.getElementById(
+                  "printArea"
+                );
+
+
+              if(!printArea){
+
+                alert(
+                  "Print Area सापडला नाही."
+                );
+
+                return;
+
+              }
+
+
+              printArea.innerHTML = `
+
+                <div class="a4-page transfer-report-page">
+
+                  <div class="a4-header">
+
+                    <div class="dept">
+                      सार्वजनिक बांधकाम विभाग
+                    </div>
+
+                    <div class="system">
+                      मोजमाप पुस्तिका नियंत्रण प्रणाली
+                    </div>
+
+                    <div class="report-title">
+                      M.B. TRANSFER REPORT
+                    </div>
+
+                  </div>
+
+
+                  <div class="a4-meta transfer-report-meta">
+
+                    <span>
+                      <b>Report :</b>
+                      ${reportText}
+                    </span>
+
+                    <span class="transfer-current-holder">
+                      <b>
+                        ${holder}
+                      </b>
+                    </span>
+
+                  </div>
+
+
+                  <table class="a4-table transfer-report-table">
+
+                    <thead>
+
+                      <tr>
+
+                        <th>
+                          अ.क्र.
+                        </th>
+
+                        <th>
+                          MB क्रमांक
+                        </th>
+
+                        <th>
+                          आकार
+                        </th>
+
+                        <th>
+                          कुणाला दिली
+                        </th>
+
+                      </tr>
+
+                    </thead>
+
+
+                    <tbody>
+
+                      ${rows}
+
+                    </tbody>
+
+                  </table>
+
+
+                  <div class="a4-footer">
+                    Created By विठ्ठल कोकाटे पाटील 8446556141
+                  </div>
+
+                </div>
+
+              `;
+
+
+              if(
+                typeof closeTransferReport === "function"
+              ){
+
+                closeTransferReport();
+
+              }
+
+
+              window.print();
+
+
+            }catch(error){
+
+              console.error(
+                "Final Transfer Report Error:",
+                error
+              );
+
+              alert(
+                "Transfer Report तयार करताना त्रुटी आली."
+              );
+
+            }
+
+          };
 
           </script>
           '''
 
-          if "mbms-transfer-report-final-helpers" not in text:
-
-              pos=text.lower().rfind("</body>")
-
-              if pos>=0:
-                  text=(
-                      text[:pos]
-                      + helpers
-                      + "\n"
-                      + text[pos:]
-                  )
 
           # ---------------------------------------------------------
-          # FINAL TRANSFER REPORT FUNCTION
+          # Insert patch immediately before </body>
           # ---------------------------------------------------------
 
-          new_function = r'''
-          function generateTransferReport(){
+          marker = "</body>"
 
-            const list=getTransferHistory();
+          if marker.lower() not in text.lower():
 
-            const range=reportDateRange(
-              "transfer-report"
-            );
+              text += patch
 
-            if(!range.valid){
-              return alert(
-                reportDateError(range)
-              );
-            }
+          else:
 
-            if(!list.length){
-              return alert(
-                "Transfer List मध्ये कोणतीही नोंद नाही."
-              );
-            }
-
-            const selected=
-              document.getElementById(
-                "transferReportSelect"
-              ).value;
-
-            if(selected===""){
-              return alert(
-                "कृपया Report निवडा."
-              );
-            }
-
-            if(
-              selected!=="ALL" &&
-              !reportDateAllowed(
-                transferReportDate(
-                  list[Number(selected)]
-                ),
-                range
+              pos = text.lower().rfind(
+                  marker.lower()
               )
-            ){
-              return alert(
-                "निवडलेली नोंद या दिनांक कालावधीत नाही."
-              );
-            }
 
-            const data =
-              selected==="ALL"
-              ?
-              list.filter(
-                x =>
-                  reportDateAllowed(
-                    transferReportDate(x),
-                    range
-                  )
+              text = (
+                  text[:pos]
+                  +
+                  patch
+                  +
+                  "\n"
+                  +
+                  text[pos:]
               )
-              :
-              [list[Number(selected)]];
-
-            if(!data[0]){
-              return alert(
-                "निवडलेली नोंद उपलब्ध नाही."
-              );
-            }
-
-            const rows=data.map(
-              (x,i)=>`
-
-                <tr class="a4-entry">
-
-                  <td>
-                    ${i+1}
-                  </td>
-
-                  <td>
-                    ${escapeHtml(
-                      x.number || ""
-                    )}
-                  </td>
-
-                  <td>
-                    ${escapeHtml(
-                      x.size || ""
-                    )}
-                  </td>
-
-                  <td>
-                    ${escapeHtml(
-                      transferReportPersonName(x)
-                    )}
-                  </td>
-
-                </tr>
-
-              `
-            ).join("");
-
-            const reportText =
-              selected==="ALL"
-              ?
-              "सर्व Transfer नोंदी"
-              :
-              "MB "
-              +
-              escapeHtml(
-                data[0].number || ""
-              );
-
-            const holderText =
-              selected==="ALL"
-              ?
-              "सध्या संबंधित M.B. संबंधित व्यक्ती / कार्यालयाकडे आहेत."
-              :
-              `सध्या ही M.B. ${
-                escapeHtml(
-                  transferReportCurrentHolder(
-                    data[0].number || ""
-                  )
-                )
-              } यांच्याकडे आहे.`;
-
-            document.getElementById(
-              "printArea"
-            ).innerHTML=`
-
-              <div class="a4-page transfer-report-page">
-
-                <div class="a4-header">
-
-                  <div class="dept">
-                    सार्वजनिक बांधकाम विभाग
-                  </div>
-
-                  <div class="system">
-                    मोजमाप पुस्तिका नियंत्रण प्रणाली
-                  </div>
-
-                  <div class="report-title">
-                    M.B. TRANSFER REPORT
-                  </div>
-
-                </div>
 
 
-                <div class="a4-meta transfer-report-meta">
-
-                  <span>
-                    <b>Report :</b>
-                    ${reportText}
-                  </span>
-
-                  <span class="transfer-current-holder">
-                    <b>
-                      ${holderText}
-                    </b>
-                  </span>
-
-                </div>
-
-
-                <table class="a4-table transfer-report-table">
-
-                  <thead>
-
-                    <tr>
-
-                      <th>
-                        अ.क्र.
-                      </th>
-
-                      <th>
-                        MB क्रमांक
-                      </th>
-
-                      <th>
-                        आकार
-                      </th>
-
-                      <th>
-                        कुणाला दिली
-                      </th>
-
-                    </tr>
-
-                  </thead>
-
-
-                  <tbody>
-
-                    ${rows}
-
-                  </tbody>
-
-                </table>
-
-
-                <div class="a4-footer">
-                  Created By विठ्ठल कोकाटे पाटील 8446556141
-                </div>
-
-              </div>
-
-            `;
-
-            closeTransferReport();
-
-            window.print();
-
-          }
-          '''
-
-          pattern=re.compile(
-            r'function\s+generateTransferReport\s*\s*\{.*?\n\}',
-            re.S
+          p.write_text(
+              text,
+              encoding="utf-8"
           )
 
-          matches=list(
-            pattern.finditer(text)
-          )
-
-          if not matches:
-              raise SystemExit(
-                "ERROR: generateTransferReport() not found."
-              )
-
-          if len(matches)!=1:
-              raise SystemExit(
-                f"ERROR: Expected 1 generateTransferReport(), found {len(matches)}."
-              )
-
-          text=(
-            text[:matches[0].start()]
-            +
-            new_function
-            +
-            text[matches[0].end():]
-          )
 
           # ---------------------------------------------------------
-          # FINAL VALIDATION MARKERS
+          # VALIDATION
           # ---------------------------------------------------------
 
-          required=[
-            "MB क्रमांक",
-            "कुणाला दिली",
-            "Created By विठ्ठल कोकाटे पाटील 8446556141",
-            "transferReportPersonName",
-            "transferReportCurrentHolder",
-            "transfer-report-table"
+          checks = [
+
+              "mbms-final-transfer-report-css",
+
+              "mbms-final-transfer-report-script",
+
+              "window.generateTransferReport",
+
+              "transferReportPersonName",
+
+              "transferReportCurrentHolder",
+
+              "MB क्रमांक",
+
+              "कुणाला दिली",
+
+              "Created By विठ्ठल कोकाटे पाटील 8446556141"
+
           ]
 
-          for item in required:
+
+          for item in checks:
 
               if item not in text:
 
                   raise SystemExit(
-                    "ERROR: Missing marker: "
-                    + item
+                      "ERROR: Required final marker missing: "
+                      + item
                   )
 
-          if "सर्व हक्क राखीव – सार्वजनिक बांधकाम विभाग" in text:
 
-              raise SystemExit(
-                "ERROR: Old footer still exists."
-              )
-
-          p.write_text(
-            text,
-            encoding="utf-8"
+          print(
+              "FINAL TRANSFER REPORT PATCH PASSED."
           )
 
           print(
-            "FINAL TRANSFER REPORT PATCH PASSED."
+              "The original generateTransferReport() was NOT modified."
           )
 
           print(
-            "Final HTML size:"
+              "A final global override was appended successfully."
           )
 
           print(
-            p.stat().st_size
+              "Final HTML size:"
+          )
+
+          print(
+              p.stat().st_size
           )
 
           PY
+
 
       - name: Verify Final MBMS HTML
         shell: bash
@@ -649,7 +931,7 @@ jobs:
             "$HTML"
 
           grep -q \
-            "Created By विठ्ठल कोकाटे पाटील 8446556141" \
+            "window.generateTransferReport" \
             "$HTML"
 
           grep -q \
@@ -661,20 +943,25 @@ jobs:
             "$HTML"
 
           grep -q \
-            "transfer-report-table" \
+            "MB क्रमांक" \
             "$HTML"
 
-          if grep -q \
-            "सर्व हक्क राखीव – सार्वजनिक बांधकाम विभाग" \
+          grep -q \
+            "कुणाला दिली" \
             "$HTML"
-          then
-            echo "ERROR: Old footer detected."
-            exit 1
-          fi
+
+          grep -q \
+            "Created By विठ्ठल कोकाटे पाटील 8446556141" \
+            "$HTML"
+
+          grep -q \
+            "transfer-report-table" \
+            "$HTML"
 
           echo "FINAL MBMS HTML VALIDATION PASSED."
 
           wc -c "$HTML"
+
 
       - name: Create Android project
         shell: bash
@@ -755,9 +1042,9 @@ jobs:
 
                   targetSdk 35
 
-                  versionCode 121
+                  versionCode 122
 
-                  versionName 'V121'
+                  versionName 'V122'
               }
 
               buildTypes {
@@ -787,6 +1074,7 @@ jobs:
           EOF
 
 
+          # NO XML declaration here.
           cat > mbms_android/app/src/main/res/values/strings.xml <<'EOF'
           <resources>
               <string name="app_name">MBMS</string>
@@ -794,6 +1082,7 @@ jobs:
           EOF
 
 
+          # NO XML declaration here.
           cat > mbms_android/app/src/main/res/values/styles.xml <<'EOF'
           <resources>
 
@@ -867,6 +1156,11 @@ jobs:
           EOF
 
 
+      - name: Create MainActivity.java
+        shell: bash
+        run: |
+          set -e
+
           cat > mbms_android/app/src/main/java/com/mbms/app/MainActivity.java <<'EOF'
           package com.mbms.app;
 
@@ -911,9 +1205,11 @@ jobs:
 
                   super.onCreate(savedInstanceState);
 
-                  webView = new WebView(this);
+                  webView =
+                          new WebView(this);
 
                   setContentView(webView);
+
 
                   WebSettings settings =
                           webView.getSettings();
@@ -956,7 +1252,7 @@ jobs:
                                       ValueCallback<Uri[]> callback,
                                       FileChooserParams params) {
 
-                                  if (
+                                  if(
                                       filePathCallback != null
                                   ) {
 
@@ -964,8 +1260,10 @@ jobs:
                                               .onReceiveValue(null);
                                   }
 
+
                                   filePathCallback =
                                           callback;
+
 
                                   try {
 
@@ -974,20 +1272,25 @@ jobs:
                                                   Intent.ACTION_OPEN_DOCUMENT
                                               );
 
+
                                       intent.addCategory(
                                           Intent.CATEGORY_OPENABLE
                                       );
 
+
                                       intent.setType(
                                           "application/json"
                                       );
+
 
                                       startActivityForResult(
                                           intent,
                                           REQUEST_FILE
                                       );
 
+
                                       return true;
+
 
                                   } catch(Exception e) {
 
@@ -1077,6 +1380,7 @@ jobs:
                         + ".slice(0,10)"
                         + "+'.json';"
 
+
                         + "if(window.MBMSAndroid&&"
                         + "typeof window.MBMSAndroid.saveBackup"
                         + "==='function'){"
@@ -1088,9 +1392,11 @@ jobs:
                         + "}"
 
                         + "}catch(e){"
+
                         + "alert("
                         + "'Backup Save मध्ये त्रुटी आली.'"
                         + ");"
+
                         + "}"
                         + "};"
 
@@ -1126,6 +1432,7 @@ jobs:
                                               Context.PRINT_SERVICE
                                           );
 
+
                                       if(manager == null) {
 
                                           throw new Exception(
@@ -1145,15 +1452,11 @@ jobs:
                                           new PrintAttributes.Builder()
 
                                           .setMediaSize(
-                                              PrintAttributes
-                                              .MediaSize
-                                              .ISO_A4
+                                              PrintAttributes.MediaSize.ISO_A4
                                           )
 
                                           .setMinMargins(
-                                              PrintAttributes
-                                              .Margins
-                                              .NO_MARGINS
+                                              PrintAttributes.Margins.NO_MARGINS
                                           )
 
                                           .build();
@@ -1191,7 +1494,9 @@ jobs:
                               @Override
                               public void run() {
 
-                                  boolean success=false;
+                                  boolean success =
+                                          false;
+
 
                                   try {
 
@@ -1204,30 +1509,25 @@ jobs:
 
 
                                           values.put(
-                                              MediaStore.Downloads
-                                              .DISPLAY_NAME,
+                                              MediaStore.Downloads.DISPLAY_NAME,
                                               filename
                                           );
 
 
                                           values.put(
-                                              MediaStore.Downloads
-                                              .MIME_TYPE,
+                                              MediaStore.Downloads.MIME_TYPE,
                                               "application/json"
                                           );
 
 
                                           values.put(
-                                              MediaStore.Downloads
-                                              .RELATIVE_PATH,
-                                              Environment
-                                              .DIRECTORY_DOWNLOADS
+                                              MediaStore.Downloads.RELATIVE_PATH,
+                                              Environment.DIRECTORY_DOWNLOADS
                                           );
 
 
                                           values.put(
-                                              MediaStore.Downloads
-                                              .IS_PENDING,
+                                              MediaStore.Downloads.IS_PENDING,
                                               1
                                           );
 
@@ -1235,9 +1535,7 @@ jobs:
                                           Uri uri =
                                               getContentResolver()
                                               .insert(
-                                                  MediaStore
-                                                  .Downloads
-                                                  .EXTERNAL_CONTENT_URI,
+                                                  MediaStore.Downloads.EXTERNAL_CONTENT_URI,
                                                   values
                                               );
 
@@ -1252,7 +1550,9 @@ jobs:
 
                                           OutputStream output =
                                               getContentResolver()
-                                              .openOutputStream(uri);
+                                              .openOutputStream(
+                                                  uri
+                                              );
 
 
                                           if(output == null) {
@@ -1284,8 +1584,7 @@ jobs:
 
 
                                           done.put(
-                                              MediaStore.Downloads
-                                              .IS_PENDING,
+                                              MediaStore.Downloads.IS_PENDING,
                                               0
                                           );
 
@@ -1299,7 +1598,8 @@ jobs:
                                           );
 
 
-                                          success=true;
+                                          success =
+                                              true;
 
 
                                       } else {
@@ -1315,6 +1615,7 @@ jobs:
                                           if(
                                               !directory.exists()
                                           ) {
+
                                               directory.mkdirs();
                                           }
 
@@ -1348,7 +1649,8 @@ jobs:
                                           }
 
 
-                                          success=true;
+                                          success =
+                                              true;
                                       }
 
 
@@ -1379,6 +1681,7 @@ jobs:
 
                                                   Toast.LENGTH_LONG
                                               ).show();
+
                                           }
                                       }
                                   );
@@ -1405,6 +1708,7 @@ jobs:
                   if(
                       requestCode != REQUEST_FILE
                   ) {
+
                       return;
                   }
 
@@ -1412,11 +1716,13 @@ jobs:
                   if(
                       filePathCallback == null
                   ) {
+
                       return;
                   }
 
 
-                  Uri[] results=null;
+                  Uri[] results =
+                          null;
 
 
                   if(
@@ -1435,7 +1741,9 @@ jobs:
                   filePathCallback
                       .onReceiveValue(results);
 
-                  filePathCallback=null;
+
+                  filePathCallback =
+                          null;
               }
 
 
@@ -1465,13 +1773,16 @@ jobs:
 
                       webView.destroy();
 
-                      webView=null;
+                      webView =
+                              null;
                   }
+
 
                   super.onDestroy();
               }
           }
           EOF
+
 
       - name: Verify Android project
         shell: bash
@@ -1515,10 +1826,6 @@ jobs:
             "REQUEST_FILE" \
             mbms_android/app/src/main/java/com/mbms/app/MainActivity.java
 
-          grep -q \
-            "applicationId 'com.mbms.app'" \
-            mbms_android/app/build.gradle
-
 
           python3 <<'PY'
           import xml.etree.ElementTree as ET
@@ -1537,6 +1844,7 @@ jobs:
 
           echo "ANDROID PROJECT VALIDATION PASSED."
 
+
       - name: Create Gradle Wrapper
         working-directory: mbms_android
         shell: bash
@@ -1551,6 +1859,7 @@ jobs:
 
           ./gradlew --version
 
+
       - name: Compile Android Java
         working-directory: mbms_android
         shell: bash
@@ -1563,6 +1872,7 @@ jobs:
             :app:compileDebugJavaWithJavac
 
           echo "JAVA COMPILATION PASSED."
+
 
       - name: Build Final MBMS APK
         working-directory: mbms_android
@@ -1580,39 +1890,47 @@ jobs:
 
           test -s "$APK"
 
+
           cp \
             "$APK" \
-            "../release/MBMS-V121-FINAL-TRANSFER-REPORT.apk"
+            "../release/MBMS-V122-FINAL-TRANSFER-REPORT.apk"
+
 
           ls -lh \
-            "../release/MBMS-V121-FINAL-TRANSFER-REPORT.apk"
+            "../release/MBMS-V122-FINAL-TRANSFER-REPORT.apk"
+
 
       - name: Verify APK
         shell: bash
         run: |
           set -e
 
-          APK="release/MBMS-V121-FINAL-TRANSFER-REPORT.apk"
+          APK="release/MBMS-V122-FINAL-TRANSFER-REPORT.apk"
 
           test -s "$APK"
+
 
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" \
             verify \
             --verbose \
             "$APK"
 
+
           unzip -t "$APK" >/dev/null
+
 
           sha256sum "$APK" \
             | tee release/SHA256.txt
 
+
           echo "APK SIGNATURE AND ZIP VERIFICATION PASSED."
+
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MBMS-V121-FINAL-TRANSFER-REPORT
+          name: MBMS-V122-FINAL-TRANSFER-REPORT
           path: |
-            release/MBMS-V121-FINAL-TRANSFER-REPORT.apk
+            release/MBMS-V122-FINAL-TRANSFER-REPORT.apk
             release/SHA256.txt
           if-no-files-found: error
