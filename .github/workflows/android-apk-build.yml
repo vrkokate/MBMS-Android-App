@@ -27,8 +27,10 @@ jobs:
 
       - name: Install SDK
         run: |
-          set -e
+          set -euo pipefail
+
           yes | sdkmanager --licenses >/dev/null 2>&1 || true
+
           sdkmanager \
             "platform-tools" \
             "platforms;android-35" \
@@ -36,13 +38,21 @@ jobs:
 
       - name: Install Gradle
         run: |
-          set -e
-          wget -q https://services.gradle.org/distributions/gradle-8.7-bin.zip
+          set -euo pipefail
+
+          wget -q \
+            https://services.gradle.org/distributions/gradle-8.7-bin.zip
+
           mkdir -p "$HOME/gradle"
-          unzip -q gradle-8.7-bin.zip -d "$HOME/gradle"
+
+          unzip -q \
+            gradle-8.7-bin.zip \
+            -d "$HOME/gradle"
+
           echo "$HOME/gradle/gradle-8.7/bin" >> "$GITHUB_PATH"
 
       - name: Find and prepare HTML
+        shell: bash
         run: |
           set -euo pipefail
 
@@ -64,12 +74,14 @@ jobs:
           done
 
           if [ -z "$HTML_FILE" ]; then
-            HTML_FILE=$(find . \
-              -maxdepth 3 \
-              -type f \
-              -iname '*.html' \
-              -not -path './.git/*' \
-              | head -1 || true)
+            HTML_FILE=$(
+              find . \
+                -maxdepth 3 \
+                -type f \
+                -iname '*.html' \
+                -not -path './.git/*' \
+                | head -1 || true
+            )
           fi
 
           if [ -z "$HTML_FILE" ]; then
@@ -77,72 +89,1353 @@ jobs:
             exit 1
           fi
 
-          echo "HTML_FILE=$HTML_FILE" >> "$GITHUB_ENV"
+          echo "Using HTML file: $HTML_FILE"
 
+          rm -rf mbms_work
           mkdir -p mbms_work
 
           cp "$HTML_FILE" mbms_work/index.html
 
           test -s mbms_work/index.html
 
-      - name: Received -> JE full list correction
+      - name: Received to JE full list correction
+        shell: bash
         run: |
           set -euo pipefail
 
           python3 <<'PY'
           from pathlib import Path
 
-          p = Path("mbms_work/index.html")
-          text = p.read_text(encoding="utf-8")
+          path = Path("mbms_work/index.html")
+          text = path.read_text(encoding="utf-8")
 
-          old1 = (
-              "if(isJE){loadTransferJEs();"
-              "if(je){je.value=sourceName;je.disabled=true;}}"
-          )
+          replacements = [
+              (
+                  "if(isJE){loadTransferJEs();"
+                  "if(je){je.value=sourceName;je.disabled=true;}}",
+                  "if(isJE){loadTransferJEs();"
+                  "if(je){je.value=sourceName;je.disabled=false;}}"
+              ),
+              (
+                  "if(isJE&&je)je.disabled=true;",
+                  "if(isJE&&je)je.disabled=false;"
+              ),
+          ]
 
-          new1 = (
-              "if(isJE){loadTransferJEs();"
-              "if(je){je.value=sourceName;je.disabled=false;}}"
-          )
+          for old, new in replacements:
+              text = text.replace(old, new)
 
-          text = text.replace(old1, new1, 1)
-
-          old2 = "if(isJE&&je)je.disabled=true;"
-          new2 = "if(isJE&&je)je.disabled=false;"
-
-          text = text.replace(old2, new2, 1)
-
-          p.write_text(text, encoding="utf-8")
+          path.write_text(text, encoding="utf-8")
 
           print("Received -> JE full list correction applied.")
           PY
 
-          grep -q "if(isJE&&je)je.disabled=false;" \
-            mbms_work/index.html
-
-      - name: Core function checks
+      - name: Add MB Summary linked report
+        shell: bash
         run: |
           set -euo pipefail
 
-          for x in \
-            mbmsSettingsSnapshot \
-            downloadSettingsBackup \
-            restoreSettingsBackup \
-            generateTransferReport \
-            saveTransferMB \
-            getTransferHistory
+          python3 <<'PY'
+          from pathlib import Path
+
+          html_path = Path("mbms_work/index.html")
+          text = html_path.read_text(encoding="utf-8")
+
+          marker = '<script id="V128_MBMS_SUMMARY_LINKED_FIX">'
+
+          if marker in text:
+              print("MB Summary patch already exists.")
+              raise SystemExit(0)
+
+          patch = r'''
+          <script id="V128_MBMS_SUMMARY_LINKED_FIX">
+          (function () {
+              "use strict";
+
+              const TYPE_LABELS = {
+                  MB: "M.B.",
+                  JE: "Junior Engineer",
+                  WORK: "Work",
+                  CONTRACTOR: "Contractor / Agency",
+                  BILL: "Bill",
+                  TRANSFER: "Transfer / History"
+              };
+
+              function A(id) {
+                  return document.getElementById(id);
+              }
+
+              function S(value) {
+                  return value == null ? "" : String(value).trim();
+              }
+
+              function N(value) {
+                  const n = Number(value);
+                  return Number.isFinite(n) ? n : 0;
+              }
+
+              function E(value) {
+                  return S(value)
+                      .replace(/&/g, "&amp;")
+                      .replace(/</g, "&lt;")
+                      .replace(/>/g, "&gt;")
+                      .replace(/"/g, "&quot;");
+              }
+
+              function D(value) {
+                  return S(value)
+                      .replace(/\//g, "-")
+                      .replace(/\./g, "-");
+              }
+
+              function amount(value) {
+                  const n = N(value);
+                  if (!n) return "";
+                  return n.toLocaleString("en-IN", {
+                      maximumFractionDigits: 2
+                  });
+              }
+
+              function uniq(items) {
+                  const seen = new Set();
+                  const result = [];
+
+                  items.forEach(function (item) {
+                      const key = S(item);
+                      if (!key || seen.has(key)) return;
+                      seen.add(key);
+                      result.push(key);
+                  });
+
+                  return result;
+              }
+
+              function mbNo(row) {
+                  return S(
+                      row.mbNo ||
+                      row.mbNumber ||
+                      row.mb_number ||
+                      row["M.B. Number"] ||
+                      row["MB Number"] ||
+                      row["M.B."] ||
+                      row["MB"]
+                  );
+              }
+
+              function workName(row) {
+                  return S(
+                      row.workName ||
+                      row.work ||
+                      row.name ||
+                      row.work_name ||
+                      row["Work Name"] ||
+                      row["कामाचे नाव"] ||
+                      row["काम"]
+                  );
+              }
+
+              function jeName(row) {
+                  return S(
+                      row.jeName ||
+                      row.je ||
+                      row.juniorEngineer ||
+                      row.junior_engineer ||
+                      row["Junior Engineer"] ||
+                      row["JE Name"] ||
+                      row["JE"] ||
+                      row["कनिष्ठ अभियंता"]
+                  );
+              }
+
+              function contractor(row) {
+                  return S(
+                      row.contractor ||
+                      row.contractorName ||
+                      row.agency ||
+                      row.agencyName ||
+                      row.contractor_name ||
+                      row["Contractor"] ||
+                      row["Agency"] ||
+                      row["Contractor / Agency"] ||
+                      row["कंत्राटदार"]
+                  );
+              }
+
+              function billType(row) {
+                  return S(
+                      row.billType ||
+                      row.type ||
+                      row.bill_type ||
+                      row["Bill Type"] ||
+                      row["Bill Type / Type"] ||
+                      row["बिल प्रकार"]
+                  );
+              }
+
+              function billNo(row) {
+                  return S(
+                      row.billNo ||
+                      row.billNumber ||
+                      row.bill_no ||
+                      row["Bill No"] ||
+                      row["Bill Number"] ||
+                      row["बिल क्रमांक"]
+                  );
+              }
+
+              function transferNo(row) {
+                  return S(
+                      row.transferNo ||
+                      row.transferNumber ||
+                      row.transfer_no ||
+                      row["Transfer No"] ||
+                      row["Transfer Number"] ||
+                      row["हस्तांतरण क्रमांक"]
+                  );
+              }
+
+              function size(row) {
+                  return S(
+                      row.size ||
+                      row.mbSize ||
+                      row.mb_size ||
+                      row["MB Size"] ||
+                      row["M.B. Size"] ||
+                      row["Size"]
+                  );
+              }
+
+              function dateValue(row) {
+                  return S(
+                      row.date ||
+                      row.entryDate ||
+                      row.mbDate ||
+                      row.billDate ||
+                      row.transferDate ||
+                      row.createdAt ||
+                      row["Date"] ||
+                      row["दिनांक"]
+                  );
+              }
+
+              function dateFilter(row) {
+                  const from =
+                      S(A("homeRelFrom") && A("homeRelFrom").value);
+
+                  const to =
+                      S(A("homeRelTo") && A("homeRelTo").value);
+
+                  if (!from && !to) return true;
+
+                  const raw = dateValue(row);
+
+                  if (!raw) return true;
+
+                  const normalized = D(raw);
+
+                  if (from && normalized < D(from)) {
+                      return false;
+                  }
+
+                  if (to && normalized > D(to)) {
+                      return false;
+                  }
+
+                  return true;
+              }
+
+              function data() {
+                  if (
+                      typeof window.homeRelData ===
+                      "function"
+                  ) {
+                      try {
+                          const result =
+                              window.homeRelData();
+
+                          if (Array.isArray(result)) {
+                              return result;
+                          }
+
+                          if (
+                              result &&
+                              Array.isArray(result.records)
+                          ) {
+                              return result.records;
+                          }
+                      } catch (e) {
+                          console.warn(
+                              "homeRelData failed",
+                              e
+                          );
+                      }
+                  }
+
+                  const sources = [
+                      window.mbs,
+                      window.mbData,
+                      window.mbList,
+                      window.works,
+                      window.workList,
+                      window.bills,
+                      window.billList,
+                      window.transfers,
+                      window.transferHistory
+                  ];
+
+                  const result = [];
+
+                  sources.forEach(function (source) {
+                      if (!Array.isArray(source)) return;
+
+                      source.forEach(function (row) {
+                          if (
+                              row &&
+                              typeof row === "object"
+                          ) {
+                              result.push(row);
+                          }
+                      });
+                  });
+
+                  return result;
+              }
+
+              function ctx() {
+                  return {
+                      type:
+                          S(
+                              A("homeRelType") &&
+                              A("homeRelType").value
+                          ) || "MB",
+
+                      target:
+                          S(
+                              A("homeRelTarget") &&
+                              A("homeRelTarget").value
+                          ),
+
+                      component:
+                          S(
+                              A("homeRelComponent") &&
+                              A("homeRelComponent").value
+                          ),
+
+                      detail:
+                          S(
+                              A("homeRelDetail") &&
+                              A("homeRelDetail").value
+                          ),
+
+                      billType:
+                          S(
+                              A("homeRelBillType") &&
+                              A("homeRelBillType").value
+                          )
+                  };
+              }
+
+              function linkedByMB(row, selectedMB) {
+                  if (!selectedMB) return true;
+
+                  return (
+                      mbNo(row) === selectedMB
+                  );
+              }
+
+              function baseFor(type, rows) {
+                  const result = rows.filter(
+                      function (row) {
+                          if (!dateFilter(row)) {
+                              return false;
+                          }
+
+                          return true;
+                      }
+                  );
+
+                  if (type === "MB") {
+                      return result.filter(
+                          function (row) {
+                              return !!mbNo(row);
+                          }
+                      );
+                  }
+
+                  if (type === "JE") {
+                      return result.filter(
+                          function (row) {
+                              return !!jeName(row);
+                          }
+                      );
+                  }
+
+                  if (type === "WORK") {
+                      return result.filter(
+                          function (row) {
+                              return !!workName(row);
+                          }
+                      );
+                  }
+
+                  if (type === "CONTRACTOR") {
+                      return result.filter(
+                          function (row) {
+                              return !!contractor(row);
+                          }
+                      );
+                  }
+
+                  if (type === "BILL") {
+                      return result.filter(
+                          function (row) {
+                              return (
+                                  !!billNo(row) ||
+                                  !!billType(row)
+                              );
+                          }
+                      );
+                  }
+
+                  if (type === "TRANSFER") {
+                      return result.filter(
+                          function (row) {
+                              return (
+                                  !!transferNo(row) ||
+                                  !!mbNo(row)
+                              );
+                          }
+                      );
+                  }
+
+                  return result;
+              }
+
+              function clearSelect(select) {
+                  if (!select) return;
+
+                  while (select.options.length) {
+                      select.remove(0);
+                  }
+              }
+
+              function addOption(
+                  select,
+                  value,
+                  label
+              ) {
+                  if (!select) return;
+
+                  const option =
+                      document.createElement("option");
+
+                  option.value = value;
+                  option.textContent = label;
+
+                  select.appendChild(option);
+              }
+
+              function renderTargets() {
+                  const c = ctx();
+                  const rows = baseFor(
+                      c.type,
+                      data()
+                  );
+
+                  const target = A("homeRelTarget");
+
+                  if (!target) return;
+
+                  clearSelect(target);
+
+                  const values = [];
+
+                  rows.forEach(function (row) {
+
+                      if (c.type === "MB") {
+                          values.push(mbNo(row));
+                      }
+
+                      if (c.type === "JE") {
+                          values.push(jeName(row));
+                      }
+
+                      if (c.type === "WORK") {
+                          values.push(workName(row));
+                      }
+
+                      if (
+                          c.type ===
+                          "CONTRACTOR"
+                      ) {
+                          values.push(
+                              contractor(row)
+                          );
+                      }
+
+                      if (c.type === "BILL") {
+                          values.push(
+                              billNo(row)
+                          );
+                      }
+
+                      if (
+                          c.type ===
+                          "TRANSFER"
+                      ) {
+                          values.push(
+                              transferNo(row)
+                          );
+                      }
+                  });
+
+                  const unique =
+                      uniq(values);
+
+                  addOption(
+                      target,
+                      "",
+                      c.type === "MB"
+                          ? "सर्व M.B."
+                          : c.type === "JE"
+                          ? "सर्व JE"
+                          : c.type === "WORK"
+                          ? "सर्व कामे"
+                          : c.type === "CONTRACTOR"
+                          ? "सर्व Contractor / Agency"
+                          : c.type === "BILL"
+                          ? "सर्व Bill"
+                          : "सर्व Transfer / History"
+                  );
+
+                  unique.sort(
+                      function (a, b) {
+                          return a.localeCompare(
+                              b,
+                              undefined,
+                              {
+                                  numeric: true,
+                                  sensitivity: "base"
+                              }
+                          );
+                      }
+                  );
+
+                  unique.forEach(
+                      function (value) {
+                          addOption(
+                              target,
+                              value,
+                              value
+                          );
+                      }
+                  );
+              }
+
+              function renderComponents() {
+                  const c = ctx();
+                  const component =
+                      A("homeRelComponent");
+
+                  if (!component) return;
+
+                  clearSelect(component);
+
+                  const options = {
+                      MB: [
+                          ["", "Select Information"],
+                          ["ALL", "All M.B. Details"],
+                          ["SMALL", "Small M.B."],
+                          ["BIG", "Big M.B."],
+                          ["WORK", "Work Details"],
+                          ["JE", "Junior Engineer"],
+                          ["CONTRACTOR", "Contractor / Agency"],
+                          ["BILL", "Bill Details"],
+                          ["TRANSFER", "Transfer / History"]
+                      ],
+
+                      JE: [
+                          ["", "Select Information"],
+                          ["MB", "M.B. Details"],
+                          ["WORK", "Work Details"],
+                          ["CONTRACTOR", "Contractor / Agency"],
+                          ["BILL", "Bill Details"],
+                          ["TRANSFER", "Transfer / History"]
+                      ],
+
+                      WORK: [
+                          ["", "Select Information"],
+                          ["MB", "M.B. Details"],
+                          ["JE", "Junior Engineer"],
+                          ["CONTRACTOR", "Contractor / Agency"],
+                          ["BILL", "Bill Details"],
+                          ["TRANSFER", "Transfer / History"]
+                      ],
+
+                      CONTRACTOR: [
+                          ["", "Select Information"],
+                          ["WORK", "Work Details"],
+                          ["MB", "M.B. Details"],
+                          ["JE", "Junior Engineer"],
+                          ["BILL", "Bill Details"],
+                          ["TRANSFER", "Transfer / History"]
+                      ],
+
+                      BILL: [
+                          ["", "Select Information"],
+                          ["FIRST", "First RA Bill"],
+                          ["SECOND", "Second RA Bill"],
+                          ["THIRD", "Third RA Bill"],
+                          ["FOURTH", "Fourth RA Bill"],
+                          ["FIFTH", "Fifth RA Bill"],
+                          ["SIXTH", "Sixth RA Bill"],
+                          ["SEVENTH", "Seventh RA Bill"],
+                          ["EIGHTH", "Eighth RA Bill"],
+                          ["NINTH", "Ninth RA Bill"],
+                          ["TENTH", "Tenth RA Bill"],
+                          ["FINAL", "Final Bill"],
+                          ["WITHHELD", "Withheld Bill"],
+                          ["MB", "M.B. Details"],
+                          ["WORK", "Work Details"],
+                          ["JE", "Junior Engineer"],
+                          ["CONTRACTOR", "Contractor / Agency"]
+                      ],
+
+                      TRANSFER: [
+                          ["", "Select Information"],
+                          ["MB", "M.B. Details"],
+                          ["JE", "Junior Engineer"],
+                          ["WORK", "Work Details"],
+                          ["CONTRACTOR", "Contractor / Agency"],
+                          ["BILL", "Bill Details"],
+                          ["HISTORY", "Complete Transfer / History"]
+                      ]
+                  };
+
+                  (
+                      options[c.type] ||
+                      options.MB
+                  ).forEach(
+                      function (item) {
+                          addOption(
+                              component,
+                              item[0],
+                              item[1]
+                          );
+                      }
+                  );
+              }
+
+              function renderDetails() {
+                  const c = ctx();
+                  const detail =
+                      A("homeRelDetail");
+
+                  if (!detail) return;
+
+                  clearSelect(detail);
+
+                  if (c.type === "BILL") {
+
+                      [
+                          "First and final RA bill",
+                          "Second and final RA bill",
+                          "Third and final RA bill",
+                          "Fourth and final RA bill",
+                          "Fifth and final RA bill",
+                          "Sixth and final RA bill",
+                          "Seventh and final RA bill",
+                          "Eighth and final RA bill",
+                          "Ninth and final RA bill",
+                          "Tenth and final RA bill",
+                          "Final Bill",
+                          "Withheld Bill"
+                      ].forEach(
+                          function (item) {
+                              addOption(
+                                  detail,
+                                  item,
+                                  item
+                              );
+                          }
+                      );
+
+                      return;
+                  }
+
+                  [
+                      ["", "All"],
+                      ["MB", "M.B."],
+                      ["WORK", "Work"],
+                      ["JE", "Junior Engineer"],
+                      ["CONTRACTOR", "Contractor / Agency"],
+                      ["BILL", "Bill"],
+                      ["TRANSFER", "Transfer / History"]
+                  ].forEach(
+                      function (item) {
+                          addOption(
+                              detail,
+                              item[0],
+                              item[1]
+                          );
+                      }
+                  );
+              }
+
+              function filterDetail(rows) {
+                  const c = ctx();
+
+                  if (!c.target) {
+                      return rows;
+                  }
+
+                  return rows.filter(
+                      function (row) {
+
+                          if (c.type === "MB") {
+                              return mbNo(row) === c.target;
+                          }
+
+                          if (c.type === "JE") {
+                              return jeName(row) === c.target;
+                          }
+
+                          if (c.type === "WORK") {
+                              return workName(row) === c.target;
+                          }
+
+                          if (
+                              c.type ===
+                              "CONTRACTOR"
+                          ) {
+                              return (
+                                  contractor(row) ===
+                                  c.target
+                              );
+                          }
+
+                          if (c.type === "BILL") {
+                              return (
+                                  billNo(row) ===
+                                      c.target ||
+                                  billType(row) ===
+                                      c.target
+                              );
+                          }
+
+                          if (
+                              c.type ===
+                              "TRANSFER"
+                          ) {
+                              return (
+                                  transferNo(row) ===
+                                      c.target ||
+                                  mbNo(row) ===
+                                      c.target
+                              );
+                          }
+
+                          return true;
+                      }
+                  );
+              }
+
+              function rowHtml(row, index) {
+
+                  const bill =
+                      billNo(row) ||
+                      billType(row);
+
+                  const values = [
+                      ["M.B. Number", mbNo(row)],
+                      ["Work Name", workName(row)],
+                      ["Contractor / Agency", contractor(row)],
+                      ["Junior Engineer", jeName(row)],
+                      ["M.B. Size", size(row)],
+                      ["Bill No.", bill],
+                      ["Bill Type", billType(row)],
+                      ["Transfer No.", transferNo(row)],
+                      ["Date", dateValue(row)]
+                  ];
+
+                  let html =
+                      '<div class="v128-rel-row" ' +
+                      'style="' +
+                      'border:1px solid #bbb;' +
+                      'border-radius:8px;' +
+                      'padding:8px;' +
+                      'margin:6px 0;' +
+                      'background:#fff;">';
+
+                  html +=
+                      '<div style="' +
+                      'font-weight:700;' +
+                      'margin-bottom:5px;">' +
+                      (index + 1) +
+                      ". Linked Record</div>";
+
+                  values.forEach(
+                      function (item) {
+                          if (!item[1]) return;
+
+                          html +=
+                              '<div>' +
+                              '<b>' +
+                              E(item[0]) +
+                              ':</b> ' +
+                              E(item[1]) +
+                              '</div>';
+                      }
+                  );
+
+                  const amountValue =
+                      row.amount ||
+                      row.billAmount ||
+                      row.totalAmount ||
+                      row["Amount"] ||
+                      row["Bill Amount"];
+
+                  if (amountValue) {
+                      html +=
+                          '<div><b>Amount:</b> ' +
+                          E(amount(amountValue)) +
+                          "</div>";
+                  }
+
+                  html += "</div>";
+
+                  return html;
+              }
+
+              function renderResult() {
+                  const c = ctx();
+
+                  let rows =
+                      baseFor(
+                          c.type,
+                          data()
+                      );
+
+                  rows =
+                      filterDetail(rows);
+
+                  if (
+                      c.target &&
+                      c.component
+                  ) {
+
+                      const component =
+                          c.component;
+
+                      rows =
+                          rows.filter(
+                              function (row) {
+
+                                  if (
+                                      component ===
+                                      "MB"
+                                  ) {
+                                      return !!mbNo(row);
+                                  }
+
+                                  if (
+                                      component ===
+                                      "WORK"
+                                  ) {
+                                      return !!workName(row);
+                                  }
+
+                                  if (
+                                      component ===
+                                      "JE"
+                                  ) {
+                                      return !!jeName(row);
+                                  }
+
+                                  if (
+                                      component ===
+                                      "CONTRACTOR"
+                                  ) {
+                                      return !!contractor(row);
+                                  }
+
+                                  if (
+                                      component ===
+                                      "BILL"
+                                  ) {
+                                      return (
+                                          !!billNo(row) ||
+                                          !!billType(row)
+                                      );
+                                  }
+
+                                  if (
+                                      component ===
+                                      "TRANSFER" ||
+                                      component ===
+                                      "HISTORY"
+                                  ) {
+                                      return (
+                                          !!transferNo(row) ||
+                                          !!mbNo(row)
+                                      );
+                                  }
+
+                                  if (
+                                      component ===
+                                      "SMALL"
+                                  ) {
+                                      return (
+                                          size(row)
+                                              .toLowerCase()
+                                              .includes(
+                                                  "small"
+                                              )
+                                      );
+                                  }
+
+                                  if (
+                                      component ===
+                                      "BIG"
+                                  ) {
+                                      return (
+                                          size(row)
+                                              .toLowerCase()
+                                              .includes(
+                                                  "big"
+                                              )
+                                      );
+                                  }
+
+                                  return true;
+                              }
+                          );
+                  }
+
+                  const result =
+                      A("homeRelResult");
+
+                  if (!result) return;
+
+                  let html =
+                      '<div style="' +
+                      'font-weight:700;' +
+                      'font-size:16px;' +
+                      'margin-bottom:8px;">' +
+                      "Linked Report - " +
+                      E(
+                          TYPE_LABELS[c.type] ||
+                          c.type
+                      ) +
+                      "</div>";
+
+                  html +=
+                      '<div style="' +
+                      'margin-bottom:8px;">' +
+                      "Total Records: " +
+                      rows.length +
+                      "</div>";
+
+                  if (!rows.length) {
+
+                      html +=
+                          '<div style="' +
+                          'padding:12px;' +
+                          'border:1px solid #ccc;' +
+                          'border-radius:8px;">' +
+                          "No linked records found." +
+                          "</div>";
+
+                  } else {
+
+                      rows.forEach(
+                          function (row, index) {
+                              html +=
+                                  rowHtml(
+                                      row,
+                                      index
+                                  );
+                          }
+                      );
+                  }
+
+                  result.innerHTML = html;
+
+                  return rows;
+              }
+
+              function printReport() {
+                  const rows =
+                      renderResult();
+
+                  const c = ctx();
+
+                  const title =
+                      "M.B. Summary - Linked Report";
+
+                  let html =
+                      "<!DOCTYPE html>" +
+                      "<html>" +
+                      "<head>" +
+                      '<meta charset="UTF-8">' +
+                      "<title>" +
+                      E(title) +
+                      "</title>" +
+                      "<style>" +
+                      "@page{size:A4;margin:12mm;}" +
+                      "body{font-family:Arial,sans-serif;" +
+                      "font-size:11px;color:#111;}" +
+                      "h1{font-size:18px;}" +
+                      ".row{border:1px solid #777;" +
+                      "padding:7px;margin:6px 0;" +
+                      "border-radius:4px;}" +
+                      ".row div{margin:2px 0;}" +
+                      "</style>" +
+                      "</head>" +
+                      "<body>" +
+                      "<h1>" +
+                      E(title) +
+                      "</h1>";
+
+                  html +=
+                      "<div><b>Category:</b> " +
+                      E(
+                          TYPE_LABELS[c.type] ||
+                          c.type
+                      ) +
+                      "</div>";
+
+                  if (c.target) {
+                      html +=
+                          "<div><b>Selected:</b> " +
+                          E(c.target) +
+                          "</div>";
+                  }
+
+                  html +=
+                      "<div><b>Total:</b> " +
+                      rows.length +
+                      "</div>";
+
+                  rows.forEach(
+                      function (row, index) {
+
+                          html +=
+                              '<div class="row">' +
+                              "<b>" +
+                              (index + 1) +
+                              ". Linked Record</b>";
+
+                          const fields = [
+                              ["M.B. Number", mbNo(row)],
+                              ["Work Name", workName(row)],
+                              ["Contractor / Agency", contractor(row)],
+                              ["Junior Engineer", jeName(row)],
+                              ["M.B. Size", size(row)],
+                              ["Bill No.", billNo(row)],
+                              ["Bill Type", billType(row)],
+                              ["Transfer No.", transferNo(row)],
+                              ["Date", dateValue(row)]
+                          ];
+
+                          fields.forEach(
+                              function (field) {
+                                  if (!field[1]) return;
+
+                                  html +=
+                                      "<div><b>" +
+                                      E(field[0]) +
+                                      ":</b> " +
+                                      E(field[1]) +
+                                      "</div>";
+                              }
+                          );
+
+                          const av =
+                              row.amount ||
+                              row.billAmount ||
+                              row.totalAmount ||
+                              row["Amount"] ||
+                              row["Bill Amount"];
+
+                          if (av) {
+                              html +=
+                                  "<div><b>Amount:</b> " +
+                                  E(amount(av)) +
+                                  "</div>";
+                          }
+
+                          html += "</div>";
+                      }
+                  );
+
+                  html +=
+                      "</body></html>";
+
+                  const win =
+                      window.open(
+                          "",
+                          "_blank"
+                      );
+
+                  if (!win) {
+                      alert(
+                          "Print window could not be opened."
+                      );
+                      return;
+                  }
+
+                  win.document.open();
+                  win.document.write(html);
+                  win.document.close();
+
+                  setTimeout(
+                      function () {
+                          win.focus();
+                          win.print();
+                      },
+                      400
+                  );
+              }
+
+              function bind() {
+
+                  const ids = [
+                      "homeRelType",
+                      "homeRelTarget",
+                      "homeRelComponent",
+                      "homeRelDetail",
+                      "homeRelBillType",
+                      "homeRelFrom",
+                      "homeRelTo"
+                  ];
+
+                  ids.forEach(
+                      function (id) {
+
+                          const element =
+                              A(id);
+
+                          if (!element) return;
+
+                          element.addEventListener(
+                              "change",
+                              function () {
+
+                                  if (
+                                      id ===
+                                      "homeRelType"
+                                  ) {
+                                      renderTargets();
+                                      renderComponents();
+                                      renderDetails();
+                                  }
+
+                                  if (
+                                      id ===
+                                      "homeRelTarget"
+                                  ) {
+                                      renderComponents();
+                                      renderDetails();
+                                  }
+
+                                  renderResult();
+                              }
+                          );
+                      }
+                  );
+
+                  const print =
+                      A(
+                          "homeRelPrint"
+                      );
+
+                  if (print) {
+                      print.addEventListener(
+                          "click",
+                          printReport
+                      );
+                  }
+
+                  renderTargets();
+                  renderComponents();
+                  renderDetails();
+                  renderResult();
+              }
+
+              window.loadHomeRelDetailsV124 =
+                  function () {
+                      renderDetails();
+                      renderResult();
+                  };
+
+              window.showHomeRelationshipV124 =
+                  function () {
+                      renderResult();
+                  };
+
+              window.printLinkedRelationshipReport =
+                  function () {
+                      printReport();
+                  };
+
+              window.loadHomeRelTargets =
+                  function () {
+                      renderTargets();
+                  };
+
+              window.loadHomeRelComponents =
+                  function () {
+                      renderComponents();
+                      renderDetails();
+                  };
+
+              window.printHomeRelationshipReport =
+                  function () {
+                      printReport();
+                  };
+
+              if (
+                  document.readyState ===
+                  "loading"
+              ) {
+                  document.addEventListener(
+                      "DOMContentLoaded",
+                      bind
+                  );
+              } else {
+                  bind();
+              }
+
+          })();
+          </script>
+          '''
+
+          closing = "</body>"
+
+          position = text.rfind(closing)
+
+          if position < 0:
+              raise SystemExit(
+                  "ERROR: </body> not found."
+              )
+
+          text = (
+              text[:position] +
+              patch +
+              "\n" +
+              text[position:]
+          )
+
+          html_path.write_text(
+              text,
+              encoding="utf-8"
+          )
+
+          print(
+              "MB Summary linked report patch applied."
+          )
+          PY
+
+      - name: Validate Final HTML JavaScript
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          html = Path(
+              "mbms_work/index.html"
+          )
+
+          text = html.read_text(
+              encoding="utf-8"
+          )
+
+          scripts = re.findall(
+              r"<script[^>]*>(.*?)</script>",
+              text,
+              flags=re.I | re.S
+          )
+
+          if not scripts:
+              raise SystemExit(
+                  "ERROR: No JavaScript blocks found."
+              )
+
+          for i, script in enumerate(scripts):
+              Path(
+                  f"/tmp/mbms_script_{i}.js"
+              ).write_text(
+                  script,
+                  encoding="utf-8"
+              )
+
+          print(
+              f"Extracted {len(scripts)} JavaScript blocks."
+          )
+          PY
+
+          node --check /tmp/mbms_script_0.js
+
+          for js in /tmp/mbms_script_*.js
           do
-            grep -q "$x" mbms_work/index.html || {
-              echo "Missing required function: $x"
+            node --check "$js"
+          done
+
+          grep -q \
+            'V128_MBMS_SUMMARY_LINKED_FIX' \
+            mbms_work/index.html
+
+          grep -q \
+            'loadHomeRelDetailsV124' \
+            mbms_work/index.html
+
+          grep -q \
+            'printLinkedRelationshipReport' \
+            mbms_work/index.html
+
+          echo "FINAL HTML JAVASCRIPT VALIDATION PASSED."
+
+      - name: Required feature validation
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          HTML="mbms_work/index.html"
+
+          required=(
+            "mbmsSettingsSnapshot"
+            "downloadSettingsBackup"
+            "restoreSettingsBackup"
+            "generateTransferReport"
+            "saveTransferMB"
+            "getTransferHistory"
+            "V128_MBMS_SUMMARY_LINKED_FIX"
+            "loadHomeRelDetailsV124"
+            "showHomeRelationshipV124"
+            "printLinkedRelationshipReport"
+          )
+
+          for item in "${required[@]}"
+          do
+            grep -q "$item" "$HTML" || {
+              echo "ERROR: Required item missing: $item"
               exit 1
             }
           done
 
+          echo "REQUIRED FEATURE VALIDATION PASSED."
+
       - name: Create Android project
+        shell: bash
         run: |
           set -euo pipefail
 
-          rm -rf mbms_android release
+          rm -rf mbms_android
+          rm -rf release
 
           mkdir -p \
             mbms_android/app/src/main/java/com/mbms/app \
@@ -217,20 +1510,25 @@ jobs:
 
           cat > mbms_android/app/src/main/res/values/strings.xml <<'EOF'
           <resources>
-              <string name="app_name">Measurement Book Management System</string>
+              <string name="app_name">
+                  Measurement Book Management System
+              </string>
           </resources>
           EOF
 
           cat > mbms_android/app/src/main/res/values/styles.xml <<'EOF'
           <resources>
+
               <style
                   name="AppTheme"
                   parent="android:style/Theme.Material.Light.NoActionBar">
 
                   <item name="android:fontFamily">sans</item>
+                  <item name="android:windowActionModeOverlay">true</item>
                   <item name="android:colorAccent">#176aa4</item>
 
               </style>
+
           </resources>
           EOF
 
@@ -238,14 +1536,12 @@ jobs:
           <manifest
               xmlns:android="http://schemas.android.com/apk/res/android">
 
-              <uses-permission
-                  android:name="android.permission.READ_MEDIA_IMAGES" />
-
               <application
                   android:theme="@style/AppTheme"
                   android:label="@string/app_name"
                   android:allowBackup="true"
-                  android:supportsRtl="true">
+                  android:supportsRtl="true"
+                  android:usesCleartextTraffic="true">
 
                   <activity
                       android:name=".MainActivity"
@@ -253,11 +1549,13 @@ jobs:
                       android:exported="true">
 
                       <intent-filter>
+
                           <action
                               android:name="android.intent.action.MAIN" />
 
                           <category
                               android:name="android.intent.category.LAUNCHER" />
+
                       </intent-filter>
 
                   </activity>
@@ -271,28 +1569,27 @@ jobs:
           package com.mbms.app;
 
           import android.app.Activity;
+
           import android.os.Build;
           import android.os.Bundle;
           import android.os.Environment;
 
-          import android.content.Intent;
           import android.content.ContentValues;
+          import android.content.Intent;
 
           import android.net.Uri;
 
           import android.provider.MediaStore;
 
-          import android.webkit.WebView;
-          import android.webkit.WebSettings;
-          import android.webkit.WebViewClient;
-          import android.webkit.WebChromeClient;
-          import android.webkit.ValueCallback;
           import android.webkit.JavascriptInterface;
+          import android.webkit.ValueCallback;
+          import android.webkit.WebChromeClient;
+          import android.webkit.WebSettings;
+          import android.webkit.WebView;
+          import android.webkit.WebViewClient;
 
           import android.print.PrintAttributes;
           import android.print.PrintManager;
-
-          import android.graphics.Color;
 
           import android.widget.Toast;
 
@@ -302,40 +1599,61 @@ jobs:
 
           import java.nio.charset.StandardCharsets;
 
+
           public class MainActivity extends Activity {
 
               private WebView webView;
 
-              private static final int REQUEST_FILE = 7001;
-
               private ValueCallback<Uri[]> filePathCallback;
+
+              private static final int REQUEST_FILE = 7001;
 
 
               @Override
-              protected void onCreate(Bundle savedInstanceState) {
+              protected void onCreate(
+                      Bundle savedInstanceState) {
 
-                  super.onCreate(savedInstanceState);
+                  super.onCreate(
+                          savedInstanceState
+                  );
 
 
-                  webView = new WebView(this);
-
-                  webView.setBackgroundColor(Color.WHITE);
+                  webView = new WebView(
+                          this
+                  );
 
 
                   WebSettings settings =
                           webView.getSettings();
 
-                  settings.setJavaScriptEnabled(true);
+                  settings.setJavaScriptEnabled(
+                          true
+                  );
 
-                  settings.setDomStorageEnabled(true);
+                  settings.setDomStorageEnabled(
+                          true
+                  );
 
-                  settings.setDatabaseEnabled(true);
+                  settings.setDatabaseEnabled(
+                          true
+                  );
 
-                  settings.setAllowFileAccess(true);
+                  settings.setAllowFileAccess(
+                          true
+                  );
 
-                  settings.setAllowContentAccess(true);
+                  settings.setAllowContentAccess(
+                          true
+                  );
 
-                  settings.setSupportZoom(false);
+                  settings.setSupportZoom(
+                          false
+                  );
+
+
+                  webView.setWebViewClient(
+                          new WebViewClient()
+                  );
 
 
                   webView.setWebChromeClient(
@@ -347,11 +1665,18 @@ jobs:
                                       ValueCallback<Uri[]> callback,
                                       WebChromeClient.FileChooserParams params) {
 
-                                  if (filePathCallback != null) {
-                                      filePathCallback = null;
+                                  if (
+                                          filePathCallback !=
+                                          null
+                                  ) {
+                                      filePathCallback
+                                              .onReceiveValue(
+                                                      null
+                                              );
                                   }
 
-                                  filePathCallback = callback;
+                                  filePathCallback =
+                                          callback;
 
                                   try {
 
@@ -363,157 +1688,161 @@ jobs:
                                               REQUEST_FILE
                                       );
 
-                                  } catch (Exception e) {
+                                      return true;
 
-                                      filePathCallback = null;
+                                  } catch (
+                                          Exception e
+                                  ) {
+
+                                      filePathCallback =
+                                              null;
 
                                       return false;
                                   }
-
-                                  return true;
                               }
                           }
                   );
 
 
                   webView.addJavascriptInterface(
-                          new Object() {
+                          new AndroidBridge(),
+                          "AndroidBridge"
+                  );
 
-                              @JavascriptInterface
-                              public void print() {
 
-                                  runOnUiThread(
-                                          () -> {
+                  webView.loadUrl(
+                          "file:///android_asset/index.html"
+                  );
 
-                                              try {
 
-                                                  PrintManager manager =
-                                                          (PrintManager)
-                                                                  getSystemService(
-                                                                          PRINT_SERVICE
-                                                                  );
+                  setContentView(
+                          webView
+                  );
+              }
 
-                                                  if (manager == null) {
-                                                      return;
-                                                  }
 
-                                                  manager.print(
-                                                          "MBMS",
-                                                          webView
-                                                                  .createPrintDocumentAdapter(
-                                                                          "MBMS"
-                                                                  ),
-                                                          new PrintAttributes
-                                                                  .Builder()
-                                                                  .build()
-                                                  );
+              public class AndroidBridge {
 
-                                              } catch (Exception e) {
+                  @JavascriptInterface
+                  public void print() {
 
-                                                  e.printStackTrace();
+                      runOnUiThread(
+                              new Runnable() {
 
-                                              }
+                                  @Override
+                                  public void run() {
+
+                                      try {
+
+                                          PrintManager manager =
+                                                  (PrintManager)
+                                                          getSystemService(
+                                                                  PRINT_SERVICE
+                                                          );
+
+                                          if (
+                                                  manager ==
+                                                  null
+                                          ) {
+                                              return;
                                           }
-                                  );
+
+                                          manager.print(
+                                                  "MBMS",
+                                                  webView
+                                                          .createPrintDocumentAdapter(
+                                                                  "MBMS"
+                                                          ),
+                                                  new PrintAttributes
+                                                          .Builder()
+                                                          .build()
+                                          );
+
+                                      } catch (
+                                              Exception e
+                                      ) {
+
+                                          Toast.makeText(
+                                                  MainActivity.this,
+                                                  "Print Error: " +
+                                                          e.getMessage(),
+                                                  Toast.LENGTH_LONG
+                                          ).show();
+                                      }
+                                  }
                               }
+                      );
+                  }
 
 
-                              @JavascriptInterface
-                              public void saveBackup(
-                                      String filename,
-                                      String json) {
+                  @JavascriptInterface
+                  public void saveBackup(
+                          String filename,
+                          String json) {
 
-                                  new Thread(
-                                          () -> {
+                      new Thread(
+                              new Runnable() {
 
-                                              boolean success = false;
+                                  @Override
+                                  public void run() {
 
-                                              try {
+                                      boolean success =
+                                              false;
 
-                                                  if (
-                                                          Build.VERSION.SDK_INT >=
-                                                                  Build.VERSION_CODES.Q
-                                                  ) {
+                                      try {
 
-                                                      ContentValues values =
-                                                              new ContentValues();
+                                          if (
+                                                  Build.VERSION.SDK_INT >=
+                                                          Build.VERSION_CODES.Q
+                                          ) {
 
-                                                      values.put(
-                                                              MediaStore.Downloads
-                                                                      .DISPLAY_NAME,
-                                                              filename
-                                                      );
+                                              ContentValues values =
+                                                      new ContentValues();
 
-                                                      values.put(
-                                                              MediaStore.Downloads
-                                                                      .MIME_TYPE,
-                                                              "application/json"
-                                                      );
+                                              values.put(
+                                                      MediaStore.Downloads
+                                                              .DISPLAY_NAME,
+                                                      filename
+                                              );
 
-                                                      values.put(
-                                                              MediaStore.Downloads
-                                                                      .RELATIVE_PATH,
-                                                              Environment
-                                                                      .DIRECTORY_DOWNLOADS
-                                                      );
+                                              values.put(
+                                                      MediaStore.Downloads
+                                                              .MIME_TYPE,
+                                                      "application/json"
+                                              );
 
-                                                      Uri uri =
-                                                              getContentResolver()
-                                                                      .insert(
-                                                                              MediaStore.Downloads
-                                                                                      .EXTERNAL_CONTENT_URI,
-                                                                              values
-                                                                      );
+                                              values.put(
+                                                      MediaStore.Downloads
+                                                              .RELATIVE_PATH,
+                                                      Environment
+                                                              .DIRECTORY_DOWNLOADS
+                                              );
 
-                                                      if (uri != null) {
-
-                                                          try (
-                                                                  OutputStream output =
-                                                                          getContentResolver()
-                                                                                  .openOutputStream(
-                                                                                          uri
-                                                                                  )
-                                                          ) {
-
-                                                              if (output != null) {
-
-                                                                  output.write(
-                                                                          json.getBytes(
-                                                                                  StandardCharsets.UTF_8
-                                                                          )
-                                                                  );
-
-                                                                  output.flush();
-
-                                                                  success = true;
-                                                              }
-                                                          }
-                                                      }
-
-                                                  } else {
-
-                                                      File directory =
-                                                              Environment
-                                                                      .getExternalStoragePublicDirectory(
-                                                                              Environment
-                                                                                      .DIRECTORY_DOWNLOADS
-                                                                      );
-
-                                                      if (!directory.exists()) {
-                                                          directory.mkdirs();
-                                                      }
-
-                                                      File file =
-                                                              new File(
-                                                                      directory,
-                                                                      filename
+                                              Uri uri =
+                                                      getContentResolver()
+                                                              .insert(
+                                                                      MediaStore
+                                                                              .Downloads
+                                                                              .EXTERNAL_CONTENT_URI,
+                                                                      values
                                                               );
 
-                                                      try (
-                                                              FileOutputStream output =
-                                                                      new FileOutputStream(
-                                                                              file
-                                                                      )
+                                              if (
+                                                      uri !=
+                                                      null
+                                              ) {
+
+                                                  try (
+                                                          OutputStream output =
+                                                                  getContentResolver()
+                                                                          .openOutputStream(
+                                                                                  uri
+                                                                          )
+                                                  ) {
+
+                                                      if (
+                                                              output !=
+                                                              null
                                                       ) {
 
                                                           output.write(
@@ -524,50 +1853,85 @@ jobs:
 
                                                           output.flush();
 
-                                                          success = true;
+                                                          success =
+                                                                  true;
                                                       }
                                                   }
-
-                                              } catch (Exception e) {
-
-                                                  e.printStackTrace();
                                               }
 
+                                          } else {
 
-                                              boolean result = success;
+                                              File directory =
+                                                      Environment
+                                                              .getExternalStoragePublicDirectory(
+                                                                      Environment
+                                                                              .DIRECTORY_DOWNLOADS
+                                                              );
 
+                                              if (
+                                                      !directory.exists()
+                                              ) {
+                                                  directory.mkdirs();
+                                              }
 
-                                              runOnUiThread(
-                                                      () ->
-                                                              Toast.makeText(
-                                                                      MainActivity.this,
-                                                                      result
-                                                                              ? "Backup Downloads मध्ये Save झाला."
-                                                                              : "Backup Save मध्ये त्रुटी आली.",
-                                                                      Toast.LENGTH_LONG
-                                                              ).show()
-                                              );
+                                              File file =
+                                                      new File(
+                                                              directory,
+                                                              filename
+                                                      );
 
+                                              try (
+                                                      FileOutputStream output =
+                                                              new FileOutputStream(
+                                                                      file
+                                                              )
+                                              ) {
+
+                                                  output.write(
+                                                          json.getBytes(
+                                                                  StandardCharsets.UTF_8
+                                                          )
+                                                  );
+
+                                                  output.flush();
+
+                                                  success =
+                                                          true;
+                                              }
                                           }
-                                  ).start();
+
+                                      } catch (
+                                              Exception e
+                                      ) {
+
+                                          e.printStackTrace();
+                                      }
+
+
+                                      final boolean result =
+                                              success;
+
+
+                                      runOnUiThread(
+                                              new Runnable() {
+
+                                                  @Override
+                                                  public void run() {
+
+                                                      Toast.makeText(
+                                                              MainActivity.this,
+                                                              result
+                                                                      ? "Backup Downloads मध्ये Save झाला."
+                                                                      : "Backup Save मध्ये त्रुटी आली.",
+                                                              Toast.LENGTH_LONG
+                                                      ).show();
+                                                  }
+                                              }
+                                      );
+                                  }
                               }
-
-                          },
-                          "AndroidBridge"
-                  );
-
-
-                  webView.setWebViewClient(
-                          new WebViewClient()
-                  );
-
-
-                  webView.loadUrl(
-                          "file:///android_asset/index.html"
-                  );
-
-
-                  setContentView(webView);
+                      ).start();
+                  }
               }
 
 
@@ -585,17 +1949,21 @@ jobs:
 
 
                   if (
-                          requestCode == REQUEST_FILE &&
-                          filePathCallback != null
+                          requestCode ==
+                                  REQUEST_FILE &&
+                          filePathCallback !=
+                                  null
                   ) {
 
-                      Uri[] results = null;
-
+                      Uri[] results =
+                              null;
 
                       if (
-                              resultCode == RESULT_OK &&
+                              resultCode ==
+                                      RESULT_OK &&
                               data != null &&
-                              data.getData() != null
+                              data.getData() !=
+                                      null
                       ) {
 
                           results =
@@ -604,13 +1972,13 @@ jobs:
                                   };
                       }
 
+                      filePathCallback
+                              .onReceiveValue(
+                                      results
+                              );
 
-                      filePathCallback.onReceiveValue(
-                              results
-                      );
-
-
-                      filePathCallback = null;
+                      filePathCallback =
+                              null;
                   }
               }
 
@@ -633,6 +2001,23 @@ jobs:
           }
           EOF
 
+      - name: Validate Android Java
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cd mbms_android
+
+          gradle \
+            --no-daemon \
+            --stacktrace \
+            :app:compileDebugJavaWithJavac
+
+      - name: Build APK
+        shell: bash
+        run: |
+          set -euo pipefail
+
           cd mbms_android
 
           gradle \
@@ -642,22 +2027,39 @@ jobs:
 
           cd ..
 
+          test -s \
+            mbms_android/app/build/outputs/apk/debug/app-debug.apk
+
           cp \
             mbms_android/app/build/outputs/apk/debug/app-debug.apk \
             release/MBMS-V128-MB-SUMMARY-LINKED-CORRECTED.apk
 
+      - name: Verify APK
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APK="release/MBMS-V128-MB-SUMMARY-LINKED-CORRECTED.apk"
+
+          test -s "$APK"
+
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" \
             verify \
-            release/MBMS-V128-MB-SUMMARY-LINKED-CORRECTED.apk
+            --verbose \
+            "$APK"
 
-          sha256sum \
-            release/MBMS-V128-MB-SUMMARY-LINKED-CORRECTED.apk \
+          unzip -t "$APK" >/dev/null
+
+          sha256sum "$APK" \
             | tee release/SHA256.txt
 
-      - name: Upload APK
+          echo "APK SIGNATURE AND ZIP VERIFICATION PASSED."
+
+      - name: Upload APK Artifact
         uses: actions/upload-artifact@v7
         with:
           name: MBMS-V128-MB-SUMMARY-LINKED-CORRECTED
-          path: release/*
+          path: |
+            release/MBMS-V128-MB-SUMMARY-LINKED-CORRECTED.apk
+            release/SHA256.txt
           if-no-files-found: error
-```0
