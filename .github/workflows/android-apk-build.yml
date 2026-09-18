@@ -59,14 +59,13 @@ jobs:
             -not -path './.git/*' | head -1 || true)
 
           [ -n "$HTML_FILE" ] || {
-            echo 'ERROR: HTML not found'
+            echo "ERROR: HTML not found"
             exit 1
           }
 
           echo "HTML_FILE=$HTML_FILE" >> "$GITHUB_ENV"
 
           mkdir -p mbms_work
-
           cp "$HTML_FILE" mbms_work/index.html
 
           test -s mbms_work/index.html
@@ -76,26 +75,26 @@ jobs:
           python3 <<'PY'
           from pathlib import Path
 
-          p = Path('mbms_work/index.html')
-          t = p.read_text(encoding='utf-8')
+          p = Path("mbms_work/index.html")
+          t = p.read_text(encoding="utf-8")
 
           t = t.replace(
-              'if(isJE){loadTransferJEs();if(je){je.value=sourceName;je.disabled=true;}}',
-              'if(isJE){loadTransferJEs();if(je){je.value=sourceName;je.disabled=false;}}',
+              "if(isJE){loadTransferJEs();if(je){je.value=sourceName;je.disabled=true;}}",
+              "if(isJE){loadTransferJEs();if(je){je.value=sourceName;je.disabled=false;}}",
               1
           )
 
           t = t.replace(
-              'if(isJE&&je)je.disabled=true;',
-              'if(isJE&&je)je.disabled=false;',
+              "if(isJE&&je)je.disabled=true;",
+              "if(isJE&&je)je.disabled=false;",
               1
           )
 
-          p.write_text(t, encoding='utf-8')
+          p.write_text(t, encoding="utf-8")
           PY
 
           grep -q \
-            'if(isJE&&je)je.disabled=false;' \
+            "if(isJE&&je)je.disabled=false;" \
             mbms_work/index.html
 
       - name: Core function checks
@@ -473,9 +472,7 @@ jobs:
             }
 
             function baseFor(c,d){
-              const all=
-                c.target==='__ALL__';
-
+              const all=c.target==='__ALL__';
               const t=N(c.target);
 
               let out={
@@ -827,7 +824,9 @@ jobs:
                   mbs:b.mbs.filter(
                     x=>
                       w.some(
-                        y=>N(y?.mb)===N(mbNo(x))
+                        y=>
+                          N(y?.mb)===
+                          N(mbNo(x))
                       )
                   ),
 
@@ -836,7 +835,9 @@ jobs:
                   assigns:b.assigns.filter(
                     x=>
                       w.some(
-                        y=>N(y?.mb)===N(x?.mb)
+                        y=>
+                          N(y?.mb)===
+                          N(x?.mb)
                       )
                   ),
 
@@ -850,7 +851,10 @@ jobs:
                   ),
 
                   bills:b.bills.filter(
-                    x=>names.has(N(workName(x)))
+                    x=>
+                      names.has(
+                        N(workName(x))
+                      )
                   ),
 
                   jes:b.jes
@@ -1016,13 +1020,11 @@ jobs:
             }
 
             function current(){
-              const c=ctx();
-
               return applyComponentFilter(
-                c,
+                ctx(),
                 dateFilter(
                   baseFor(
-                    c,
+                    ctx(),
                     data()
                   )
                 )
@@ -2021,8 +2023,7 @@ jobs:
               }
 
               if(btn){
-                btn.onclick=
-                  printReport;
+                btn.onclick=printReport;
               }
 
               target.disabled=true;
@@ -2082,40 +2083,37 @@ jobs:
           from pathlib import Path
           import re
 
-          p=Path('mbms_work/index.html')
-
-          t=p.read_text(
-              encoding='utf-8'
-          )
+          p=Path("mbms_work/index.html")
+          t=p.read_text(encoding="utf-8")
 
           patch=Path(
-              '/tmp/mbms_summary_patch.js'
+              "/tmp/mbms_summary_patch.js"
           ).read_text(
-              encoding='utf-8'
+              encoding="utf-8"
           )
 
           tag=(
-              '<script id="V128_MBMS_SUMMARY_LINKED_FIX">\n'+
-              patch+
-              '\n</script>\n'
+              '<script id="V128_MBMS_SUMMARY_LINKED_FIX">\n'
+              + patch
+              + '\n</script>\n'
           )
 
-          i=t.lower().rfind('</body>')
+          i=t.lower().rfind("</body>")
 
           if i<0:
               raise SystemExit(
-                  'ERROR: </body> not found'
+                  "ERROR: </body> not found"
               )
 
           t=t[:i]+tag+t[i:]
 
           p.write_text(
               t,
-              encoding='utf-8'
+              encoding="utf-8"
           )
 
           print(
-              'V128 summary patch inserted before </body>.'
+              "V128 summary patch inserted before </body>."
           )
           PY
 
@@ -2128,9 +2126,9 @@ jobs:
           import re
 
           t=Path(
-              'mbms_work/index.html'
+              "mbms_work/index.html"
           ).read_text(
-              encoding='utf-8'
+              encoding="utf-8"
           )
 
           m=re.search(
@@ -2141,36 +2139,36 @@ jobs:
 
           if not m:
               raise SystemExit(
-                  'V128 patch not found inside script'
+                  "V128 patch not found inside script"
               )
 
           Path(
-              '/tmp/v128_patch_check.js'
+              "/tmp/v128_patch_check.js"
           ).write_text(
               m.group(1),
-              encoding='utf-8'
+              encoding="utf-8"
           )
 
-          print('PATCH SCRIPT OK')
+          print("PATCH SCRIPT OK")
           PY
 
           node --check \
             /tmp/v128_patch_check.js
 
           grep -q \
-            'window.loadHomeRelTargets' \
+            "window.loadHomeRelTargets" \
             mbms_work/index.html
 
           grep -q \
-            'window.loadHomeRelDetails' \
+            "window.loadHomeRelDetails" \
             mbms_work/index.html
 
           grep -q \
-            'window.showHomeRelationship' \
+            "window.showHomeRelationship" \
             mbms_work/index.html
 
           grep -q \
-            'window.printHomeRelationshipReport' \
+            "window.printHomeRelationshipReport" \
             mbms_work/index.html
 
       - name: Create Android project
@@ -2235,428 +2233,4 @@ jobs:
           }
 
           android {
-              namespace 'com.mbms.app'
-              compileSdk 35
-
-              defaultConfig {
-                  applicationId 'com.mbms.app'
-                  minSdk 26
-                  targetSdk 35
-                  versionCode 128
-                  versionName 'V128'
-              }
-          }
-          EOF
-
-          cat > mbms_android/app/src/main/res/values/strings.xml <<'EOF'
-          <resources>
-              <string name="app_name">
-                  Measurement Book Management System
-              </string>
-          </resources>
-          EOF
-
-          cat > mbms_android/app/src/main/res/values/styles.xml <<'EOF'
-          <resources>
-              <style
-                  name="AppTheme"
-                  parent="android:style/Theme.Material.Light.NoActionBar">
-                  <item name="android:fontFamily">sans</item>
-                  <item name="android:colorAccent">#176aa4</item>
-              </style>
-          </resources>
-          EOF
-
-          cat > mbms_android/app/src/main/AndroidManifest.xml <<'EOF'
-          <manifest
-              xmlns:android="http://schemas.android.com/apk/res/android">
-
-              <uses-permission
-                  android:name="android.permission.READ_MEDIA_IMAGES"/>
-
-              <application
-                  android:theme="@style/AppTheme"
-                  android:label="@string/app_name"
-                  android:allowBackup="true"
-                  android:supportsRtl="true">
-
-                  <activity
-                      android:name=".MainActivity"
-                      android:screenOrientation="portrait"
-                      android:exported="true">
-
-                      <intent-filter>
-
-                          <action
-                              android:name="android.intent.action.MAIN"/>
-
-                          <category
-                              android:name="android.intent.category.LAUNCHER"/>
-
-                      </intent-filter>
-
-                  </activity>
-
-              </application>
-
-          </manifest>
-          EOF
-
-          cat > mbms_android/app/src/main/java/com/mbms/app/MainActivity.java <<'EOF'
-          package com.mbms.app;
-
-          import android.app.*;
-          import android.os.*;
-          import android.content.*;
-          import android.content.ContentValues;
-          import android.net.*;
-          import android.provider.MediaStore;
-          import android.webkit.*;
-          import android.print.PrintAttributes;
-          import android.print.PrintManager;
-          import android.graphics.Color;
-          import android.view.*;
-          import android.widget.Toast;
-
-          import java.io.*;
-          import java.nio.charset.StandardCharsets;
-
-          public class MainActivity extends Activity {
-
-              WebView webView;
-
-              static final int REQUEST_FILE=7001;
-
-              ValueCallback<Uri[]> filePathCallback;
-
-              @Override
-              public void onCreate(Bundle b) {
-
-                  super.onCreate(b);
-
-                  webView=new WebView(this);
-
-                  webView.setBackgroundColor(
-                      Color.WHITE
-                  );
-
-                  WebSettings s=
-                      webView.getSettings();
-
-                  s.setJavaScriptEnabled(true);
-                  s.setDomStorageEnabled(true);
-                  s.setDatabaseEnabled(true);
-                  s.setAllowFileAccess(true);
-                  s.setAllowContentAccess(true);
-                  s.setSupportZoom(false);
-
-                  webView.setWebChromeClient(
-                      new WebChromeClient() {
-
-                          @Override
-                          public boolean onShowFileChooser(
-                              WebView v,
-                              ValueCallback<Uri[]> cb,
-                              FileChooserParams p) {
-
-                              filePathCallback=cb;
-
-                              try {
-
-                                  startActivityForResult(
-                                      p.createIntent(),
-                                      REQUEST_FILE
-                                  );
-
-                              } catch(Exception e) {
-
-                                  filePathCallback=null;
-
-                              }
-
-                              return true;
-                          }
-                      }
-                  );
-
-                  webView.addJavascriptInterface(
-                      new Object() {
-
-                          @JavascriptInterface
-                          public void print() {
-
-                              runOnUiThread(
-                                  () -> {
-
-                                      try {
-
-                                          PrintManager pm=
-                                              (PrintManager)
-                                              getSystemService(
-                                                  PRINT_SERVICE
-                                              );
-
-                                          if(pm==null) {
-                                              return;
-                                          }
-
-                                          pm.print(
-                                              "MBMS",
-                                              webView
-                                                  .createPrintDocumentAdapter(
-                                                      "MBMS"
-                                                  ),
-                                              new PrintAttributes
-                                                  .Builder()
-                                                  .setMediaSize(
-                                                      PrintAttributes
-                                                          .MediaSize
-                                                          .ISO_A4
-                                                  )
-                                                  .setMinMargins(
-                                                      PrintAttributes
-                                                          .Margins
-                                                          .NO_MARGINS
-                                                  )
-                                                  .build()
-                                          );
-
-                                      } catch(Exception e) {
-
-                                          Toast.makeText(
-                                              MainActivity.this,
-                                              "Print Error: "+
-                                              e.getMessage(),
-                                              Toast.LENGTH_LONG
-                                          ).show();
-
-                                      }
-
-                                  }
-                              );
-                          }
-
-                          @JavascriptInterface
-                          public void saveBackup(
-                              String filename,
-                              String json) {
-
-                              new Thread(
-                                  () -> {
-
-                                      boolean ok=false;
-
-                                      try {
-
-                                          if(
-                                              Build.VERSION.SDK_INT>=29
-                                          ) {
-
-                                              ContentValues v=
-                                                  new ContentValues();
-
-                                              v.put(
-                                                  MediaStore.Downloads
-                                                      .DISPLAY_NAME,
-                                                  filename
-                                              );
-
-                                              v.put(
-                                                  MediaStore.Downloads
-                                                      .MIME_TYPE,
-                                                  "application/json"
-                                              );
-
-                                              v.put(
-                                                  MediaStore.Downloads
-                                                      .RELATIVE_PATH,
-                                                  Environment
-                                                      .DIRECTORY_DOWNLOADS
-                                              );
-
-                                              Uri u=
-                                                  getContentResolver()
-                                                      .insert(
-                                                          MediaStore
-                                                              .Downloads
-                                                              .EXTERNAL_CONTENT_URI,
-                                                          v
-                                                      );
-
-                                              if(u!=null) {
-
-                                                  try(
-                                                      OutputStream o=
-                                                          getContentResolver()
-                                                              .openOutputStream(
-                                                                  u
-                                                              )
-                                                  ) {
-
-                                                      if(o!=null) {
-
-                                                          o.write(
-                                                              json.getBytes(
-                                                                  StandardCharsets.UTF_8
-                                                              )
-                                                          );
-
-                                                          o.flush();
-
-                                                          ok=true;
-                                                      }
-                                                  }
-                                              }
-
-                                          } else {
-
-                                              File d=
-                                                  Environment
-                                                      .getExternalStoragePublicDirectory(
-                                                          Environment
-                                                              .DIRECTORY_DOWNLOADS
-                                                      );
-
-                                              d.mkdirs();
-
-                                              try(
-                                                  FileOutputStream o=
-                                                      new FileOutputStream(
-                                                          new File(
-                                                              d,
-                                                              filename
-                                                          )
-                                                      )
-                                              ) {
-
-                                                  o.write(
-                                                      json.getBytes(
-                                                          StandardCharsets.UTF_8
-                                                      )
-                                                  );
-
-                                                  o.flush();
-
-                                                  ok=true;
-                                              }
-                                          }
-
-                                      } catch(Exception e) {
-
-                                          e.printStackTrace();
-
-                                      }
-
-                                      boolean result=ok;
-
-                                      runOnUiThread(
-                                          () ->
-                                              Toast.makeText(
-                                                  MainActivity.this,
-                                                  result
-                                                      ? "Backup Downloads मध्ये Save झाला."
-                                                      : "Backup Save मध्ये त्रुटी आली.",
-                                                  Toast.LENGTH_LONG
-                                              ).show()
-                                      );
-
-                                  }
-                              ).start();
-                          }
-
-                      },
-                      "AndroidBridge"
-                  );
-
-                  webView.setWebViewClient(
-                      new WebViewClient()
-                  );
-
-                  webView.loadUrl(
-                      "file:///android_asset/index.html"
-                  );
-
-                  setContentView(webView);
-              }
-
-              @Override
-              protected void onActivityResult(
-                  int r,
-                  int c,
-                  Intent d) {
-
-                  super.onActivityResult(
-                      r,
-                      c,
-                      d
-                  );
-
-                  if(
-                      r==REQUEST_FILE &&
-                      filePathCallback!=null
-                  ) {
-
-                      Uri[] u=
-                          (
-                              c==RESULT_OK &&
-                              d!=null &&
-                              d.getData()!=null
-                          )
-                          ?
-                          new Uri[]{
-                              d.getData()
-                          }
-                          :
-                          null;
-
-                      filePathCallback
-                          .onReceiveValue(u);
-
-                      filePathCallback=null;
-                  }
-              }
-
-              @Override
-              public void onBackPressed() {
-
-                  if(
-                      webView!=null &&
-                      webView.canGoBack()
-                  ) {
-
-                      webView.goBack();
-
-                  } else {
-
-                      super.onBackPressed();
-                  }
-              }
-          }
-          EOF
-
-          cd mbms_android
-
-          gradle \
-            --no-daemon \
-            :app:assembleDebug
-
-          cd ..
-
-          cp \
-            mbms_android/app/build/outputs/apk/debug/app-debug.apk \
-            release/MBMS-V128-MB-SUMMARY-LINKED-CORRECTED.apk
-
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" \
-            verify \
-            release/MBMS-V128-MB-SUMMARY-LINKED-CORRECTED.apk
-
-          sha256sum \
-            release/MBMS-V128-MB-SUMMARY-LINKED-CORRECTED.apk \
-            | tee release/SHA256.txt
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v7
-        with:
-          name: MBMS-V128-MB-SUMMARY-LINKED-CORRECTED
-          path: release/*
-          if-no-files-found: error
+              namespace 'com.mb
