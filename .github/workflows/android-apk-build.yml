@@ -11,6 +11,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-24.04
+
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -150,9 +151,7 @@ jobs:
               try{
                 return hrNorm(v);
               }catch(e){
-                return S(v)
-                  .toLowerCase()
-                  .replace(/\s+/g,' ');
+                return S(v).toLowerCase().replace(/\s+/g,' ');
               }
             }
 
@@ -538,14 +537,17 @@ jobs:
                         m=>N(mbNo(x))===N(m)
                       )
                   ),
+
                   works:w,
                   assigns:a,
+
                   transfers:d.transfers.filter(
                     x=>
                       mbs.some(
                         m=>N(transferNo(x))===N(m)
                       )
                   ),
+
                   bills:b,
                   jes:d.jes
                 };
@@ -588,19 +590,23 @@ jobs:
                         m=>N(mbNo(x))===N(m)
                       )
                   ),
+
                   works:w,
+
                   assigns:d.assigns.filter(
                     x=>
                       mbs.some(
                         m=>N(x?.mb)===N(m)
                       )
                   ),
+
                   transfers:d.transfers.filter(
                     x=>
                       mbs.some(
                         m=>N(transferNo(x))===N(m)
                       )
                   ),
+
                   bills:b,
                   jes:d.jes
                 };
@@ -643,14 +649,17 @@ jobs:
                         m=>N(mbNo(x))===N(m)
                       )
                   ),
+
                   works:w,
                   assigns:a,
+
                   transfers:d.transfers.filter(
                     x=>
                       mbs.some(
                         m=>N(transferNo(x))===N(m)
                       )
                   ),
+
                   bills:b,
                   jes:d.jes
                 };
@@ -742,7 +751,7 @@ jobs:
                       mbs.some(
                         m=>N(x?.mb)===N(m)
                       )
-                  ],
+                  ),
 
                   transfers:tr,
 
@@ -1008,7 +1017,7 @@ jobs:
                       nums.some(
                         m=>N(transferNo(x))===N(m)
                       )
-                  ],
+                  ),
 
                   bills,
 
@@ -2081,7 +2090,6 @@ jobs:
 
           python3 <<'PY'
           from pathlib import Path
-          import re
 
           p=Path("mbms_work/index.html")
           t=p.read_text(encoding="utf-8")
@@ -2233,4 +2241,430 @@ jobs:
           }
 
           android {
-              namespace 'com.mb
+              namespace 'com.mbms.app'
+              compileSdk 35
+
+              defaultConfig {
+                  applicationId 'com.mbms.app'
+                  minSdk 26
+                  targetSdk 35
+                  versionCode 128
+                  versionName 'V128'
+              }
+          }
+          EOF
+
+          cat > mbms_android/app/src/main/res/values/strings.xml <<'EOF'
+          <resources>
+              <string name="app_name">
+                  Measurement Book Management System
+              </string>
+          </resources>
+          EOF
+
+          cat > mbms_android/app/src/main/res/values/styles.xml <<'EOF'
+          <resources>
+              <style
+                  name="AppTheme"
+                  parent="android:style/Theme.Material.Light.NoActionBar">
+                  <item name="android:fontFamily">sans</item>
+                  <item name="android:colorAccent">#176aa4</item>
+              </style>
+          </resources>
+          EOF
+
+          cat > mbms_android/app/src/main/AndroidManifest.xml <<'EOF'
+          <manifest
+              xmlns:android="http://schemas.android.com/apk/res/android">
+
+              <uses-permission
+                  android:name="android.permission.READ_MEDIA_IMAGES"/>
+
+              <application
+                  android:theme="@style/AppTheme"
+                  android:label="@string/app_name"
+                  android:allowBackup="true"
+                  android:supportsRtl="true">
+
+                  <activity
+                      android:name=".MainActivity"
+                      android:screenOrientation="portrait"
+                      android:exported="true">
+
+                      <intent-filter>
+
+                          <action
+                              android:name="android.intent.action.MAIN"/>
+
+                          <category
+                              android:name="android.intent.category.LAUNCHER"/>
+
+                      </intent-filter>
+
+                  </activity>
+
+              </application>
+
+          </manifest>
+          EOF
+
+          cat > mbms_android/app/src/main/java/com/mbms/app/MainActivity.java <<'EOF'
+          package com.mbms.app;
+
+          import android.app.*;
+          import android.os.*;
+          import android.content.*;
+          import android.content.ContentValues;
+          import android.net.*;
+          import android.provider.MediaStore;
+          import android.webkit.*;
+          import android.print.PrintAttributes;
+          import android.print.PrintManager;
+          import android.graphics.Color;
+          import android.view.*;
+          import android.widget.Toast;
+          import java.io.*;
+          import java.nio.charset.StandardCharsets;
+
+          public class MainActivity extends Activity {
+
+              WebView webView;
+
+              static final int REQUEST_FILE=7001;
+
+              ValueCallback<Uri[]> filePathCallback;
+
+              @Override
+              public void onCreate(Bundle b) {
+
+                  super.onCreate(b);
+
+                  webView=new WebView(this);
+
+                  webView.setBackgroundColor(
+                      Color.WHITE
+                  );
+
+                  WebSettings s=
+                      webView.getSettings();
+
+                  s.setJavaScriptEnabled(true);
+                  s.setDomStorageEnabled(true);
+                  s.setDatabaseEnabled(true);
+                  s.setAllowFileAccess(true);
+                  s.setAllowContentAccess(true);
+                  s.setSupportZoom(false);
+
+                  webView.setWebChromeClient(
+                      new WebChromeClient() {
+
+                          @Override
+                          public boolean onShowFileChooser(
+                              WebView v,
+                              ValueCallback<Uri[]> cb,
+                              FileChooserParams p) {
+
+                              filePathCallback=cb;
+
+                              try {
+
+                                  startActivityForResult(
+                                      p.createIntent(),
+                                      REQUEST_FILE
+                                  );
+
+                              } catch(Exception e) {
+
+                                  filePathCallback=null;
+
+                              }
+
+                              return true;
+                          }
+                      }
+                  );
+
+                  webView.addJavascriptInterface(
+                      new Object() {
+
+                          @JavascriptInterface
+                          public void print() {
+
+                              runOnUiThread(
+                                  () -> {
+
+                                      try {
+
+                                          PrintManager pm=
+                                              (PrintManager)
+                                              getSystemService(
+                                                  PRINT_SERVICE
+                                              );
+
+                                          if(pm==null){
+                                              return;
+                                          }
+
+                                          PrintAttributes attrs=
+                                              new PrintAttributes
+                                                  .Builder()
+                                                  .setMediaSize(
+                                                      PrintAttributes
+                                                          .MediaSize
+                                                          .ISO_A4
+                                                  )
+                                                  .setMinMargins(
+                                                      PrintAttributes
+                                                          .Margins
+                                                          .NO_MARGINS
+                                                  )
+                                                  .build();
+
+                                          pm.print(
+                                              "MBMS M.B. Summary Report",
+                                              webView
+                                                  .createPrintDocumentAdapter(
+                                                      "MBMS M.B. Summary Report"
+                                                  ),
+                                              attrs
+                                          );
+
+                                      } catch(Exception e) {
+
+                                          Toast.makeText(
+                                              MainActivity.this,
+                                              "Print Error: "+
+                                              e.getMessage(),
+                                              Toast.LENGTH_LONG
+                                          ).show();
+
+                                      }
+
+                                  }
+                              );
+                          }
+
+                          @JavascriptInterface
+                          public void saveBackup(
+                              String filename,
+                              String json) {
+
+                              new Thread(
+                                  () -> {
+
+                                      boolean ok=false;
+
+                                      try {
+
+                                          if(
+                                              Build.VERSION.SDK_INT>=29
+                                          ) {
+
+                                              ContentValues v=
+                                                  new ContentValues();
+
+                                              v.put(
+                                                  MediaStore.Downloads
+                                                      .DISPLAY_NAME,
+                                                  filename
+                                              );
+
+                                              v.put(
+                                                  MediaStore.Downloads
+                                                      .MIME_TYPE,
+                                                  "application/json"
+                                              );
+
+                                              v.put(
+                                                  MediaStore.Downloads
+                                                      .RELATIVE_PATH,
+                                                  Environment
+                                                      .DIRECTORY_DOWNLOADS
+                                              );
+
+                                              Uri u=
+                                                  getContentResolver()
+                                                      .insert(
+                                                          MediaStore
+                                                              .Downloads
+                                                              .EXTERNAL_CONTENT_URI,
+                                                          v
+                                                      );
+
+                                              if(u!=null) {
+
+                                                  try(
+                                                      OutputStream o=
+                                                          getContentResolver()
+                                                              .openOutputStream(
+                                                                  u
+                                                              )
+                                                  ) {
+
+                                                      if(o!=null) {
+
+                                                          o.write(
+                                                              json.getBytes(
+                                                                  StandardCharsets.UTF_8
+                                                              )
+                                                          );
+
+                                                          o.flush();
+
+                                                          ok=true;
+                                                      }
+                                                  }
+                                              }
+
+                                          } else {
+
+                                              File d=
+                                                  Environment
+                                                      .getExternalStoragePublicDirectory(
+                                                          Environment
+                                                              .DIRECTORY_DOWNLOADS
+                                                      );
+
+                                              d.mkdirs();
+
+                                              try(
+                                                  FileOutputStream o=
+                                                      new FileOutputStream(
+                                                          new File(
+                                                              d,
+                                                              filename
+                                                          )
+                                                      )
+                                              ) {
+
+                                                  o.write(
+                                                      json.getBytes(
+                                                          StandardCharsets.UTF_8
+                                                      )
+                                                  );
+
+                                                  o.flush();
+
+                                                  ok=true;
+                                              }
+                                          }
+
+                                      } catch(Exception e) {
+
+                                          e.printStackTrace();
+
+                                      }
+
+                                      boolean result=ok;
+
+                                      runOnUiThread(
+                                          () ->
+                                              Toast.makeText(
+                                                  MainActivity.this,
+                                                  result
+                                                      ? "Backup Downloads मध्ये Save झाला."
+                                                      : "Backup Save मध्ये त्रुटी आली.",
+                                                  Toast.LENGTH_LONG
+                                              ).show()
+                                      );
+
+                                  }
+                              ).start();
+                          }
+
+                      },
+                      "AndroidBridge"
+                  );
+
+                  webView.setWebViewClient(
+                      new WebViewClient()
+                  );
+
+                  webView.loadUrl(
+                      "file:///android_asset/index.html"
+                  );
+
+                  setContentView(webView);
+              }
+
+              @Override
+              protected void onActivityResult(
+                  int r,
+                  int c,
+                  Intent d) {
+
+                  super.onActivityResult(
+                      r,
+                      c,
+                      d
+                  );
+
+                  if(
+                      r==REQUEST_FILE &&
+                      filePathCallback!=null
+                  ) {
+
+                      Uri[] u=
+                          (
+                              c==RESULT_OK &&
+                              d!=null &&
+                              d.getData()!=null
+                          )
+                          ?
+                          new Uri[]{
+                              d.getData()
+                          }
+                          :
+                          null;
+
+                      filePathCallback
+                          .onReceiveValue(u);
+
+                      filePathCallback=null;
+                  }
+              }
+
+              @Override
+              public void onBackPressed() {
+
+                  if(
+                      webView!=null &&
+                      webView.canGoBack()
+                  ) {
+
+                      webView.goBack();
+
+                  } else {
+
+                      super.onBackPressed();
+                  }
+              }
+          }
+          EOF
+
+          cd mbms_android
+
+          gradle \
+            --no-daemon \
+            :app:assembleDebug
+
+          cd ..
+
+          cp \
+            mbms_android/app/build/outputs/apk/debug/app-debug.apk \
+            release/MBMS-V128-MB-SUMMARY-LINKED-CORRECTED.apk
+
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" \
+            verify \
+            release/MBMS-V128-MB-SUMMARY-LINKED-CORRECTED.apk
+
+          sha256sum \
+            release/MBMS-V128-MB-SUMMARY-LINKED-CORRECTED.apk \
+            | tee release/SHA256.txt
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: MBMS-V128-MB-SUMMARY-LINKED-CORRECTED
+          path: release/*
+          if-no-files-found: error
