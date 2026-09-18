@@ -1,156 +1,218 @@
-name: MBMS V128 FINAL - M.B. Summary Linked - Corrected
+name: MBMS V129 - All Reports Print PDF Fixed FINAL
 
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches:
+      - main
 
 permissions:
   contents: read
 
 jobs:
   build:
+    name: Build Final MBMS APK
     runs-on: ubuntu-24.04
+
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v7
 
-      - name: Java 17
+      - name: Setup Java 17
         uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Android SDK
+      - name: Setup Android SDK
         uses: android-actions/setup-android@v4
 
-      - name: Install SDK
+      - name: Install Android SDK 35
+        shell: bash
         run: |
+          set -euo pipefail
           yes | sdkmanager --licenses >/dev/null 2>&1 || true
-          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          sdkmanager \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
 
-      - name: Install Gradle
+      - name: Install Gradle 8.7
+        shell: bash
         run: |
+          set -euo pipefail
           wget -q https://services.gradle.org/distributions/gradle-8.7-bin.zip
           mkdir -p "$HOME/gradle"
           unzip -q gradle-8.7-bin.zip -d "$HOME/gradle"
           echo "$HOME/gradle/gradle-8.7/bin" >> "$GITHUB_PATH"
+          "$HOME/gradle/gradle-8.7/bin/gradle" --version
 
-      - name: Find and prepare HTML
+      - name: Verify Java and Gradle
+        shell: bash
+        run: |
+          set -euo pipefail
+          java -version
+          gradle --version
+
+      - name: Find MBMS HTML
+        shell: bash
         run: |
           set -euo pipefail
 
           HTML_FILE=""
 
           for f in \
-            Measurement_Book_Management_System_FINAL_V120_TRANSFER_REPORT_FINAL.html \
-            Measurement_Book_Management_System_FINAL_V118_PRINT_BACKUP_ANDROID.html \
-            Measurement_Book_Management_System_FINAL_V115_MB_HISTORY_ONLY_DATE-6.html \
-            Measurement_Book_Management_System_FINAL_V115_MB_HISTORY_ONLY_DATE.html \
-            Measurement_Book_Management_System_FINAL_V115.html \
-            V115.html \
-            index.html
+            "Measurement_Book_Management_System_FINAL_V120_TRANSFER_REPORT_FINAL.html" \
+            "Measurement_Book_Management_System_FINAL_V118_PRINT_BACKUP_ANDROID.html" \
+            "Measurement_Book_Management_System_FINAL_V115_MB_HISTORY_ONLY_DATE-6.html" \
+            "Measurement_Book_Management_System_FINAL_V115_MB_HISTORY_ONLY_DATE.html" \
+            "Measurement_Book_Management_System_FINAL_V115.html" \
+            "V115.html" \
+            "index.html"
           do
-            [ -f "$f" ] && HTML_FILE="$f" && break
+            if [ -f "$f" ]; then
+              HTML_FILE="$f"
+              break
+            fi
           done
 
-          [ -n "$HTML_FILE" ] || \
-            HTML_FILE=$(find . -maxdepth 3 -type f -iname '*.html' \
-            -not -path './.git/*' | head -1 || true)
+          if [ -z "$HTML_FILE" ]; then
+            HTML_FILE=$(find . \
+              -maxdepth 3 \
+              -type f \
+              -iname "*.html" \
+              -not -path "./.git/*" \
+              | head -n 1 || true)
+          fi
 
-          [ -n "$HTML_FILE" ] || {
-            echo "ERROR: HTML not found"
+          if [ -z "$HTML_FILE" ]; then
+            echo "ERROR: MBMS HTML file not found."
             exit 1
-          }
+          fi
 
+          echo "Using HTML: $HTML_FILE"
           echo "HTML_FILE=$HTML_FILE" >> "$GITHUB_ENV"
 
+      - name: Prepare Final MBMS HTML
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf mbms_work
           mkdir -p mbms_work
           cp "$HTML_FILE" mbms_work/index.html
-
           test -s mbms_work/index.html
 
-      - name: Received -> JE full list correction
+      - name: Apply ONLY Received JE List Correction
+        shell: bash
         run: |
+          set -euo pipefail
+
           python3 <<'PY'
           from pathlib import Path
 
           p = Path("mbms_work/index.html")
-          t = p.read_text(encoding="utf-8")
+          text = p.read_text(encoding="utf-8")
 
-          t = t.replace(
-              "if(isJE){loadTransferJEs();if(je){je.value=sourceName;je.disabled=true;}}",
-              "if(isJE){loadTransferJEs();if(je){je.value=sourceName;je.disabled=false;}}",
-              1
+          old1 = (
+              "if(isJE){loadTransferJEs();"
+              "if(je){je.value=sourceName;je.disabled=true;}}"
           )
 
-          t = t.replace(
-              "if(isJE&&je)je.disabled=true;",
-              "if(isJE&&je)je.disabled=false;",
-              1
+          new1 = (
+              "if(isJE){loadTransferJEs();"
+              "if(je){je.value=sourceName;je.disabled=false;}}"
           )
 
-          p.write_text(t, encoding="utf-8")
+          old2 = "if(isJE&&je)je.disabled=true;"
+          new2 = "if(isJE&&je)je.disabled=false;"
+
+          text = text.replace(old1, new1, 1)
+          text = text.replace(old2, new2, 1)
+
+          p.write_text(text, encoding="utf-8")
+
+          print("Received -> JE correction applied.")
           PY
 
+      - name: Verify Requested Correction
+        shell: bash
+        run: |
+          set -euo pipefail
+
           grep -q \
-            'if(isJE&&je)je.disabled=false;' \
+            "if(isJE&&je)je.disabled=false;" \
             mbms_work/index.html
 
-      - name: Core function checks
-        run: |
-          set -e
+          echo "RECEIVED -> JE FULL LIST CORRECTION VERIFIED."
 
-          for x in \
-            mbmsSettingsSnapshot \
-            downloadSettingsBackup \
-            restoreSettingsBackup \
-            generateTransferReport \
-            saveTransferMB \
-            getTransferHistory
+      - name: Verify MBMS Core Functions
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          HTML="mbms_work/index.html"
+
+          REQUIRED=(
+            "mbmsSettingsSnapshot"
+            "downloadSettingsBackup"
+            "restoreSettingsBackup"
+            "generateTransferReport"
+            "saveTransferMB"
+            "getTransferHistory"
+            "getWorkList"
+            "getBills"
+            "getAssignments"
+            "renderMBSummary"
+          )
+
+          for item in "${REQUIRED[@]}"
           do
-            grep -q "$x" mbms_work/index.html || {
-              echo "Missing $x"
+            grep -q "$item" "$HTML" || {
+              echo "ERROR: Required MBMS function missing: $item"
               exit 1
             }
           done
 
-      - name: Apply M.B. Summary linked fix
+          echo "MBMS CORE FUNCTIONS VERIFIED."
+
+      - name: Apply ONLY MB Summary Relationship and Detail Fix
+        shell: bash
         run: |
           set -Eeuo pipefail
 
           cat > /tmp/mbms_summary_patch.js <<'PATCH_JS'
-          /* V128 - ONLY M.B. SUMMARY LINKED DRILL-DOWN FIX */
           (function(){
-            'use strict';
+            "use strict";
 
             const TYPE_LABELS={
-              MB:'M.B.',
-              JE:'Junior Engineer',
-              WORK:'कामाचे नाव',
-              CONTRACTOR:'Contractor / Agency',
-              BILL:'Bill',
-              TRANSFER:'Transfer / History'
+              MB:"M.B.",
+              JE:"Junior Engineer",
+              WORK:"Work",
+              CONTRACTOR:"Contractor / Agency",
+              BILL:"Bill",
+              TRANSFER:"Transfer / History"
             };
 
-            const DETAIL_ALL='__ALL_DETAIL__';
-            const MB_SMALL='__SMALL_MB__';
-            const MB_LARGE='__LARGE_MB__';
-            const MB_PREFIX='__MBNO__::';
+            const DETAIL_ALL="__ALL_DETAIL__";
+            const MB_SMALL="__SMALL_MB__";
+            const MB_LARGE="__LARGE_MB__";
+            const MB_PREFIX="__MBNO__::";
 
             function A(v){
               return Array.isArray(v)?v:[];
             }
 
             function S(v){
-              return v==null?'':String(v).trim();
+              return v==null?"":String(v).trim();
             }
 
             function N(v){
               try{
                 return hrNorm(v);
               }catch(e){
-                return S(v).toLowerCase().replace(/\s+/g,' ');
+                return S(v)
+                  .toLowerCase()
+                  .replace(/\s+/g," ");
               }
             }
 
@@ -162,11 +224,11 @@ jobs:
                   /[&<>"']/g,
                   function(c){
                     return ({
-                      '&':'&amp;',
-                      '<':'&lt;',
-                      '>':'&gt;',
-                      '"':'&quot;',
-                      "'":'&#39;'
+                      "&":"&amp;",
+                      "<":"&lt;",
+                      ">":"&gt;",
+                      '"':"&quot;",
+                      "'":"&#39;"
                     })[c];
                   }
                 );
@@ -175,9 +237,9 @@ jobs:
 
             function D(v){
               try{
-                return hrDate(v||'');
+                return hrDate(v||"");
               }catch(e){
-                return S(v)||'-';
+                return S(v)||"-";
               }
             }
 
@@ -185,29 +247,33 @@ jobs:
               try{
                 return billAmountText(v);
               }catch(e){
-                return '₹ '+(Number(v)||0).toLocaleString(
-                  'en-IN',
-                  {
-                    minimumFractionDigits:2,
-                    maximumFractionDigits:2
-                  }
-                );
+                return "₹ "+
+                  (Number(v)||0).toLocaleString(
+                    "en-IN",
+                    {
+                      minimumFractionDigits:2,
+                      maximumFractionDigits:2
+                    }
+                  );
               }
             }
 
             function uniq(a){
-              return [...new Set(
-                a.map(S).filter(Boolean)
-              )].sort(
-                (x,y)=>
-                  x.localeCompare(
+              return [
+                ...new Set(
+                  a.map(S).filter(Boolean)
+                )
+              ].sort(
+                function(x,y){
+                  return x.localeCompare(
                     y,
                     undefined,
                     {
                       numeric:true,
-                      sensitivity:'base'
+                      sensitivity:"base"
                     }
-                  )
+                  );
+                }
               );
             }
 
@@ -272,23 +338,23 @@ jobs:
               const z=N(x);
 
               if(
-                z==='small' ||
-                z.includes('small') ||
-                z.includes('लहान')
+                z==="small" ||
+                z.includes("small") ||
+                z.includes("लहान")
               ){
-                return 'SMALL';
+                return "SMALL";
               }
 
               if(
-                z==='large' ||
-                z.includes('large') ||
-                z.includes('big') ||
-                z.includes('मोठ')
+                z==="large" ||
+                z.includes("large") ||
+                z.includes("big") ||
+                z.includes("मोठ")
               ){
-                return 'LARGE';
+                return "LARGE";
               }
 
-              return '';
+              return "";
             }
 
             function data(){
@@ -316,40 +382,43 @@ jobs:
             }
 
             function ctx(){
+
               const type=
                 document.getElementById(
-                  'homeRelType'
-                )?.value||'';
+                  "homeRelType"
+                )?.value||"";
 
               const target=
                 document.getElementById(
-                  'homeRelTarget'
-                )?.value||'';
+                  "homeRelTarget"
+                )?.value||"";
 
               const cv=
                 document.getElementById(
-                  'homeRelComponent'
-                )?.value||'';
+                  "homeRelComponent"
+                )?.value||"";
 
-              const parts=cv.split('::');
+              const parts=
+                cv.split("::");
 
               return {
-                type,
-                target,
-                ctype:parts[0]||'',
-                cvalue:parts.slice(1).join('::'),
+                type:type,
+                target:target,
+                ctype:parts[0]||"",
+                cvalue:parts.slice(1).join("::"),
                 detail:
                   document.getElementById(
-                    'homeRelDetail'
-                  )?.value||'',
+                    "homeRelDetail"
+                  )?.value||"",
                 billType:
                   document.getElementById(
-                    'homeRelBillType'
-                  )?.value||''
+                    "homeRelBillType"
+                  )?.value||""
               };
             }
 
             function inRange(v,from,to){
+
               try{
                 return homeRelInRange(
                   v,
@@ -357,6 +426,7 @@ jobs:
                   to
                 );
               }catch(e){
+
                 const k=S(v);
 
                 return (
@@ -367,15 +437,16 @@ jobs:
             }
 
             function dateFilter(d){
+
               const from=
                 document.getElementById(
-                  'homeRelFrom'
-                )?.value||'';
+                  "homeRelFrom"
+                )?.value||"";
 
               const to=
                 document.getElementById(
-                  'homeRelTo'
-                )?.value||'';
+                  "homeRelTo"
+                )?.value||"";
 
               if(!from&&!to){
                 return d;
@@ -393,6 +464,10 @@ jobs:
                     )
                 ),
 
+                /*
+                 * JE master list is intentionally
+                 * not removed by date filtering.
+                 */
                 jes:d.jes,
 
                 works:d.works.filter(
@@ -442,48 +517,55 @@ jobs:
             }
 
             function linkedByMB(d,mbs){
-              const set=new Set(
-                mbs.map(N).filter(Boolean)
-              );
+
+              const set=
+                new Set(
+                  mbs.map(N).filter(Boolean)
+                );
 
               return {
                 mbs:d.mbs.filter(
-                  x=>set.has(N(mbNo(x)))
+                  x=>set.has(
+                    N(mbNo(x))
+                  )
                 ),
 
                 works:d.works.filter(
-                  x=>set.has(N(x?.mb))
+                  x=>set.has(
+                    N(x?.mb)
+                  )
                 ),
 
                 assigns:d.assigns.filter(
-                  x=>set.has(N(x?.mb))
+                  x=>set.has(
+                    N(x?.mb)
+                  )
                 ),
 
                 transfers:d.transfers.filter(
-                  x=>set.has(N(transferNo(x)))
+                  x=>set.has(
+                    N(transferNo(x))
+                  )
                 ),
 
                 bills:d.bills.filter(
-                  x=>set.has(N(x?.mb))
+                  x=>set.has(
+                    N(x?.mb)
+                  )
                 )
               };
             }
 
             function baseFor(c,d){
-              const all=c.target==='__ALL__';
+
+              const all=
+                c.target==="__ALL__";
+
               const t=N(c.target);
 
-              let out={
-                mbs:[],
-                works:[],
-                assigns:[],
-                transfers:[],
-                bills:[],
-                jes:d.jes
-              };
+              if(c.type==="MB"){
 
-              if(c.type==='MB'){
-                out.mbs=
+                const mbs=
                   all
                     ? d.mbs
                     : d.mbs.filter(
@@ -491,80 +573,97 @@ jobs:
                       );
 
                 return Object.assign(
-                  out,
+                  {
+                    jes:d.jes
+                  },
                   linkedByMB(
                     d,
-                    out.mbs.map(mbNo)
+                    mbs.map(mbNo)
                   )
                 );
               }
 
-              if(c.type==='JE'){
-                const w=
+              if(c.type==="JE"){
+
+                const works=
                   all
                     ? d.works
                     : d.works.filter(
                         x=>N(jeName(x))===t
                       );
 
-                const b=
+                const bills=
                   all
                     ? d.bills
                     : d.bills.filter(
                         x=>N(jeName(x))===t
                       );
 
-                const a=
+                const assigns=
                   all
                     ? d.assigns
                     : d.assigns.filter(
                         x=>N(jeName(x))===t
                       );
 
-                const mbs=uniq(
-                  w.map(x=>x?.mb)
-                    .concat(
-                      b.map(x=>x?.mb),
-                      a.map(x=>x?.mb)
+                const mbNumbers=
+                  uniq(
+                    works.map(
+                      x=>x?.mb
+                    ).concat(
+                      bills.map(
+                        x=>x?.mb
+                      ),
+                      assigns.map(
+                        x=>x?.mb
+                      )
                     )
-                );
+                  );
 
                 return {
                   mbs:d.mbs.filter(
                     x=>
-                      mbs.some(
+                      mbNumbers.some(
                         m=>N(mbNo(x))===N(m)
                       )
                   ),
 
-                  works:w,
-                  assigns:a,
+                  works:works,
+
+                  assigns:assigns,
 
                   transfers:d.transfers.filter(
                     x=>
-                      mbs.some(
-                        m=>N(transferNo(x))===N(m)
+                      mbNumbers.some(
+                        m=>
+                          N(transferNo(x))===N(m)
                       )
                   ),
 
-                  bills:b,
+                  bills:bills,
+
                   jes:d.jes
                 };
               }
 
-              if(c.type==='WORK'){
-                const w=
+              if(c.type==="WORK"){
+
+                const works=
                   all
                     ? d.works
                     : d.works.filter(
-                        x=>N(workName(x))===t
+                        x=>
+                          N(workName(x))===t
                       );
 
-                const names=new Set(
-                  w.map(x=>N(workName(x)))
-                );
+                const names=
+                  new Set(
+                    works.map(
+                      x=>N(workName(x))
+                    )
+                  );
 
-                const b=
+                const bills=
                   all
                     ? d.bills
                     : d.bills.filter(
@@ -575,97 +674,116 @@ jobs:
                           N(x?.work)===t
                       );
 
-                const mbs=uniq(
-                  w.map(x=>x?.mb)
-                    .concat(
-                      b.map(x=>x?.mb)
+                const mbNumbers=
+                  uniq(
+                    works.map(
+                      x=>x?.mb
+                    ).concat(
+                      bills.map(
+                        x=>x?.mb
+                      )
                     )
-                );
+                  );
 
                 return {
                   mbs:d.mbs.filter(
                     x=>
-                      mbs.some(
+                      mbNumbers.some(
                         m=>N(mbNo(x))===N(m)
                       )
                   ),
 
-                  works:w,
+                  works:works,
 
                   assigns:d.assigns.filter(
                     x=>
-                      mbs.some(
+                      mbNumbers.some(
                         m=>N(x?.mb)===N(m)
                       )
                   ),
 
                   transfers:d.transfers.filter(
                     x=>
-                      mbs.some(
+                      mbNumbers.some(
                         m=>N(transferNo(x))===N(m)
                       )
                   ),
 
-                  bills:b,
+                  bills:bills,
+
                   jes:d.jes
                 };
               }
 
-              if(c.type==='CONTRACTOR'){
-                const w=
+              if(c.type==="CONTRACTOR"){
+
+                const works=
                   all
                     ? d.works
                     : d.works.filter(
-                        x=>N(contractor(x))===t
+                        x=>
+                          N(contractor(x))===t
                       );
 
-                const b=
+                const bills=
                   all
                     ? d.bills
                     : d.bills.filter(
-                        x=>N(contractor(x))===t
+                        x=>
+                          N(contractor(x))===t
                       );
 
-                const a=
+                const assigns=
                   all
                     ? d.assigns
                     : d.assigns.filter(
-                        x=>N(contractor(x))===t
+                        x=>
+                          N(contractor(x))===t
                       );
 
-                const mbs=uniq(
-                  w.map(x=>x?.mb)
-                    .concat(
-                      b.map(x=>x?.mb),
-                      a.map(x=>x?.mb)
+                const mbNumbers=
+                  uniq(
+                    works.map(
+                      x=>x?.mb
+                    ).concat(
+                      bills.map(
+                        x=>x?.mb
+                      ),
+                      assigns.map(
+                        x=>x?.mb
+                      )
                     )
-                );
+                  );
 
                 return {
                   mbs:d.mbs.filter(
                     x=>
-                      mbs.some(
+                      mbNumbers.some(
                         m=>N(mbNo(x))===N(m)
                       )
                   ),
 
-                  works:w,
-                  assigns:a,
+                  works:works,
+
+                  assigns:assigns,
 
                   transfers:d.transfers.filter(
                     x=>
-                      mbs.some(
-                        m=>N(transferNo(x))===N(m)
+                      mbNumbers.some(
+                        m=>
+                          N(transferNo(x))===N(m)
                       )
                   ),
 
-                  bills:b,
+                  bills:bills,
+
                   jes:d.jes
                 };
               }
 
-              if(c.type==='BILL'){
-                const b=
+              if(c.type==="BILL"){
+
+                const bills=
                   all
                     ? d.bills
                     : d.bills.filter(
@@ -674,51 +792,56 @@ jobs:
                           N(billType(x))===t
                       );
 
-                const mbs=uniq(
-                  b.map(x=>x?.mb)
-                );
+                const mbNumbers=
+                  uniq(
+                    bills.map(
+                      x=>x?.mb
+                    )
+                  );
 
                 return {
                   mbs:d.mbs.filter(
                     x=>
-                      mbs.some(
+                      mbNumbers.some(
                         m=>N(mbNo(x))===N(m)
                       )
                   ),
 
                   works:d.works.filter(
                     x=>
-                      mbs.some(
+                      mbNumbers.some(
                         m=>N(x?.mb)===N(m)
                       ) ||
-                      b.some(
-                        bb=>
-                          N(workName(bb))===
+                      bills.some(
+                        b=>
+                          N(workName(b))===
                           N(workName(x))
                       )
                   ),
 
                   assigns:d.assigns.filter(
                     x=>
-                      mbs.some(
+                      mbNumbers.some(
                         m=>N(x?.mb)===N(m)
                       )
                   ),
 
                   transfers:d.transfers.filter(
                     x=>
-                      mbs.some(
+                      mbNumbers.some(
                         m=>N(transferNo(x))===N(m)
                       )
                   ),
 
-                  bills:b,
+                  bills:bills,
+
                   jes:d.jes
                 };
               }
 
-              if(c.type==='TRANSFER'){
-                const tr=
+              if(c.type==="TRANSFER"){
+
+                const transfers=
                   all
                     ? d.transfers
                     : d.transfers.filter(
@@ -726,37 +849,40 @@ jobs:
                           N(transferNo(x))===t
                       );
 
-                const mbs=uniq(
-                  tr.map(transferNo)
-                );
+                const mbNumbers=
+                  uniq(
+                    transfers.map(
+                      transferNo
+                    )
+                  );
 
                 return {
                   mbs:d.mbs.filter(
                     x=>
-                      mbs.some(
+                      mbNumbers.some(
                         m=>N(mbNo(x))===N(m)
                       )
                   ),
 
                   works:d.works.filter(
                     x=>
-                      mbs.some(
+                      mbNumbers.some(
                         m=>N(x?.mb)===N(m)
                       )
                   ),
 
                   assigns:d.assigns.filter(
                     x=>
-                      mbs.some(
+                      mbNumbers.some(
                         m=>N(x?.mb)===N(m)
                       )
                   ),
 
-                  transfers:tr,
+                  transfers:transfers,
 
                   bills:d.bills.filter(
                     x=>
-                      mbs.some(
+                      mbNumbers.some(
                         m=>N(x?.mb)===N(m)
                       )
                   ),
@@ -765,84 +891,116 @@ jobs:
                 };
               }
 
-              return out;
+              return {
+                mbs:[],
+                works:[],
+                assigns:[],
+                transfers:[],
+                bills:[],
+                jes:d.jes
+              };
             }
 
             function applyComponentFilter(c,b){
-              const detail=c.detail;
+
+              const detail=
+                c.detail;
 
               if(
-                c.ctype==='ALL' ||
+                c.ctype==="ALL" ||
                 !c.ctype
               ){
                 return b;
               }
 
-              if(c.ctype==='MB'){
+              if(c.ctype==="MB"){
+
                 let m=b.mbs;
 
-                if(detail===MB_SMALL){
-                  m=m.filter(
-                    x=>size(x?.size)==='SMALL'
-                  );
-                }
-                else if(detail===MB_LARGE){
-                  m=m.filter(
-                    x=>size(x?.size)==='LARGE'
-                  );
-                }
-                else if(
+                if(
+                  detail===MB_SMALL
+                ){
+
+                  m=
+                    m.filter(
+                      x=>
+                        size(x?.size)==="SMALL"
+                    );
+
+                }else if(
+                  detail===MB_LARGE
+                ){
+
+                  m=
+                    m.filter(
+                      x=>
+                        size(x?.size)==="LARGE"
+                    );
+
+                }else if(
                   detail.startsWith(MB_PREFIX)
                 ){
-                  m=m.filter(
-                    x=>
-                      N(mbNo(x))===
-                      N(
-                        detail.slice(
-                          MB_PREFIX.length
+
+                  m=
+                    m.filter(
+                      x=>
+                        N(mbNo(x))===
+                        N(
+                          detail.slice(
+                            MB_PREFIX.length
+                          )
                         )
-                      )
-                  );
+                    );
                 }
 
                 return linkedByMB(
                   Object.assign(
                     {},
                     b,
-                    {mbs:b.mbs}
+                    {
+                      mbs:b.mbs
+                    }
                   ),
                   m.map(mbNo)
                 );
               }
 
               if(
-                c.ctype==='WORK' &&
+                c.ctype==="WORK" &&
                 detail &&
                 detail!==DETAIL_ALL
               ){
-                const w=b.works.filter(
-                  x=>N(workName(x))===N(detail)
-                );
 
-                const names=new Set(
-                  w.map(x=>N(workName(x)))
-                );
+                const works=
+                  b.works.filter(
+                    x=>
+                      N(workName(x))===
+                      N(detail)
+                  );
+
+                const names=
+                  new Set(
+                    works.map(
+                      x=>
+                        N(workName(x))
+                    )
+                  );
 
                 return {
                   mbs:b.mbs.filter(
                     x=>
-                      w.some(
+                      works.some(
                         y=>
                           N(y?.mb)===
                           N(mbNo(x))
                       )
                   ),
 
-                  works:w,
+                  works:works,
 
                   assigns:b.assigns.filter(
                     x=>
-                      w.some(
+                      works.some(
                         y=>
                           N(y?.mb)===
                           N(x?.mb)
@@ -851,7 +1009,7 @@ jobs:
 
                   transfers:b.transfers.filter(
                     x=>
-                      w.some(
+                      works.some(
                         y=>
                           N(y?.mb)===
                           N(transferNo(x))
@@ -870,131 +1028,172 @@ jobs:
               }
 
               if(
-                c.ctype==='JE' &&
+                c.ctype==="JE" &&
                 detail &&
                 detail!==DETAIL_ALL
               ){
-                const w=b.works.filter(
-                  x=>N(jeName(x))===N(detail)
-                );
 
-                const bills=b.bills.filter(
-                  x=>N(jeName(x))===N(detail)
-                );
+                const works=
+                  b.works.filter(
+                    x=>
+                      N(jeName(x))===
+                      N(detail)
+                  );
 
-                const nums=uniq(
-                  w.map(x=>x?.mb)
-                    .concat(
-                      bills.map(x=>x?.mb)
+                const bills=
+                  b.bills.filter(
+                    x=>
+                      N(jeName(x))===
+                      N(detail)
+                  );
+
+                const assigns=
+                  b.assigns.filter(
+                    x=>
+                      N(jeName(x))===
+                      N(detail)
+                  );
+
+                const mbNumbers=
+                  uniq(
+                    works.map(
+                      x=>x?.mb
+                    ).concat(
+                      bills.map(
+                        x=>x?.mb
+                      ),
+                      assigns.map(
+                        x=>x?.mb
+                      )
                     )
-                );
+                  );
 
                 return {
                   mbs:b.mbs.filter(
                     x=>
-                      nums.some(
+                      mbNumbers.some(
                         m=>N(mbNo(x))===N(m)
                       )
                   ),
 
-                  works:w,
+                  works:works,
 
-                  assigns:b.assigns.filter(
-                    x=>
-                      nums.some(
-                        m=>N(x?.mb)===N(m)
-                      )
-                  ),
+                  assigns:assigns,
 
                   transfers:b.transfers.filter(
                     x=>
-                      nums.some(
-                        m=>N(transferNo(x))===N(m)
+                      mbNumbers.some(
+                        m=>
+                          N(transferNo(x))===N(m)
                       )
                   ),
 
-                  bills,
+                  bills:bills,
 
                   jes:b.jes
                 };
               }
 
               if(
-                c.ctype==='CONTRACTOR' &&
+                c.ctype==="CONTRACTOR" &&
                 detail &&
                 detail!==DETAIL_ALL
               ){
-                const w=b.works.filter(
-                  x=>N(contractor(x))===N(detail)
-                );
 
-                const bills=b.bills.filter(
-                  x=>N(contractor(x))===N(detail)
-                );
+                const works=
+                  b.works.filter(
+                    x=>
+                      N(contractor(x))===
+                      N(detail)
+                  );
 
-                const nums=uniq(
-                  w.map(x=>x?.mb)
-                    .concat(
-                      bills.map(x=>x?.mb)
+                const bills=
+                  b.bills.filter(
+                    x=>
+                      N(contractor(x))===
+                      N(detail)
+                  );
+
+                const assigns=
+                  b.assigns.filter(
+                    x=>
+                      N(contractor(x))===
+                      N(detail)
+                  );
+
+                const mbNumbers=
+                  uniq(
+                    works.map(
+                      x=>x?.mb
+                    ).concat(
+                      bills.map(
+                        x=>x?.mb
+                      ),
+                      assigns.map(
+                        x=>x?.mb
+                      )
                     )
-                );
+                  );
 
                 return {
                   mbs:b.mbs.filter(
                     x=>
-                      nums.some(
+                      mbNumbers.some(
                         m=>N(mbNo(x))===N(m)
                       )
                   ),
 
-                  works:w,
+                  works:works,
 
-                  assigns:b.assigns.filter(
-                    x=>
-                      nums.some(
-                        m=>N(x?.mb)===N(m)
-                      )
-                  ),
+                  assigns:assigns,
 
                   transfers:b.transfers.filter(
                     x=>
-                      nums.some(
-                        m=>N(transferNo(x))===N(m)
+                      mbNumbers.some(
+                        m=>
+                          N(transferNo(x))===N(m)
                       )
                   ),
 
-                  bills,
+                  bills:bills,
 
                   jes:b.jes
                 };
               }
 
               if(
-                c.ctype==='BILL' &&
+                c.ctype==="BILL" &&
                 detail &&
                 detail!==DETAIL_ALL
               ){
-                const bills=b.bills.filter(
-                  x=>
-                    N(billType(x))===N(detail) ||
-                    N(billNo(x))===N(detail)
-                );
 
-                const nums=uniq(
-                  bills.map(x=>x?.mb)
-                );
+                const bills=
+                  b.bills.filter(
+                    x=>
+                      N(billType(x))===
+                      N(detail) ||
+                      N(billNo(x))===
+                      N(detail)
+                  );
+
+                const mbNumbers=
+                  uniq(
+                    bills.map(
+                      x=>x?.mb
+                    )
+                  );
 
                 return {
                   mbs:b.mbs.filter(
                     x=>
-                      nums.some(
+                      mbNumbers.some(
                         m=>N(mbNo(x))===N(m)
                       )
                   ),
 
                   works:b.works.filter(
                     x=>
-                      nums.some(
+                      mbNumbers.some(
                         m=>N(x?.mb)===N(m)
                       ) ||
                       bills.some(
@@ -1006,19 +1205,20 @@ jobs:
 
                   assigns:b.assigns.filter(
                     x=>
-                      nums.some(
+                      mbNumbers.some(
                         m=>N(x?.mb)===N(m)
                       )
                   ),
 
                   transfers:b.transfers.filter(
                     x=>
-                      nums.some(
-                        m=>N(transferNo(x))===N(m)
+                      mbNumbers.some(
+                        m=>
+                          N(transferNo(x))===N(m)
                       )
                   ),
 
-                  bills,
+                  bills:bills,
 
                   jes:b.jes
                 };
@@ -1028,11 +1228,14 @@ jobs:
             }
 
             function current(){
+
+              const c=ctx();
+
               return applyComponentFilter(
-                ctx(),
+                c,
                 dateFilter(
                   baseFor(
-                    ctx(),
+                    c,
                     data()
                   )
                 )
@@ -1040,170 +1243,245 @@ jobs:
             }
 
             function relatedOptions(c,d){
-              const b=baseFor(c,d);
-              const o=[];
 
-              if(c.ctype==='MB'){
-                o.push(
-                  [DETAIL_ALL,'सर्व M.B.'],
-                  [MB_SMALL,'Small M.B.'],
-                  [MB_LARGE,'Big M.B.']
+              const b=
+                baseFor(
+                  c,
+                  d
+                );
+
+              const out=[];
+
+              if(
+                c.ctype==="MB"
+              ){
+
+                out.push(
+                  [
+                    DETAIL_ALL,
+                    "सर्व M.B."
+                  ],
+                  [
+                    MB_SMALL,
+                    "Small M.B."
+                  ],
+                  [
+                    MB_LARGE,
+                    "Big M.B."
+                  ]
                 );
 
                 uniq(
-                  b.mbs.map(mbNo)
+                  b.mbs.map(
+                    mbNo
+                  )
                 ).forEach(
-                  x=>
-                    o.push(
+                  function(x){
+                    out.push(
                       [
                         MB_PREFIX+x,
-                        'M.B. क्रमांक '+x
+                        "M.B. क्रमांक "+x
                       ]
-                    )
-                );
-              }
-
-              else if(c.ctype==='WORK'){
-                o.push(
-                  [DETAIL_ALL,'सर्व कामे']
+                    );
+                  }
                 );
 
-                uniq(
-                  b.works.map(workName)
-                ).forEach(
-                  x=>o.push([x,x])
-                );
-              }
+              }else if(
+                c.ctype==="WORK"
+              ){
 
-              else if(c.ctype==='JE'){
-                o.push(
-                  [DETAIL_ALL,'सर्व JE']
-                );
-
-                uniq(
-                  b.works.map(jeName)
-                    .concat(
-                      b.bills.map(jeName),
-                      b.assigns.map(jeName)
-                    )
-                ).forEach(
-                  x=>o.push([x,x])
-                );
-              }
-
-              else if(c.ctype==='CONTRACTOR'){
-                o.push(
+                out.push(
                   [
                     DETAIL_ALL,
-                    'सर्व Contractor / Agency'
+                    "सर्व कामे"
                   ]
                 );
 
                 uniq(
-                  b.works.map(contractor)
-                    .concat(
-                      b.bills.map(contractor),
-                      b.assigns.map(contractor)
-                    )
+                  b.works.map(
+                    workName
+                  )
                 ).forEach(
-                  x=>o.push([x,x])
-                );
-              }
-
-              else if(c.ctype==='BILL'){
-                o.push(
-                  [DETAIL_ALL,'सर्व Bill']
+                  function(x){
+                    out.push(
+                      [x,x]
+                    );
+                  }
                 );
 
-                uniq(
-                  b.bills.map(billType)
-                    .concat(
-                      b.bills.map(billNo)
-                    )
-                ).forEach(
-                  x=>o.push([x,x])
-                );
-              }
+              }else if(
+                c.ctype==="JE"
+              ){
 
-              else if(c.ctype==='TRANSFER'){
-                o.push(
+                out.push(
                   [
                     DETAIL_ALL,
-                    'सर्व Transfer / History'
+                    "सर्व JE"
                   ]
                 );
 
                 uniq(
-                  b.transfers.map(transferNo)
+                  b.works.map(
+                    jeName
+                  ).concat(
+                    b.bills.map(
+                      jeName
+                    ),
+                    b.assigns.map(
+                      jeName
+                    )
+                  )
                 ).forEach(
-                  x=>
-                    o.push(
+                  function(x){
+                    out.push(
+                      [x,x]
+                    );
+                  }
+                );
+
+              }else if(
+                c.ctype==="CONTRACTOR"
+              ){
+
+                out.push(
+                  [
+                    DETAIL_ALL,
+                    "सर्व Contractor / Agency"
+                  ]
+                );
+
+                uniq(
+                  b.works.map(
+                    contractor
+                  ).concat(
+                    b.bills.map(
+                      contractor
+                    ),
+                    b.assigns.map(
+                      contractor
+                    )
+                  )
+                ).forEach(
+                  function(x){
+                    out.push(
+                      [x,x]
+                    );
+                  }
+                );
+
+              }else if(
+                c.ctype==="BILL"
+              ){
+
+                out.push(
+                  [
+                    DETAIL_ALL,
+                    "सर्व Bill"
+                  ]
+                );
+
+                uniq(
+                  b.bills.map(
+                    billType
+                  ).concat(
+                    b.bills.map(
+                      billNo
+                    )
+                  )
+                ).forEach(
+                  function(x){
+                    out.push(
+                      [x,x]
+                    );
+                  }
+                );
+
+              }else if(
+                c.ctype==="TRANSFER"
+              ){
+
+                out.push(
+                  [
+                    DETAIL_ALL,
+                    "सर्व Transfer / History"
+                  ]
+                );
+
+                uniq(
+                  b.transfers.map(
+                    transferNo
+                  )
+                ).forEach(
+                  function(x){
+                    out.push(
                       [
                         x,
-                        'M.B. '+x+
-                        ' — Transfer History'
+                        "M.B. "+x+
+                        " — Transfer History"
                       ]
-                    )
+                    );
+                  }
                 );
               }
 
-              return o;
+              return out;
             }
 
             function componentOptions(c){
+
               const map={
                 MB:[
-                  ['ALL','सर्व माहिती'],
-                  ['WORK','कामाचे नाव'],
-                  ['JE','JE चे नाव'],
-                  ['CONTRACTOR','Contractor / Agency'],
-                  ['BILL','Bill'],
-                  ['TRANSFER','Transfer / History']
+                  ["ALL","सर्व माहिती"],
+                  ["WORK","कामाचे नाव"],
+                  ["JE","JE चे नाव"],
+                  ["CONTRACTOR","Contractor / Agency"],
+                  ["BILL","Bill"],
+                  ["TRANSFER","Transfer / History"]
                 ],
 
                 JE:[
-                  ['ALL','सर्व माहिती'],
-                  ['WORK','कामाचे नाव'],
-                  ['MB','M.B.'],
-                  ['CONTRACTOR','Contractor / Agency'],
-                  ['BILL','Bill'],
-                  ['TRANSFER','Transfer / History']
+                  ["ALL","सर्व माहिती"],
+                  ["WORK","कामाचे नाव"],
+                  ["MB","M.B."],
+                  ["CONTRACTOR","Contractor / Agency"],
+                  ["BILL","Bill"],
+                  ["TRANSFER","Transfer / History"]
                 ],
 
                 WORK:[
-                  ['ALL','सर्व माहिती'],
-                  ['JE','JE चे नाव'],
-                  ['MB','M.B.'],
-                  ['CONTRACTOR','Contractor / Agency'],
-                  ['BILL','Bill'],
-                  ['TRANSFER','Transfer / History']
+                  ["ALL","सर्व माहिती"],
+                  ["JE","JE चे नाव"],
+                  ["MB","M.B."],
+                  ["CONTRACTOR","Contractor / Agency"],
+                  ["BILL","Bill"],
+                  ["TRANSFER","Transfer / History"]
                 ],
 
                 CONTRACTOR:[
-                  ['ALL','सर्व माहिती'],
-                  ['WORK','कामाचे नाव'],
-                  ['JE','JE चे नाव'],
-                  ['MB','M.B.'],
-                  ['BILL','Bill'],
-                  ['TRANSFER','Transfer / History']
+                  ["ALL","सर्व माहिती"],
+                  ["WORK","कामाचे नाव"],
+                  ["JE","JE चे नाव"],
+                  ["MB","M.B."],
+                  ["BILL","Bill"],
+                  ["TRANSFER","Transfer / History"]
                 ],
 
                 BILL:[
-                  ['ALL','सर्व माहिती'],
-                  ['MB','M.B.'],
-                  ['WORK','कामाचे नाव'],
-                  ['JE','JE चे नाव'],
-                  ['CONTRACTOR','Contractor / Agency'],
-                  ['TRANSFER','Transfer / History']
+                  ["ALL","सर्व माहिती"],
+                  ["MB","M.B."],
+                  ["WORK","कामाचे नाव"],
+                  ["JE","JE चे नाव"],
+                  ["CONTRACTOR","Contractor / Agency"],
+                  ["TRANSFER","Transfer / History"]
                 ],
 
                 TRANSFER:[
-                  ['ALL','सर्व माहिती'],
-                  ['MB','M.B.'],
-                  ['WORK','कामाचे नाव'],
-                  ['JE','JE चे नाव'],
-                  ['CONTRACTOR','Contractor / Agency'],
-                  ['BILL','Bill']
+                  ["ALL","सर्व माहिती"],
+                  ["MB","M.B."],
+                  ["WORK","कामाचे नाव"],
+                  ["JE","JE चे नाव"],
+                  ["CONTRACTOR","Contractor / Agency"],
+                  ["BILL","Bill"]
                 ]
               };
 
@@ -1211,39 +1489,50 @@ jobs:
             }
 
             function renderType(){
+
               const type=
                 document.getElementById(
-                  'homeRelType'
+                  "homeRelType"
                 );
 
               if(!type)return;
 
               type.innerHTML=
                 '<option value="">संबंधित प्रकार निवडा</option>'+
-                Object.keys(TYPE_LABELS)
-                  .map(
-                    k=>
-                      `<option value="${k}">${E(TYPE_LABELS[k])}</option>`
-                  )
-                  .join('');
+                Object.keys(
+                  TYPE_LABELS
+                ).map(
+                  function(k){
+                    return (
+                      '<option value="'+
+                      E(k)+
+                      '">'+
+                      E(TYPE_LABELS[k])+
+                      '</option>'
+                    );
+                  }
+                ).join("");
 
               type.disabled=false;
             }
 
             function renderTargets(){
+
               const c=ctx();
 
               const sel=
                 document.getElementById(
-                  'homeRelTarget'
+                  "homeRelTarget"
                 );
 
               if(!sel)return;
 
               if(
-                typeof homeRelRangeValid==='function' &&
+                typeof homeRelRangeValid===
+                "function" &&
                 !homeRelRangeValid()
               ){
+
                 sel.innerHTML=
                   '<option value="">दिनांक कालावधी निवडा</option>';
 
@@ -1252,58 +1541,94 @@ jobs:
                 return;
               }
 
-              const d=dateFilter(data());
+              const d=
+                dateFilter(
+                  data()
+                );
 
               const arrays={
+
                 MB:
                   uniq(
-                    d.mbs.map(mbNo)
-                      .concat(
-                        d.works.map(x=>x?.mb),
-                        d.bills.map(x=>x?.mb),
-                        d.assigns.map(x=>x?.mb),
-                        d.transfers.map(transferNo)
+                    d.mbs.map(
+                      mbNo
+                    ).concat(
+                      d.works.map(
+                        x=>x?.mb
+                      ),
+                      d.bills.map(
+                        x=>x?.mb
+                      ),
+                      d.assigns.map(
+                        x=>x?.mb
+                      ),
+                      d.transfers.map(
+                        transferNo
                       )
+                    )
                   ),
 
+                /*
+                 * Full JE master list remains selectable.
+                 */
                 JE:
                   uniq(
-                    d.jes.map(S)
-                      .concat(
-                        d.works.map(jeName),
-                        d.bills.map(jeName),
-                        d.assigns.map(jeName)
+                    d.jes.map(
+                      S
+                    ).concat(
+                      d.works.map(
+                        jeName
+                      ),
+                      d.bills.map(
+                        jeName
+                      ),
+                      d.assigns.map(
+                        jeName
                       )
+                    )
                   ),
 
                 WORK:
                   uniq(
-                    d.works.map(workName)
-                      .concat(
-                        d.bills.map(workName)
+                    d.works.map(
+                      workName
+                    ).concat(
+                      d.bills.map(
+                        workName
                       )
+                    )
                   ),
 
                 CONTRACTOR:
                   uniq(
-                    d.works.map(contractor)
-                      .concat(
-                        d.assigns.map(contractor),
-                        d.bills.map(contractor)
+                    d.works.map(
+                      contractor
+                    ).concat(
+                      d.assigns.map(
+                        contractor
+                      ),
+                      d.bills.map(
+                        contractor
                       )
+                    )
                   ),
 
                 BILL:
                   uniq(
-                    d.bills.map(billNo)
-                      .concat(
-                        d.bills.map(billType)
+                    d.bills.map(
+                      billNo
+                    ).concat(
+                      d.bills.map(
+                        billType
                       )
+                    )
                   ),
 
                 TRANSFER:
                   uniq(
-                    d.transfers.map(transferNo)
+                    d.transfers.map(
+                      transferNo
+                    )
                   )
               };
 
@@ -1311,92 +1636,135 @@ jobs:
                 arrays[c.type]||[];
 
               sel.innerHTML=
+                '<option value="">'+
+                E(
+                  c.type==="JE"
+                    ? "JE चे नाव निवडा"
+                    : (
+                        c.type==="MB"
+                          ? "M.B. क्रमांक निवडा"
+                          : "मुख्य नोंद निवडा"
+                      )
+                )+
+                '</option>'+
                 '<option value="__ALL__">'+
                 E(
-                  TYPE_LABELS[c.type]||
-                  'सर्व'
+                  c.type==="JE"
+                    ? "सर्व JE"
+                    : (
+                        TYPE_LABELS[c.type]||
+                        "सर्व"
+                      )
                 )+
-                ' — सर्व</option>'+
+                '</option>'+
                 list.map(
-                  x=>
-                    `<option value="${E(x)}">${E(x)}</option>`
-                ).join('');
+                  function(x){
+                    return (
+                      '<option value="'+
+                      E(x)+
+                      '">'+
+                      E(x)+
+                      '</option>'
+                    );
+                  }
+                ).join("");
 
               sel.disabled=false;
-              sel.value='__ALL__';
+              sel.value="";
             }
 
             function renderComponents(){
+
               const c=ctx();
 
               const sel=
                 document.getElementById(
-                  'homeRelComponent'
+                  "homeRelComponent"
                 );
 
               const detail=
                 document.getElementById(
-                  'homeRelDetail'
+                  "homeRelDetail"
                 );
 
               if(!sel)return;
 
               const opts=
-                componentOptions(c);
+                componentOptions(
+                  c
+                );
 
               sel.innerHTML=
-                '<option value="">संबंधित प्रकार निवडा</option>'+
+                '<option value="">पुढील संबंधित माहिती निवडा</option>'+
                 opts.map(
-                  x=>
-                    `<option value="${x[0]}::${x[0]}">${E(x[1])}</option>`
-                ).join('');
+                  function(x){
+                    return (
+                      '<option value="'+
+                      E(
+                        x[0]+"::"+x[0]
+                      )+
+                      '">'+
+                      E(x[1])+
+                      '</option>'
+                    );
+                  }
+                ).join("");
 
               sel.disabled=
                 !c.target ||
                 !c.type;
 
               if(detail){
-                detail.style.display='none';
+
+                detail.style.display=
+                  "none";
 
                 detail.innerHTML=
                   '<option value="">तपशील निवडा</option>';
 
-                detail.value='';
+                detail.value="";
               }
 
               const bs=
                 document.getElementById(
-                  'homeRelBillType'
+                  "homeRelBillType"
                 );
 
               if(bs){
-                bs.style.display='none';
-                bs.value='';
+
+                bs.style.display=
+                  "none";
+
+                bs.value="";
               }
             }
 
             function renderDetails(){
+
               const c=ctx();
 
               const sel=
                 document.getElementById(
-                  'homeRelDetail'
+                  "homeRelDetail"
                 );
 
               if(!sel)return;
 
               if(
                 !c.ctype ||
-                c.ctype==='ALL'
+                c.ctype==="ALL"
               ){
-                sel.style.display='none';
+
+                sel.style.display=
+                  "none";
 
                 sel.innerHTML=
                   '<option value="'+
                   DETAIL_ALL+
                   '">सर्व माहिती</option>';
 
-                sel.value=DETAIL_ALL;
+                sel.value=
+                  DETAIL_ALL;
 
                 renderResult();
 
@@ -1417,138 +1785,177 @@ jobs:
               sel.innerHTML=
                 '<option value="">तपशील निवडा</option>'+
                 opts.map(
-                  x=>
-                    `<option value="${E(x[0])}">${E(x[1])}</option>`
-                ).join('');
+                  function(x){
+                    return (
+                      '<option value="'+
+                      E(x[0])+
+                      '">'+
+                      E(x[1])+
+                      '</option>'
+                    );
+                  }
+                ).join("");
 
               sel.style.display=
                 opts.length
-                  ? 'block'
-                  : 'none';
+                  ? "block"
+                  : "none";
 
               sel.disabled=false;
-              sel.value='';
+              sel.value="";
 
               renderResult();
             }
 
             function section(title,rows){
-              return `
-                <div class="rel-section">
-                  <div class="rel-section-title">
-                    ${E(title)}
-                  </div>
-                  ${
-                    rows.map(
-                      r=>
-                        `<div class="rel-line">
-                          <b>${E(r[0])}:</b>
-                          ${E(
+
+              return (
+                '<div class="rel-section">'+
+                  '<div class="rel-section-title">'+
+                    E(title)+
+                  '</div>'+
+                  rows.map(
+                    function(r){
+                      return (
+                        '<div class="rel-line">'+
+                          '<b>'+
+                          E(r[0])+
+                          ':</b> '+
+                          E(
                             r[1]===undefined ||
-                            r[1]===''
-                              ? '-'
+                            r[1]===""
+                              ? "-"
                               : r[1]
-                          )}
-                        </div>`
-                    ).join('')
-                  }
-                </div>
-              `;
+                          )+
+                        '</div>'
+                      );
+                    }
+                  ).join("")+
+                '</div>'
+              );
             }
 
-            function listSection(title,items,fn){
+            function listSection(
+              title,
+              items,
+              fn
+            ){
+
               if(!items.length){
+
                 return section(
                   title,
                   [
                     [
-                      'नोंद',
-                      'उपलब्ध नाही'
+                      "नोंद",
+                      "उपलब्ध नाही"
                     ]
                   ]
                 );
               }
 
-              return `
-                <div class="rel-section">
-                  <div class="rel-section-title">
-                    ${E(title)}
-                    (${items.length})
-                  </div>
-
-                  ${
-                    items.map(
-                      (x,i)=>
-                        `<div style="border-top:1px solid #e8eef2;padding:7px 0">
-                          ${fn(x,i)}
-                        </div>`
-                    ).join('')
-                  }
-                </div>
-              `;
+              return (
+                '<div class="rel-section">'+
+                  '<div class="rel-section-title">'+
+                    E(title)+
+                    " ("+
+                    items.length+
+                    ")"+
+                  '</div>'+
+                  items.map(
+                    function(x,i){
+                      return (
+                        '<div style="border-top:1px solid #e8eef2;padding:7px 0">'+
+                        fn(x,i)+
+                        '</div>'
+                      );
+                    }
+                  ).join("")+
+                '</div>'
+              );
             }
 
             function reportHTML(){
+
               const c=ctx();
               const b=current();
 
               const title=
-                (TYPE_LABELS[c.type]||
-                'संबंधित')+
-                ' → '+
                 (
-                  c.target==='__ALL__'
-                    ? 'सर्व'
+                  TYPE_LABELS[c.type]||
+                  "संबंधित"
+                )+
+                " → "+
+                (
+                  c.target==="__ALL__"
+                    ? "सर्व"
                     : c.target
                 );
 
               let h=
-                `<div class="rel-head">${E(title)}</div>`;
+                '<div class="rel-head">'+
+                E(title)+
+                '</div>';
 
               h+=section(
-                'सारांश',
+                "सारांश",
                 [
-                  ['M.B.',b.mbs.length],
-                  ['कामे',b.works.length],
                   [
-                    'Contractor / Agency',
+                    "M.B.",
+                    b.mbs.length
+                  ],
+                  [
+                    "कामे",
+                    b.works.length
+                  ],
+                  [
+                    "Contractor / Agency",
                     uniq(
-                      b.works.map(contractor)
-                        .concat(
-                          b.bills.map(contractor),
-                          b.assigns.map(contractor)
+                      b.works.map(
+                        contractor
+                      ).concat(
+                        b.bills.map(
+                          contractor
+                        ),
+                        b.assigns.map(
+                          contractor
                         )
+                      )
                     ).length
                   ],
-                  ['Bills',b.bills.length],
                   [
-                    'Transfer / History',
+                    "Bills",
+                    b.bills.length
+                  ],
+                  [
+                    "Transfer / History",
                     b.transfers.length
                   ]
                 ]
               );
 
               h+=listSection(
-                'M.B. ची संपूर्ण माहिती',
+                "M.B. ची संपूर्ण माहिती",
                 b.mbs,
-                (m,i)=>
-                  section(
-                    'M.B. '+mbNo(m),
+                function(m,i){
+
+                  return section(
+                    "M.B. "+mbNo(m),
                     [
                       [
-                        'M.B. क्रमांक',
+                        "M.B. क्रमांक",
                         mbNo(m)
                       ],
                       [
-                        'Size',
-                        m.size||'-'
+                        "Size",
+                        m.size||"-"
                       ],
                       [
-                        'Status',
-                        m.status||'-'
+                        "Status",
+                        m.status||"-"
                       ],
                       [
-                        'प्राप्त दिनांक',
+                        "प्राप्त दिनांक",
                         D(
                           m.receivedDate||
                           m.date||
@@ -1556,75 +1963,102 @@ jobs:
                         )
                       ],
                       [
-                        'सध्या कुणाकडे',
-                        (()=>{
-                          try{
-                            return (
-                              mbSummaryCurrentHolder(
-                                mbNo(m)
-                              ).name||'-'
-                            );
-                          }catch(e){
-                            return '-';
+                        "सध्या कुणाकडे",
+                        (
+                          function(){
+                            try{
+                              return (
+                                mbSummaryCurrentHolder(
+                                  mbNo(m)
+                                ).name||
+                                "-"
+                              );
+                            }catch(e){
+                              return "-";
+                            }
                           }
-                        })()
+                        )()
                       ]
                     ]
-                  )
+                  );
+                }
               );
 
               h+=listSection(
-                'कामांची संपूर्ण माहिती',
+                "कामांची संपूर्ण माहिती",
                 b.works,
-                (w,i)=>
-                  `<b>${i+1}) ${E(
-                    workName(w)||'-'
-                  )}</b>`+
-                  section(
-                    'काम',
-                    [
+                function(w,i){
+
+                  return (
+                    "<b>"+
+                    (i+1)+
+                    ") "+
+                    E(
+                      workName(w)||
+                      "-"
+                    )+
+                    "</b>"+
+                    section(
+                      "काम",
                       [
-                        'Work Name',
-                        workName(w)
-                      ],
-                      [
-                        'M.B.',
-                        w.mb||'-'
-                      ],
-                      [
-                        'JE',
-                        jeName(w)||'-'
-                      ],
-                      [
-                        'Contractor / Agency',
-                        contractor(w)||'-'
+                        [
+                          "Work Name",
+                          workName(w)
+                        ],
+                        [
+                          "M.B.",
+                          w.mb||"-"
+                        ],
+                        [
+                          "JE",
+                          jeName(w)||"-"
+                        ],
+                        [
+                          "Contractor / Agency",
+                          contractor(w)||"-"
+                        ]
                       ]
-                    ]
-                  )
+                    )
+                  );
+                }
               );
 
-              h+=listSection(
-                'Contractor / Agency माहिती',
+              const contractors=
                 uniq(
-                  b.works.map(contractor)
-                    .concat(
-                      b.bills.map(contractor),
-                      b.assigns.map(contractor)
+                  b.works.map(
+                    contractor
+                  ).concat(
+                    b.bills.map(
+                      contractor
+                    ),
+                    b.assigns.map(
+                      contractor
                     )
-                ).map(
-                  x=>({name:x})
-                ),
-                (c0,i)=>{
-                  const co=c0.name;
+                  )
+                );
 
-                  const ww=
+              h+=listSection(
+                "Contractor / Agency माहिती",
+                contractors.map(
+                  function(x){
+                    return {
+                      name:x
+                    };
+                  }
+                ),
+                function(c0,i){
+
+                  const co=
+                    c0.name;
+
+                  const works=
                     b.works.filter(
                       x=>
                         N(contractor(x))===
                         N(co)
                     );
 
-                  const bb=
+                  const bills=
                     b.bills.filter(
                       x=>
                         N(contractor(x))===
@@ -1635,21 +2069,25 @@ jobs:
                     co,
                     [
                       [
-                        'कामे',
-                        ww.length
+                        "कामे",
+                        works.length
                       ],
                       [
-                        'Bills',
-                        bb.length
+                        "Bills",
+                        bills.length
                       ],
                       [
-                        'M.B.',
+                        "M.B.",
                         uniq(
-                          ww.map(x=>x.mb)
-                            .concat(
-                              bb.map(x=>x.mb)
+                          works.map(
+                            x=>x.mb
+                          ).concat(
+                            bills.map(
+                              x=>x.mb
                             )
-                        ).join(', ')||'-'
+                          )
+                        ).join(", ")||
+                        "-"
                       ]
                     ]
                   );
@@ -1657,26 +2095,30 @@ jobs:
               );
 
               h+=listSection(
-                'Bill ची संपूर्ण माहिती',
+                "Bill ची संपूर्ण माहिती",
                 b.bills,
-                (x,i)=>
-                  section(
-                    (i+1)+') '+
+                function(x,i){
+
+                  return section(
                     (
-                      billType(x)||
-                      'Bill'
+                      i+1+
+                      ") "+
+                      (
+                        billType(x)||
+                        "Bill"
+                      )
                     ),
                     [
                       [
-                        'Bill प्रकार',
-                        billType(x)||'-'
+                        "Bill प्रकार",
+                        billType(x)||"-"
                       ],
                       [
-                        'Bill क्रमांक',
-                        billNo(x)||'-'
+                        "Bill क्रमांक",
+                        billNo(x)||"-"
                       ],
                       [
-                        'Bill दिनांक',
+                        "Bill दिनांक",
                         D(
                           x.billDate||
                           x.date||
@@ -1684,50 +2126,55 @@ jobs:
                         )
                       ],
                       [
-                        'M.B.',
-                        x.mb||'-'
+                        "M.B.",
+                        x.mb||"-"
                       ],
                       [
-                        'काम',
-                        workName(x)||'-'
+                        "काम",
+                        workName(x)||"-"
                       ],
                       [
-                        'JE',
-                        jeName(x)||'-'
+                        "JE",
+                        jeName(x)||"-"
                       ],
                       [
-                        'Contractor / Agency',
-                        contractor(x)||'-'
+                        "Contractor / Agency",
+                        contractor(x)||"-"
                       ],
                       [
-                        'रक्कम',
+                        "रक्कम",
                         amount(x.amount)
                       ],
                       [
-                        'Payment Status',
-                        x.paymentStatus||'-'
+                        "Payment Status",
+                        x.paymentStatus||"-"
                       ]
                     ]
-                  )
+                  );
+                }
               );
 
               h+=listSection(
-                'Transfer / History',
+                "Transfer / History",
                 b.transfers,
-                (x,i)=>
-                  section(
-                    (i+1)+
-                    ') M.B. '+
+                function(x,i){
+
+                  return section(
                     (
-                      transferNo(x)||'-'
+                      i+1+
+                      ") M.B. "+
+                      (
+                        transferNo(x)||
+                        "-"
+                      )
                     ),
                     [
                       [
-                        'M.B.',
-                        transferNo(x)||'-'
+                        "M.B.",
+                        transferNo(x)||"-"
                       ],
                       [
-                        'दिनांक',
+                        "दिनांक",
                         D(
                           x.date||
                           x.transferDate||
@@ -1735,38 +2182,40 @@ jobs:
                         )
                       ],
                       [
-                        'कोणाकडे',
+                        "कोणाकडे",
                         x.receiverName||
                         x.receiver||
                         x.to||
                         x.name||
-                        '-'
+                        "-"
                       ],
                       [
-                        'काम',
+                        "काम",
                         x.workName||
                         x.work||
-                        '-'
+                        "-"
                       ],
                       [
-                        'JE',
-                        jeName(x)||'-'
+                        "JE",
+                        jeName(x)||"-"
                       ],
                       [
-                        'Contractor / Agency',
-                        contractor(x)||'-'
+                        "Contractor / Agency",
+                        contractor(x)||"-"
                       ]
                     ]
-                  )
+                  );
+                }
               );
 
               return h;
             }
 
             function renderResult(){
+
               const box=
                 document.getElementById(
-                  'homeRelResult'
+                  "homeRelResult"
                 );
 
               if(!box)return;
@@ -1774,37 +2223,45 @@ jobs:
               const c=ctx();
 
               if(!c.type){
+
                 box.innerHTML=
                   '<div class="rel-empty">'+
-                  'संबंधित प्रकार निवडा.'+
-                  '</div>';
+                  "संबंधित प्रकार निवडा."+
+                  "</div>";
+
                 return;
               }
 
               if(!c.target){
+
                 box.innerHTML=
                   '<div class="rel-empty">'+
-                  'मुख्य नोंद निवडा.'+
-                  '</div>';
+                  "मुख्य नोंद निवडा."+
+                  "</div>";
+
                 return;
               }
 
               if(!c.ctype){
+
                 box.innerHTML=
                   '<div class="rel-empty">'+
-                  'संबंधित प्रकार निवडा.'+
-                  '</div>';
+                  "पुढील संबंधित माहिती निवडा."+
+                  "</div>";
+
                 return;
               }
 
               if(
-                c.ctype!=='ALL' &&
+                c.ctype!=="ALL" &&
                 !c.detail
               ){
+
                 box.innerHTML=
                   '<div class="rel-empty">'+
-                  'पुढील तपशील निवडा.'+
-                  '</div>';
+                  "पुढील तपशील निवडा."+
+                  "</div>";
+
                 return;
               }
 
@@ -1813,6 +2270,7 @@ jobs:
             }
 
             function printReport(){
+
               const c=ctx();
 
               if(
@@ -1820,149 +2278,155 @@ jobs:
                 !c.target ||
                 !c.ctype ||
                 (
-                  c.ctype!=='ALL' &&
+                  c.ctype!=="ALL" &&
                   !c.detail
                 )
               ){
+
                 alert(
-                  'कृपया Related Type → मुख्य नोंद → संबंधित प्रकार → तपशील पूर्ण निवडा.'
+                  "कृपया Related Type → मुख्य नोंद → संबंधित प्रकार → तपशील पूर्ण निवडा."
                 );
+
                 return;
               }
 
               const pa=
                 document.getElementById(
-                  'printArea'
+                  "printArea"
                 );
 
               if(!pa){
+
                 window.print();
+
                 return;
               }
 
               pa.innerHTML=
-                `<div class="a4-page">
+                '<div class="a4-page">'+
+                  '<div class="a4-header">'+
+                    '<div class="dept">'+
+                      "सार्वजनिक बांधकाम विभाग"+
+                    "</div>"+
+                    '<div class="system">'+
+                      "मोजमाप पुस्तिका नियंत्रण प्रणाली"+
+                    "</div>"+
+                    '<div class="report-title">'+
+                      "M.B. SUMMARY — LINKED REPORT"+
+                    "</div>"+
+                  "</div>"+
 
-                  <div class="a4-header">
-
-                    <div class="dept">
-                      सार्वजनिक बांधकाम विभाग
-                    </div>
-
-                    <div class="system">
-                      मोजमाप पुस्तिका नियंत्रण प्रणाली
-                    </div>
-
-                    <div class="report-title">
-                      M.B. SUMMARY — LINKED REPORT
-                    </div>
-
-                  </div>
-
-                  <div class="a4-meta">
-
-                    <span>
-                      <b>निवड :</b>
-                      ${E(
+                  '<div class="a4-meta">'+
+                    "<span>"+
+                      "<b>निवड :</b> "+
+                      E(
                         (
                           TYPE_LABELS[c.type]||
-                          ''
+                          ""
                         )+
-                        ' → '+
+                        " → "+
                         (
-                          c.target==='__ALL__'
-                            ? 'सर्व'
+                          c.target==="__ALL__"
+                            ? "सर्व"
                             : c.target
                         )
-                      )}
-                    </span>
+                      )+
+                    "</span>"+
 
-                    <span>
-                      <b>कालावधी :</b>
-                      ${E(
+                    "<span>"+
+                      "<b>कालावधी :</b> "+
+                      E(
                         D(
                           document.getElementById(
-                            'homeRelFrom'
+                            "homeRelFrom"
                           )?.value
                         )
-                      )}
-                      ते
-                      ${E(
+                      )+
+                      " ते "+
+                      E(
                         D(
                           document.getElementById(
-                            'homeRelTo'
+                            "homeRelTo"
                           )?.value
                         )
-                      )}
-                    </span>
+                      )+
+                    "</span>"+
+                  "</div>"+
 
-                  </div>
+                  reportHTML()+
 
-                  ${reportHTML()}
+                  '<div class="a4-footer">'+
+                    "Created By : विठ्ठल कोकाटे पाटील"+
+                  "</div>"+
 
-                  <div class="a4-footer">
-                    Created By : विठ्ठल कोकाटे पाटील
-                  </div>
+                "</div>";
 
-                </div>`;
-
-              const old=document.title;
+              const oldTitle=
+                document.title;
 
               document.title=
-                'MBMS M.B. Summary Linked Report';
+                "MBMS M.B. Summary Linked Report";
 
               setTimeout(
-                ()=>{
+                function(){
                   if(
+                    window.MBMSAndroid &&
+                    typeof window.MBMSAndroid.print===
+                    "function"
+                  ){
+                    window.MBMSAndroid.print();
+                  }else if(
                     window.AndroidBridge &&
                     typeof window.AndroidBridge.print===
-                      'function'
+                    "function"
                   ){
                     window.AndroidBridge.print();
                   }else{
                     window.print();
                   }
                 },
-                120
+                200
               );
 
               setTimeout(
-                ()=>{
-                  document.title=old;
+                function(){
+                  document.title=
+                    oldTitle;
                 },
-                1200
+                1500
               );
             }
 
             function bind(){
+
               const type=
                 document.getElementById(
-                  'homeRelType'
+                  "homeRelType"
                 );
 
               const target=
                 document.getElementById(
-                  'homeRelTarget'
+                  "homeRelTarget"
                 );
 
               const comp=
                 document.getElementById(
-                  'homeRelComponent'
+                  "homeRelComponent"
                 );
 
               const detail=
                 document.getElementById(
-                  'homeRelDetail'
+                  "homeRelDetail"
                 );
 
               const from=
                 document.getElementById(
-                  'homeRelFrom'
+                  "homeRelFrom"
                 );
 
               const to=
                 document.getElementById(
-                  'homeRelTo'
+                  "homeRelTo"
                 );
 
               const btn=
@@ -2023,15 +2487,18 @@ jobs:
               }
 
               if(btn){
-                btn.onclick=printReport;
+                btn.onclick=
+                  printReport;
               }
 
               target.disabled=true;
               comp.disabled=true;
-              detail.style.display='none';
+
+              detail.style.display=
+                "none";
 
               if(
-                typeof homeRelRangeValid!=='function' ||
+                typeof homeRelRangeValid!=="function" ||
                 homeRelRangeValid()
               ){
                 renderResult();
@@ -2066,13 +2533,17 @@ jobs:
               };
 
             if(
-              document.readyState==='loading'
+              document.readyState===
+              "loading"
             ){
+
               document.addEventListener(
-                'DOMContentLoaded',
+                "DOMContentLoaded",
                 bind
               );
+
             }else{
+
               bind();
             }
 
@@ -2082,44 +2553,128 @@ jobs:
           python3 <<'PY'
           from pathlib import Path
 
-          p=Path("mbms_work/index.html")
-
-          t=p.read_text(
-              encoding="utf-8"
+          p=Path(
+              "mbms_work/index.html"
           )
 
-          patch=Path(
-              "/tmp/mbms_summary_patch.js"
-          ).read_text(
-              encoding="utf-8"
-          )
-
-          tag=(
-              '<script id="V128_MBMS_SUMMARY_LINKED_FIX">\n'
-              + patch.replace('          ','')
-              + '\n</script>\n'
-          )
-
-          i=t.lower().rfind("</body>")
-
-          if i<0:
-              raise SystemExit(
-                  "ERROR: </body> not found"
+          text=
+              p.read_text(
+                  encoding="utf-8"
               )
 
-          t=t[:i]+tag+t[i:]
+          patch=
+              Path(
+                  "/tmp/mbms_summary_patch.js"
+              ).read_text(
+                  encoding="utf-8"
+              )
+
+          marker=
+              '<script id="V128_MBMS_SUMMARY_LINKED_FIX">'
+
+          if marker in text:
+              print(
+                  "MB Summary patch already present."
+              )
+              raise SystemExit(0)
+
+          pos=
+              text.lower().rfind(
+                  "</body>"
+              )
+
+          if pos<0:
+              raise SystemExit(
+                  "ERROR: </body> not found."
+              )
+
+          text=(
+              text[:pos]+
+              marker+
+              "\n"+
+              patch+
+              "\n</script>\n"+
+              text[pos:]
+          )
 
           p.write_text(
-              t,
+              text,
               encoding="utf-8"
           )
 
           print(
-              "V128 summary patch inserted before </body>."
+              "MB Summary relationship patch applied."
           )
           PY
 
-      - name: Validate patched HTML JavaScript
+      - name: Verify MB Summary Patch Placement
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          grep -q \
+            'V128_MBMS_SUMMARY_LINKED_FIX' \
+            mbms_work/index.html
+
+          grep -q \
+            'loadHomeRelDetails' \
+            mbms_work/index.html
+
+          grep -q \
+            'showHomeRelationship' \
+            mbms_work/index.html
+
+          grep -q \
+            'printHomeRelationshipReport' \
+            mbms_work/index.html
+
+          echo "MB SUMMARY PATCH VERIFIED."
+
+      - name: Deep audit of every existing Report / Print path
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          HTML="mbms_work/index.html"
+
+          PRINT_REFS=$(grep -o "window\.print" "$HTML" | wc -l | tr -d ' ')
+          PRINT_AREA=$(grep -o 'id="printArea"' "$HTML" | wc -l | tr -d ' ')
+          REPORT_BUTTONS=$(grep -oE 'onclick="[^"]*(Report|report|REPORT)[^"]*"' "$HTML" | wc -l | tr -d ' ')
+
+          printf 'window.print references: %s\n' "$PRINT_REFS"
+          printf 'printArea declarations: %s\n' "$PRINT_AREA"
+          printf 'report-related buttons/handlers: %s\n' "$REPORT_BUTTONS"
+
+          [ "$PRINT_REFS" -ge 13 ] || {
+            echo "ERROR: Existing report/print paths are incomplete."
+            exit 1
+          }
+
+          [ "$PRINT_AREA" -ge 1 ] || {
+            echo "ERROR: #printArea missing."
+            exit 1
+          }
+
+          grep -q \
+            'window.MBMSAndroid' \
+            "$HTML"
+
+          grep -q \
+            'V118_ANDROID_NATIVE_IO_PRINT_COMPAT' \
+            "$HTML"
+
+          grep -q \
+            'REPORT / PDF' \
+            "$HTML"
+
+          grep -q \
+            'REPORT / PRINT' \
+            "$HTML"
+
+          echo "DEEP REPORT / PRINT PATH AUDIT PASSED."
+
+      - name: Validate Final HTML JavaScript
+        shell: bash
         run: |
           set -euo pipefail
 
@@ -2127,53 +2682,45 @@ jobs:
           from pathlib import Path
           import re
 
-          t=Path(
+          text = Path(
               "mbms_work/index.html"
           ).read_text(
               encoding="utf-8"
           )
 
-          m=re.search(
-              r'<script id="V128_MBMS_SUMMARY_LINKED_FIX">(.*?)</script>',
-              t,
-              re.S|re.I
+          scripts = re.findall(
+              r"<script[^>]*>(.*?)</script>",
+              text,
+              flags=re.I | re.S
           )
 
-          if not m:
+          if not scripts:
               raise SystemExit(
-                  "V128 patch not found inside script"
+                  "ERROR: No JavaScript blocks found."
               )
 
-          Path(
-              "/tmp/v128_patch_check.js"
-          ).write_text(
-              m.group(1),
-              encoding="utf-8"
-          )
+          for i, script in enumerate(scripts):
+              Path(
+                  f"/tmp/mbms_script_{i}.js"
+              ).write_text(
+                  script,
+                  encoding="utf-8"
+              )
 
-          print("PATCH SCRIPT OK")
+          print(
+              f"JavaScript blocks extracted: {len(scripts)}"
+          )
           PY
 
-          node --check \
-            /tmp/v128_patch_check.js
+          for f in /tmp/mbms_script_*.js
+          do
+            node --check "$f"
+          done
 
-          grep -q \
-            "window.loadHomeRelTargets" \
-            mbms_work/index.html
-
-          grep -q \
-            "window.loadHomeRelDetails" \
-            mbms_work/index.html
-
-          grep -q \
-            "window.showHomeRelationship" \
-            mbms_work/index.html
-
-          grep -q \
-            "window.printHomeRelationshipReport" \
-            mbms_work/index.html
+          echo "FINAL HTML JAVASCRIPT VALIDATION PASSED."
 
       - name: Create Android project
+        shell: bash
         run: |
           set -euo pipefail
 
@@ -2182,18 +2729,17 @@ jobs:
             release
 
           mkdir -p \
+            mbms_android/app/src/main/assets \
             mbms_android/app/src/main/java/com/mbms/app \
             mbms_android/app/src/main/res/values \
-            mbms_android/app/src/main/assets \
             release
 
           cp \
             mbms_work/index.html \
             mbms_android/app/src/main/assets/index.html
 
-          cat > mbms_android/settings.gradle <<'EOF'
-          import org.gradle.api.initialization.resolve.RepositoriesMode
 
+          cat > mbms_android/settings.gradle <<'EOF'
           pluginManagement {
               repositories {
                   google()
@@ -2213,10 +2759,11 @@ jobs:
               }
           }
 
-          rootProject.name='MBMS-V128'
+          rootProject.name = "MBMSAndroid"
 
-          include ':app'
+          include(":app")
           EOF
+
 
           cat > mbms_android/build.gradle <<'EOF'
           plugins {
@@ -2224,10 +2771,13 @@ jobs:
           }
           EOF
 
+
           cat > mbms_android/gradle.properties <<'EOF'
           org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
-          android.useAndroidX=true
+          android.useAndroidX=false
+          android.nonTransitiveRClass=true
           EOF
+
 
           cat > mbms_android/app/build.gradle <<'EOF'
           plugins {
@@ -2235,29 +2785,61 @@ jobs:
           }
 
           android {
+
               namespace 'com.mbms.app'
+
               compileSdk 35
 
               defaultConfig {
+
                   applicationId 'com.mbms.app'
+
                   minSdk 26
+
                   targetSdk 35
-                  versionCode 128
-                  versionName 'V128'
+
+                  versionCode 129
+
+                  versionName 'V129'
+              }
+
+              buildTypes {
+
+                  debug {
+
+                      minifyEnabled false
+
+                      shrinkResources false
+                  }
+
+                  release {
+
+                      minifyEnabled false
+
+                      shrinkResources false
+                  }
+              }
+
+              compileOptions {
+
+                  sourceCompatibility JavaVersion.VERSION_17
+
+                  targetCompatibility JavaVersion.VERSION_17
               }
           }
           EOF
 
+
           cat > mbms_android/app/src/main/res/values/strings.xml <<'EOF'
           <resources>
-              <string name="app_name">
-                  Measurement Book Management System
-              </string>
+              <string name="app_name">MBMS</string>
           </resources>
           EOF
 
+
           cat > mbms_android/app/src/main/res/values/styles.xml <<'EOF'
           <resources>
+
               <style
                   name="AppTheme"
                   parent="android:style/Theme.Material.Light.NoActionBar">
@@ -2267,38 +2849,51 @@ jobs:
                   </item>
 
                   <item name="android:colorAccent">
-                      #176aa4
+                      #1976D2
+                  </item>
+
+                  <item name="android:navigationBarColor">
+                      #06458E
                   </item>
 
               </style>
+
           </resources>
           EOF
+
 
           cat > mbms_android/app/src/main/AndroidManifest.xml <<'EOF'
           <manifest
               xmlns:android="http://schemas.android.com/apk/res/android">
 
               <uses-permission
-                  android:name="android.permission.READ_MEDIA_IMAGES"/>
+                  android:name="android.permission.INTERNET" />
+
+              <uses-permission
+                  android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+                  android:maxSdkVersion="28" />
 
               <application
-                  android:theme="@style/AppTheme"
-                  android:label="@string/app_name"
                   android:allowBackup="true"
-                  android:supportsRtl="true">
+                  android:usesCleartextTraffic="true"
+                  android:label="@string/app_name"
+                  android:theme="@style/AppTheme"
+                  android:hardwareAccelerated="true"
+                  android:resizeableActivity="true">
 
                   <activity
                       android:name=".MainActivity"
+                      android:exported="true"
                       android:screenOrientation="portrait"
-                      android:exported="true">
+                      android:configChanges="orientation|screenSize|keyboardHidden">
 
                       <intent-filter>
 
                           <action
-                              android:name="android.intent.action.MAIN"/>
+                              android:name="android.intent.action.MAIN" />
 
                           <category
-                              android:name="android.intent.category.LAUNCHER"/>
+                              android:name="android.intent.category.LAUNCHER" />
 
                       </intent-filter>
 
@@ -2309,342 +2904,746 @@ jobs:
           </manifest>
           EOF
 
+
+          cat > mbms_android/app/proguard-rules.pro <<'EOF'
+          # MBMS
+          EOF
+
+      - name: Create MainActivity.java
+        shell: bash
+        run: |
+          set -euo pipefail
+
           cat > mbms_android/app/src/main/java/com/mbms/app/MainActivity.java <<'EOF'
           package com.mbms.app;
 
-          import android.app.*;
-          import android.os.*;
-          import android.content.*;
+          import android.app.Activity;
           import android.content.ContentValues;
-          import android.net.*;
+          import android.content.Context;
+          import android.content.Intent;
+          import android.net.Uri;
+          import android.os.Build;
+          import android.os.Bundle;
+          import android.os.Environment;
           import android.provider.MediaStore;
-          import android.webkit.*;
           import android.print.PrintAttributes;
+          import android.print.PrintDocumentAdapter;
           import android.print.PrintManager;
-          import android.graphics.Color;
-          import android.view.*;
+          import android.view.View;
+          import android.webkit.JavascriptInterface;
+          import android.webkit.ValueCallback;
+          import android.webkit.WebChromeClient;
+          import android.webkit.WebResourceRequest;
+          import android.webkit.WebSettings;
+          import android.webkit.WebView;
+          import android.webkit.WebViewClient;
           import android.widget.Toast;
-          import java.io.*;
+
+          import java.io.File;
+          import java.io.FileOutputStream;
+          import java.io.OutputStream;
           import java.nio.charset.StandardCharsets;
 
           public class MainActivity extends Activity {
 
-              WebView webView;
+              private static final int REQUEST_FILE = 9102;
 
-              static final int REQUEST_FILE=7001;
+              private WebView webView;
 
-              ValueCallback<Uri[]> filePathCallback;
+              private ValueCallback<Uri[]> filePathCallback;
+
+              private final Object printLock = new Object();
+
 
               @Override
-              public void onCreate(Bundle b) {
+              protected void onCreate(
+                      Bundle savedInstanceState) {
 
-                  super.onCreate(b);
+                  super.onCreate(savedInstanceState);
 
-                  webView=
-                      new WebView(this);
+                  webView =
+                          new WebView(this);
 
-                  webView.setBackgroundColor(
-                      Color.WHITE
-                  );
+                  setContentView(webView);
 
-                  WebSettings s=
-                      webView.getSettings();
 
-                  s.setJavaScriptEnabled(true);
-                  s.setDomStorageEnabled(true);
-                  s.setDatabaseEnabled(true);
-                  s.setAllowFileAccess(true);
-                  s.setAllowContentAccess(true);
-                  s.setSupportZoom(false);
+                  WebSettings settings =
+                          webView.getSettings();
 
-                  webView.setWebChromeClient(
-                      new WebChromeClient() {
+                  settings.setJavaScriptEnabled(true);
 
-                          @Override
-                          public boolean onShowFileChooser(
-                              WebView v,
-                              ValueCallback<Uri[]> cb,
-                              FileChooserParams p) {
+                  settings.setDomStorageEnabled(true);
 
-                              filePathCallback=cb;
+                  settings.setDatabaseEnabled(true);
 
-                              try {
+                  settings.setAllowFileAccess(true);
 
-                                  startActivityForResult(
-                                      p.createIntent(),
-                                      REQUEST_FILE
-                                  );
+                  settings.setAllowContentAccess(true);
 
-                              } catch(Exception e) {
+                  settings.setBuiltInZoomControls(false);
 
-                                  filePathCallback=null;
+                  settings.setDisplayZoomControls(false);
 
-                              }
+                  settings.setSupportZoom(false);
 
-                              return true;
-                          }
-                      }
+                  settings.setLoadWithOverviewMode(false);
+
+                  settings.setUseWideViewPort(false);
+
+                  settings.setTextZoom(100);
+
+
+                  /*
+                   * The V120 HTML uses MBMSAndroid.
+                   * AndroidBridge is also exposed to keep compatibility
+                   * with all existing report/print call paths.
+                   */
+                  AndroidBridge nativeBridge =
+                          new AndroidBridge();
+
+                  webView.addJavascriptInterface(
+                          nativeBridge,
+                          "MBMSAndroid"
                   );
 
                   webView.addJavascriptInterface(
-                      new Object() {
+                          nativeBridge,
+                          "AndroidBridge"
+                  );
 
-                          @JavascriptInterface
-                          public void print() {
 
-                              if(webView==null){
-                                  return;
+                  webView.setWebChromeClient(
+                          new WebChromeClient() {
+
+                              @Override
+                              public boolean onShowFileChooser(
+                                      WebView view,
+                                      ValueCallback<Uri[]> callback,
+                                      FileChooserParams params) {
+
+                                  if(
+                                      filePathCallback != null
+                                  ) {
+
+                                      filePathCallback
+                                              .onReceiveValue(
+                                                  null
+                                              );
+                                  }
+
+
+                                  filePathCallback =
+                                          callback;
+
+
+                                  try {
+
+                                      Intent intent =
+                                              new Intent(
+                                                  Intent.ACTION_OPEN_DOCUMENT
+                                              );
+
+
+                                      intent.addCategory(
+                                          Intent.CATEGORY_OPENABLE
+                                      );
+
+
+                                      intent.setType(
+                                          "application/json"
+                                      );
+
+
+                                      startActivityForResult(
+                                          intent,
+                                          REQUEST_FILE
+                                      );
+
+
+                                      return true;
+
+
+                                  } catch(Exception e) {
+
+                                      filePathCallback =
+                                              null;
+
+                                      return false;
+                                  }
+                              }
+                          }
+                  );
+
+
+                  webView.setWebViewClient(
+                          new WebViewClient() {
+
+                              @Override
+                              public boolean
+                              shouldOverrideUrlLoading(
+                                      WebView view,
+                                      WebResourceRequest request) {
+
+                                  return false;
                               }
 
-                              webView.post(
-                                  new Runnable() {
 
-                                      @Override
-                                      public void run() {
+                              @Override
+                              public void onPageFinished(
+                                      WebView view,
+                                      String url) {
+
+                                  super.onPageFinished(
+                                      view,
+                                      url
+                                  );
+
+                                  installNativeBridge();
+                              }
+                          }
+                  );
+
+
+                  webView.loadUrl(
+                      "file:///android_asset/index.html"
+                  );
+              }
+
+
+              private void installNativeBridge() {
+
+                  if(webView == null) {
+                      return;
+                  }
+
+
+                  String js =
+                          "(function(){"
+                        + "try{"
+
+                        + "window.print=function(){"
+                        + "try{"
+
+                        + "if(window.MBMSAndroid&&"
+                        + "typeof window.MBMSAndroid.print"
+                        + "==='function'){"
+                        + "window.MBMSAndroid.print();"
+                        + "return;"
+                        + "}"
+
+                        + "if(window.AndroidBridge&&"
+                        + "typeof window.AndroidBridge.print"
+                        + "==='function'){"
+                        + "window.AndroidBridge.print();"
+                        + "return;"
+                        + "}"
+
+                        + "}catch(e){"
+                        + "console.error(e);"
+                        + "}"
+                        + "};"
+
+
+                        + "window.downloadSettingsBackup="
+                        + "function(){"
+                        + "try{"
+
+                        + "var data="
+                        + "JSON.stringify("
+                        + "window.mbmsSettingsSnapshot(),"
+                        + "null,2);"
+
+
+                        + "var filename="
+                        + "'MBMS_Backup_'"
+                        + "+new Date()"
+                        + ".toISOString()"
+                        + ".slice(0,10)"
+                        + "+'.json';"
+
+
+                        + "if(window.MBMSAndroid&&"
+                        + "typeof window.MBMSAndroid.saveBackup"
+                        + "==='function'){"
+
+                        + "window.MBMSAndroid.saveBackup("
+                        + "data,filename);"
+
+                        + "return;"
+                        + "}"
+
+
+                        + "if(window.AndroidBridge&&"
+                        + "typeof window.AndroidBridge.saveBackup"
+                        + "==='function'){"
+
+                        + "window.AndroidBridge.saveBackup("
+                        + "data,filename);"
+
+                        + "return;"
+                        + "}"
+
+                        + "}catch(e){"
+
+                        + "alert("
+                        + "'Backup Save मध्ये त्रुटी आली.'"
+                        + ");"
+
+                        + "}"
+                        + "};"
+
+
+                        + "}catch(e){"
+                        + "console.error(e);"
+                        + "}"
+                        + "})();";
+
+
+                  webView.evaluateJavascript(
+                      js,
+                      null
+                  );
+              }
+
+
+              public class AndroidBridge {
+
+                  @JavascriptInterface
+                  public void print() {
+
+                      synchronized(printLock) {
+
+                          if(webView == null) {
+
+                              showPrintError(
+                                  "WebView उपलब्ध नाही."
+                              );
+
+                              return;
+                          }
+
+
+                          runOnUiThread(
+                              new Runnable() {
+
+                                  @Override
+                                  public void run() {
+
+                                      if(
+                                          webView == null
+                                      ) {
+
+                                          showPrintError(
+                                              "WebView उपलब्ध नाही."
+                                          );
+
+                                          return;
+                                      }
+
+
+                                      /*
+                                       * Every existing report first fills
+                                       * #printArea and then calls window.print().
+                                       *
+                                       * Delay allows DOM, CSS, A4 layout and
+                                       * fonts to finish rendering before
+                                       * PrintDocumentAdapter captures the page.
+                                       */
+                                      webView.postDelayed(
+                                          new Runnable() {
+
+                                              @Override
+                                              public void run() {
+
+                                                  try {
+
+                                                      PrintManager manager =
+                                                          (PrintManager)
+                                                          getSystemService(
+                                                              Context.PRINT_SERVICE
+                                                          );
+
+
+                                                      if(
+                                                          manager == null
+                                                      ) {
+
+                                                          throw new IllegalStateException(
+                                                              "Print service unavailable"
+                                                          );
+                                                      }
+
+
+                                                      if(
+                                                          Build.VERSION.SDK_INT >=
+                                                          Build.VERSION_CODES.KITKAT &&
+                                                          !webView.isAttachedToWindow()
+                                                      ) {
+
+                                                          throw new IllegalStateException(
+                                                              "WebView is not attached"
+                                                          );
+                                                      }
+
+
+                                                      webView.requestLayout();
+
+                                                      webView.invalidate();
+
+
+                                                      PrintDocumentAdapter adapter =
+                                                          webView
+                                                          .createPrintDocumentAdapter(
+                                                              "MBMS Report"
+                                                          );
+
+
+                                                      PrintAttributes attributes =
+                                                          new PrintAttributes.Builder()
+
+                                                          .setMediaSize(
+                                                              PrintAttributes
+                                                                  .MediaSize
+                                                                  .ISO_A4
+                                                          )
+
+                                                          .setMinMargins(
+                                                              PrintAttributes
+                                                                  .Margins
+                                                                  .NO_MARGINS
+                                                          )
+
+                                                          .build();
+
+
+                                                      String jobName =
+                                                          "MBMS Report " +
+                                                          System.currentTimeMillis();
+
+
+                                                      manager.print(
+                                                          jobName,
+                                                          adapter,
+                                                          attributes
+                                                      );
+
+
+                                                  } catch(Exception e) {
+
+                                                      e.printStackTrace();
+
+                                                      showPrintError(
+                                                          "Print / PDF सुरू करता आले नाही."
+                                                      );
+                                                  }
+
+                                              }
+                                          },
+                                          500
+                                      );
+                                  }
+                              }
+                          );
+                      }
+                  }
+
+
+                  @JavascriptInterface
+                  public void saveBackup(
+                          final String json,
+                          final String filename) {
+
+                      new Thread(
+                          new Runnable() {
+
+                              @Override
+                              public void run() {
+
+                                  boolean success =
+                                          false;
+
+
+                                  try {
+
+                                      if(
+                                          Build.VERSION.SDK_INT >= 29
+                                      ) {
+
+                                          ContentValues values =
+                                              new ContentValues();
+
+
+                                          values.put(
+                                              MediaStore.Downloads.DISPLAY_NAME,
+                                              filename
+                                          );
+
+
+                                          values.put(
+                                              MediaStore.Downloads.MIME_TYPE,
+                                              "application/json"
+                                          );
+
+
+                                          values.put(
+                                              MediaStore.Downloads.RELATIVE_PATH,
+                                              Environment.DIRECTORY_DOWNLOADS
+                                          );
+
+
+                                          values.put(
+                                              MediaStore.Downloads.IS_PENDING,
+                                              1
+                                          );
+
+
+                                          Uri uri =
+                                              getContentResolver()
+                                              .insert(
+                                                  MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                                                  values
+                                              );
+
+
+                                          if(
+                                              uri == null
+                                          ) {
+
+                                              throw new Exception(
+                                                  "Unable to create backup"
+                                              );
+                                          }
+
+
+                                          OutputStream output =
+                                              getContentResolver()
+                                              .openOutputStream(
+                                                  uri
+                                              );
+
+
+                                          if(
+                                              output == null
+                                          ) {
+
+                                              throw new Exception(
+                                                  "Unable to open backup"
+                                              );
+                                          }
+
 
                                           try {
 
-                                              PrintManager pm=
-                                                  (PrintManager)
-                                                  getSystemService(
-                                                      PRINT_SERVICE
-                                                  );
-
-                                              if(pm==null){
-                                                  throw new IllegalStateException(
-                                                      "Print service unavailable"
-                                                  );
-                                              }
-
-                                              webView.requestLayout();
-                                              webView.invalidate();
-
-                                              PrintAttributes attrs=
-                                                  new PrintAttributes.Builder()
-                                                      .setMediaSize(
-                                                          PrintAttributes
-                                                              .MediaSize
-                                                              .ISO_A4
-                                                      )
-                                                      .setMinMargins(
-                                                          new PrintAttributes.Margins(
-                                                              144,
-                                                              144,
-                                                              144,
-                                                              144
-                                                          )
-                                                      )
-                                                      .build();
-
-                                              pm.print(
-                                                  "MBMS Report",
-                                                  webView.createPrintDocumentAdapter(
-                                                      "MBMS Report"
-                                                  ),
-                                                  attrs
+                                              output.write(
+                                                  json.getBytes(
+                                                      StandardCharsets.UTF_8
+                                                  )
                                               );
 
-                                          } catch(Exception e) {
+                                              output.flush();
+
+                                          } finally {
+
+                                              output.close();
+                                          }
+
+
+                                          ContentValues done =
+                                              new ContentValues();
+
+
+                                          done.put(
+                                              MediaStore.Downloads.IS_PENDING,
+                                              0
+                                          );
+
+
+                                          getContentResolver()
+                                          .update(
+                                              uri,
+                                              done,
+                                              null,
+                                              null
+                                          );
+
+
+                                          success =
+                                              true;
+
+
+                                      } else {
+
+                                          File directory =
+                                              Environment
+                                              .getExternalStoragePublicDirectory(
+                                                  Environment
+                                                  .DIRECTORY_DOWNLOADS
+                                              );
+
+
+                                          if(
+                                              !directory.exists()
+                                          ) {
+
+                                              directory.mkdirs();
+                                          }
+
+
+                                          File file =
+                                              new File(
+                                                  directory,
+                                                  filename
+                                              );
+
+
+                                          FileOutputStream output =
+                                              new FileOutputStream(
+                                                  file
+                                              );
+
+
+                                          try {
+
+                                              output.write(
+                                                  json.getBytes(
+                                                      StandardCharsets.UTF_8
+                                                  )
+                                              );
+
+                                              output.flush();
+
+                                          } finally {
+
+                                              output.close();
+                                          }
+
+
+                                          success =
+                                              true;
+                                      }
+
+
+                                  } catch(Exception e) {
+
+                                      e.printStackTrace();
+                                  }
+
+
+                                  final boolean result =
+                                      success;
+
+
+                                  runOnUiThread(
+                                      new Runnable() {
+
+                                          @Override
+                                          public void run() {
 
                                               Toast.makeText(
                                                   MainActivity.this,
-                                                  "Print / PDF सुरू करता आले नाही.",
+
+                                                  result
+                                                  ?
+                                                  "Backup Downloads मध्ये Save झाला."
+                                                  :
+                                                  "Backup Save मध्ये त्रुटी आली.",
+
                                                   Toast.LENGTH_LONG
                                               ).show();
 
                                           }
                                       }
-                                  }
-                              );
+                                  );
+                              }
                           }
-
-                          @JavascriptInterface
-                          public void saveBackup(
-                              String filename,
-                              String json) {
-
-                              new Thread(
-                                  () -> {
-
-                                      boolean ok=false;
-
-                                      try {
-
-                                          if(
-                                              Build.VERSION.SDK_INT>=29
-                                          ) {
-
-                                              ContentValues v=
-                                                  new ContentValues();
-
-                                              v.put(
-                                                  MediaStore.Downloads
-                                                      .DISPLAY_NAME,
-                                                  filename
-                                              );
-
-                                              v.put(
-                                                  MediaStore.Downloads
-                                                      .MIME_TYPE,
-                                                  "application/json"
-                                              );
-
-                                              v.put(
-                                                  MediaStore.Downloads
-                                                      .RELATIVE_PATH,
-                                                  Environment
-                                                      .DIRECTORY_DOWNLOADS
-                                              );
-
-                                              Uri u=
-                                                  getContentResolver()
-                                                      .insert(
-                                                          MediaStore
-                                                              .Downloads
-                                                              .EXTERNAL_CONTENT_URI,
-                                                          v
-                                                      );
-
-                                              if(u!=null) {
-
-                                                  try(
-                                                      OutputStream o=
-                                                          getContentResolver()
-                                                              .openOutputStream(
-                                                                  u
-                                                              )
-                                                  ) {
-
-                                                      if(o!=null) {
-
-                                                          o.write(
-                                                              json.getBytes(
-                                                                  StandardCharsets
-                                                                      .UTF_8
-                                                              )
-                                                          );
-
-                                                          o.flush();
-
-                                                          ok=true;
-                                                      }
-                                                  }
-                                              }
-
-                                          } else {
-
-                                              File d=
-                                                  Environment
-                                                      .getExternalStoragePublicDirectory(
-                                                          Environment
-                                                              .DIRECTORY_DOWNLOADS
-                                                      );
-
-                                              d.mkdirs();
-
-                                              try(
-                                                  FileOutputStream o=
-                                                      new FileOutputStream(
-                                                          new File(
-                                                              d,
-                                                              filename
-                                                          )
-                                                      )
-                                              ) {
-
-                                                  o.write(
-                                                      json.getBytes(
-                                                          StandardCharsets
-                                                              .UTF_8
-                                                      )
-                                                  );
-
-                                                  o.flush();
-
-                                                  ok=true;
-                                              }
-                                          }
-
-                                      } catch(Exception e) {
-
-                                          e.printStackTrace();
-
-                                      }
-
-                                      boolean result=ok;
-
-                                      runOnUiThread(
-                                          () ->
-                                              Toast.makeText(
-                                                  MainActivity.this,
-                                                  result
-                                                      ? "Backup Downloads मध्ये Save झाला."
-                                                      : "Backup Save मध्ये त्रुटी आली.",
-                                                  Toast.LENGTH_LONG
-                                              ).show()
-                                      );
-
-                                  }
-                              ).start();
-                          }
-
-                      },
-                      "AndroidBridge"
-                  );
-
-                  webView.setWebViewClient(
-                      new WebViewClient()
-                  );
-
-                  webView.loadUrl(
-                      "file:///android_asset/index.html"
-                  );
-
-                  setContentView(webView);
+                      ).start();
+                  }
               }
+
+
+              private void showPrintError(
+                      String message) {
+
+                  runOnUiThread(
+                      new Runnable() {
+
+                          @Override
+                          public void run() {
+
+                              Toast.makeText(
+                                  MainActivity.this,
+                                  message,
+                                  Toast.LENGTH_LONG
+                              ).show();
+
+                          }
+                      }
+                  );
+              }
+
 
               @Override
               protected void onActivityResult(
-                  int r,
-                  int c,
-                  Intent d) {
+                      int requestCode,
+                      int resultCode,
+                      Intent data) {
 
                   super.onActivityResult(
-                      r,
-                      c,
-                      d
+                      requestCode,
+                      resultCode,
+                      data
                   );
 
+
                   if(
-                      r==REQUEST_FILE &&
-                      filePathCallback!=null
+                      requestCode != REQUEST_FILE
                   ) {
 
-                      Uri[] u=
-                          (
-                              c==RESULT_OK &&
-                              d!=null &&
-                              d.getData()!=null
-                          )
-                          ?
-                          new Uri[]{
-                              d.getData()
-                          }
-                          :
+                      return;
+                  }
+
+
+                  if(
+                      filePathCallback == null
+                  ) {
+
+                      return;
+                  }
+
+
+                  Uri[] results =
                           null;
 
-                      filePathCallback
-                          .onReceiveValue(u);
 
-                      filePathCallback=null;
+                  if(
+                      resultCode == RESULT_OK &&
+                      data != null &&
+                      data.getData() != null
+                  ) {
+
+                      results =
+                          new Uri[]{
+                              data.getData()
+                          };
                   }
+
+
+                  filePathCallback
+                      .onReceiveValue(
+                          results
+                      );
+
+
+                  filePathCallback =
+                          null;
               }
+
 
               @Override
               public void onBackPressed() {
 
                   if(
-                      webView!=null &&
+                      webView != null &&
                       webView.canGoBack()
                   ) {
 
@@ -2653,35 +3652,259 @@ jobs:
                   } else {
 
                       super.onBackPressed();
-
                   }
+              }
+
+
+              @Override
+              protected void onDestroy() {
+
+                  if(webView != null) {
+
+                      webView.stopLoading();
+
+                      webView.destroy();
+
+                      webView =
+                              null;
+                  }
+
+
+                  super.onDestroy();
               }
           }
           EOF
 
-          cd mbms_android
+      - name: Validate Native Print Bridge
+        shell: bash
+        run: |
+          set -euo pipefail
 
-          gradle \
-            --no-daemon \
-            :app:assembleDebug
+          JAVA="mbms_android/app/src/main/java/com/mbms/app/MainActivity.java"
+          HTML="mbms_android/app/src/main/assets/index.html"
 
-          cd ..
+          REQUIRED_JAVA=(
+            '"MBMSAndroid"'
+            '"AndroidBridge"'
+            'window.MBMSAndroid'
+            'window.AndroidBridge'
+            'createPrintDocumentAdapter'
+            'PrintAttributes.MediaSize.ISO_A4'
+            'PrintAttributes.Margins.NO_MARGINS'
+            'postDelayed'
+            'manager.print'
+          )
+
+          for item in "${REQUIRED_JAVA[@]}"
+          do
+            grep -q "$item" "$JAVA" || {
+              echo "ERROR: Missing native print bridge item: $item"
+              exit 1
+            }
+          done
+
+          grep -q \
+            'window.MBMSAndroid' \
+            "$HTML"
+
+          grep -q \
+            'window.print' \
+            "$HTML"
+
+          echo "NATIVE PRINT BRIDGE VALIDATION PASSED."
+
+      - name: Verify Android project
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test -s \
+            mbms_android/settings.gradle
+
+          test -s \
+            mbms_android/build.gradle
+
+          test -s \
+            mbms_android/app/build.gradle
+
+          test -s \
+            mbms_android/app/src/main/AndroidManifest.xml
+
+          test -s \
+            mbms_android/app/src/main/java/com/mbms/app/MainActivity.java
+
+          test -s \
+            mbms_android/app/src/main/res/values/strings.xml
+
+          test -s \
+            mbms_android/app/src/main/res/values/styles.xml
+
+          test -s \
+            mbms_android/app/src/main/assets/index.html
+
+
+          python3 <<'PY'
+          import xml.etree.ElementTree as ET
+
+          files = [
+              "mbms_android/app/src/main/res/values/strings.xml",
+              "mbms_android/app/src/main/res/values/styles.xml",
+              "mbms_android/app/src/main/AndroidManifest.xml"
+          ]
+
+          for f in files:
+              ET.parse(f)
+              print("XML OK:", f)
+
+          PY
+
+
+          echo "ANDROID PROJECT VALIDATION PASSED."
+
+      - name: Verify generated Android project
+        working-directory: mbms_android
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          test -f settings.gradle
+
+          test -f build.gradle
+
+          test -f gradle.properties
+
+          test -f app/build.gradle
+
+          test -f app/src/main/AndroidManifest.xml
+
+          test -f app/src/main/java/com/mbms/app/MainActivity.java
+
+          test -s app/src/main/assets/index.html
+
+          echo "ANDROID PROJECT FILES VERIFIED."
+
+      - name: Compile Android Java
+        working-directory: mbms_android
+        shell: bash
+        run: |
+          set -e
+
+          for attempt in 1 2; do
+
+            echo \
+              "Java compilation attempt $attempt/2"
+
+            if gradle \
+              --no-daemon \
+              --stacktrace \
+              :app:compileDebugJavaWithJavac
+            then
+
+              echo \
+                "JAVA COMPILATION PASSED."
+
+              exit 0
+            fi
+
+            if [ "$attempt" -lt 2 ]; then
+
+              echo \
+                "Java compilation failed; retrying after 5 seconds..."
+
+              sleep 5
+            fi
+
+          done
+
+          echo \
+            "ERROR: Java compilation failed after 2 attempts."
+
+          exit 1
+
+      - name: Build Final MBMS APK
+        working-directory: mbms_android
+        shell: bash
+        run: |
+          set -e
+
+          for attempt in 1 2; do
+
+            echo \
+              "APK build attempt $attempt/2"
+
+            if gradle \
+              --no-daemon \
+              --stacktrace \
+              clean \
+              :app:assembleDebug
+            then
+
+              echo \
+                "GRADLE APK BUILD PASSED."
+
+              break
+            fi
+
+            if [ "$attempt" -lt 2 ]; then
+
+              echo \
+                "APK build failed; retrying after 5 seconds..."
+
+              sleep 5
+
+            else
+
+              echo \
+                "ERROR: APK build failed after 2 attempts."
+
+              exit 1
+            fi
+
+          done
+
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+
+          test -s "$APK"
+
 
           cp \
-            mbms_android/app/build/outputs/apk/debug/app-debug.apk \
-            release/MBMS-V128-MB-SUMMARY-LINKED-CORRECTED.apk
+            "$APK" \
+            "../release/MBMS-V129-ALL-REPORTS-PRINT-PDF-FIXED.apk"
+
+
+          ls -lh \
+            "../release/MBMS-V129-ALL-REPORTS-PRINT-PDF-FIXED.apk"
+
+      - name: Verify APK
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APK="release/MBMS-V129-ALL-REPORTS-PRINT-PDF-FIXED.apk"
+
+          test -s "$APK"
+
 
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" \
             verify \
-            release/MBMS-V128-MB-SUMMARY-LINKED-CORRECTED.apk
+            --verbose \
+            "$APK"
 
-          sha256sum \
-            release/MBMS-V128-MB-SUMMARY-LINKED-CORRECTED.apk \
+
+          unzip -t "$APK" >/dev/null
+
+
+          sha256sum "$APK" \
             | tee release/SHA256.txt
 
-      - name: Upload APK
+
+          echo "APK SIGNATURE AND ZIP VERIFICATION PASSED."
+
+      - name: Upload APK Artifact
         uses: actions/upload-artifact@v7
         with:
-          name: MBMS-V128-MB-SUMMARY-LINKED-CORRECTED
-          path: release/*
+          name: MBMS-V129-ALL-REPORTS-PRINT-PDF-FIXED
+          path: |
+            release/MBMS-V129-ALL-REPORTS-PRINT-PDF-FIXED.apk
+            release/SHA256.txt
           if-no-files-found: error
