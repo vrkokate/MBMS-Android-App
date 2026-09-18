@@ -1,4 +1,4 @@
-name: MBMS V126 FINAL - M.B. Summary Linked Final - Stable
+name: MBMS V127 FINAL - M.B. Summary Linked Final - Stable
 
 on:
   workflow_dispatch:
@@ -10,7 +10,6 @@ permissions:
   contents: read
 
 jobs:
-
   build:
     name: Build Final MBMS APK
     runs-on: ubuntu-24.04
@@ -20,58 +19,42 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
-
       - name: Setup Java 17
         uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
 
-
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
-
 
       - name: Install Android SDK 35
         shell: bash
         run: |
           set -e
-
           yes | sdkmanager --licenses >/dev/null 2>&1 || true
-
           sdkmanager \
             "platform-tools" \
             "platforms;android-35" \
             "build-tools;35.0.0"
 
-
       - name: Install Gradle 8.7
         shell: bash
         run: |
           set -e
-
           wget -q \
             https://services.gradle.org/distributions/gradle-8.7-bin.zip
-
           mkdir -p "$HOME/gradle"
-
-          unzip -q \
-            gradle-8.7-bin.zip \
-            -d "$HOME/gradle"
-
+          unzip -q gradle-8.7-bin.zip -d "$HOME/gradle"
           echo "$HOME/gradle/gradle-8.7/bin" >> "$GITHUB_PATH"
-
           "$HOME/gradle/gradle-8.7/bin/gradle" --version
-
 
       - name: Verify Java and Gradle
         shell: bash
         run: |
           set -e
-
           java -version
           gradle --version
-
 
       - name: Find MBMS HTML
         shell: bash
@@ -110,10 +93,7 @@ jobs:
           fi
 
           echo "HTML_FILE=$HTML_FILE" >> "$GITHUB_ENV"
-
-          echo "Using HTML:"
-          echo "$HTML_FILE"
-
+          echo "Using HTML: $HTML_FILE"
 
       - name: Prepare Final MBMS HTML
         shell: bash
@@ -131,7 +111,6 @@ jobs:
           echo "HTML size:"
           wc -c mbms_work/index.html
 
-
       - name: Apply ONLY Received JE List Correction
         shell: bash
         run: |
@@ -141,7 +120,6 @@ jobs:
           from pathlib import Path
 
           p = Path("mbms_work/index.html")
-
           text = p.read_text(encoding="utf-8")
 
           old1 = (
@@ -155,43 +133,22 @@ jobs:
           )
 
           if old1 in text:
-              text = text.replace(
-                  old1,
-                  new1,
-                  1
-              )
-
-              print(
-                  "Received JE dropdown remains enabled."
-              )
+              text = text.replace(old1, new1, 1)
+              print("Received JE dropdown remains enabled.")
 
           old2 = "if(isJE&&je)je.disabled=true;"
-
           new2 = "if(isJE&&je)je.disabled=false;"
 
           if old2 in text:
-              text = text.replace(
-                  old2,
-                  new2,
-                  1
-              )
+              text = text.replace(old2, new2, 1)
+              print("Received JE secondary correction applied.")
 
-              print(
-                  "Received JE secondary correction applied."
-              )
+          p.write_text(text, encoding="utf-8")
 
-          p.write_text(
-              text,
-              encoding="utf-8"
-          )
-
-          print(
-              "ONLY RECEIVED -> JE CORRECTION COMPLETED."
-          )
+          print("ONLY RECEIVED -> JE CORRECTION COMPLETED.")
           PY
 
-
-      - name: Verify Requested JE Correction
+      - name: Verify Requested Correction
         shell: bash
         run: |
           set -e
@@ -200,16 +157,12 @@ jobs:
 
           test -s "$HTML"
 
-          grep -q \
-            "loadTransferJEs()" \
-            "$HTML"
-
-          grep -q \
-            "je.disabled=false" \
-            "$HTML"
+          grep -q "loadTransferJEs()" "$HTML"
+          grep -q "transferFromJEName" "$HTML"
+          grep -q "je.disabled=false" "$HTML"
+          grep -q "if(isJE&&je)je.disabled=false;" "$HTML"
 
           echo "RECEIVED JE FULL LIST CORRECTION VERIFIED."
-
 
       - name: Verify MBMS Core Functions
         shell: bash
@@ -218,48 +171,22 @@ jobs:
 
           HTML="mbms_work/index.html"
 
-          grep -q \
-            "mbmsSettingsSnapshot" \
-            "$HTML"
-
-          grep -q \
-            "downloadSettingsBackup" \
-            "$HTML"
-
-          grep -q \
-            "restoreSettingsBackup" \
-            "$HTML"
-
-          grep -q \
-            "generateTransferReport" \
-            "$HTML"
-
-          grep -q \
-            "saveTransferMB" \
-            "$HTML"
-
-          grep -q \
-            "getTransferHistory" \
-            "$HTML"
+          grep -q "mbmsSettingsSnapshot" "$HTML"
+          grep -q "downloadSettingsBackup" "$HTML"
+          grep -q "restoreSettingsBackup" "$HTML"
+          grep -q "generateTransferReport" "$HTML"
+          grep -q "saveTransferMB" "$HTML"
+          grep -q "getTransferHistory" "$HTML"
 
           echo "MBMS CORE FUNCTIONS VERIFIED."
-
 
       - name: Apply ONLY MB Summary Relationship and Detail Fix
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          # IMPORTANT:
-          # The previous version used Base64 and failed with:
-          # binascii.Error: Incorrect padding
-          #
-          # This version intentionally does NOT use Base64.
-          # The JavaScript patch is stored as plain text and then
-          # inserted inside an executable <script> block.
-
           cat > /tmp/mbms_summary_patch.js <<'PATCH_JS'
-          /* V124 - ONLY HOME MB SUMMARY RELATIONSHIP REPORT FIX */
+          /* V127 - ONLY HOME MB SUMMARY RELATIONSHIP REPORT FIX */
           (function(){
             'use strict';
 
@@ -268,7 +195,9 @@ jobs:
             const LARGE='__LARGE_MB__';
             const MBNO='__MBNO__::';
 
-            function safeArray(v){ return Array.isArray(v)?v:[]; }
+            function safeArray(v){
+              return Array.isArray(v)?v:[];
+            }
 
             function n(v){
               try{
@@ -414,49 +343,70 @@ jobs:
               };
             }
 
-            function linkedByMB(d,numbers){
-              const set=new Set(
-                numbers
-                  .filter(Boolean)
-                  .map(n)
-              );
+            function homeRelData(){
 
-              const out=emptySet();
+              const d={
+                mbs:[],
+                jes:[],
+                works:[],
+                assigns:[],
+                transfers:[],
+                bills:[]
+              };
 
-              out.mbs=d.mbs.filter(
-                x=>set.has(
-                  n(mbNo(x))
-                )
-              );
+              try{
+                d.mbs=safeArray(
+                  window.mbs ||
+                  window.mbData ||
+                  window.measurementBooks
+                );
+              }catch(e){}
 
-              out.works=d.works.filter(
-                x=>set.has(
-                  n(x?.mb)
-                )
-              );
+              try{
+                d.jes=safeArray(
+                  window.jes ||
+                  window.jeList ||
+                  window.juniorEngineers
+                );
+              }catch(e){}
 
-              out.assigns=d.assigns.filter(
-                x=>set.has(
-                  n(x?.mb)
-                )
-              );
+              try{
+                d.works=safeArray(
+                  window.works ||
+                  window.workList ||
+                  window.workRecords
+                );
+              }catch(e){}
 
-              out.bills=d.bills.filter(
-                x=>set.has(
-                  n(x?.mb)
-                )
-              );
+              try{
+                d.assigns=safeArray(
+                  window.assigns ||
+                  window.mbAssignments ||
+                  window.assignments
+                );
+              }catch(e){}
 
-              out.transfers=d.transfers.filter(
-                x=>set.has(
-                  n(x?.number||x?.mb)
-                )
-              );
+              try{
+                d.transfers=safeArray(
+                  window.transfers ||
+                  window.transferHistory ||
+                  window.mbTransfers
+                );
+              }catch(e){}
 
-              return out;
+              try{
+                d.bills=safeArray(
+                  window.bills ||
+                  window.billList ||
+                  window.billRecords
+                );
+              }catch(e){}
+
+              return d;
             }
 
             function baseForContext(ctx,d){
+
               const out=emptySet();
 
               const target=
@@ -821,11 +771,8 @@ jobs:
               return out;
             }
 
-            function filterByComponent(
-              ctx,
-              base,
-              d
-            ){
+            function filterByComponent(ctx,base){
+
               const c=ctx.ctype;
               const detail=ctx.detail||'';
 
@@ -1263,102 +1210,6 @@ jobs:
               return out;
             }
 
-            function homeRelData(){
-
-              const d={
-                mbs:[],
-                jes:[],
-                works:[],
-                assigns:[],
-                transfers:[],
-                bills:[]
-              };
-
-              try{
-                d.mbs=safeArray(
-                  window.mbs ||
-                  window.mbData ||
-                  window.measurementBooks
-                );
-              }catch(e){}
-
-              try{
-                d.jes=safeArray(
-                  window.jes ||
-                  window.jeList ||
-                  window.juniorEngineers
-                );
-              }catch(e){}
-
-              try{
-                d.works=safeArray(
-                  window.works ||
-                  window.workList ||
-                  window.workRecords
-                );
-              }catch(e){}
-
-              try{
-                d.assigns=safeArray(
-                  window.assigns ||
-                  window.mbAssignments ||
-                  window.assignments
-                );
-              }catch(e){}
-
-              try{
-                d.transfers=safeArray(
-                  window.transfers ||
-                  window.transferHistory ||
-                  window.mbTransfers
-                );
-              }catch(e){}
-
-              try{
-                d.bills=safeArray(
-                  window.bills ||
-                  window.billList ||
-                  window.billRecords
-                );
-              }catch(e){}
-
-              return d;
-            }
-
-            function getHomeRelationshipContext(){
-
-              const type=
-                document.getElementById(
-                  'homeRelType'
-                )?.value ||
-                '';
-
-              const target=
-                document.getElementById(
-                  'homeRelTarget'
-                )?.value ||
-                '';
-
-              const ctype=
-                document.getElementById(
-                  'homeRelComponent'
-                )?.value ||
-                '';
-
-              const detail=
-                document.getElementById(
-                  'homeRelDetail'
-                )?.value ||
-                '';
-
-              return {
-                type,
-                target,
-                ctype,
-                detail
-              };
-            }
-
             function linkedData(ctx){
 
               const d=
@@ -1370,220 +1221,558 @@ jobs:
                   d
                 );
 
-              return filterByComponent(
-                ctx,
-                base,
-                d
-              );
+              const filtered=
+                filterByComponent(
+                  ctx,
+                  base
+                );
+
+              return {
+                d,
+                ...filtered
+              };
+            }
+
+            function getHomeRelationshipContext(){
+
+              return {
+                type:
+                  document.getElementById(
+                    'homeRelType'
+                  )?.value ||
+                  '',
+
+                target:
+                  document.getElementById(
+                    'homeRelTarget'
+                  )?.value ||
+                  '',
+
+                ctype:
+                  document.getElementById(
+                    'homeRelComponent'
+                  )?.value ||
+                  '',
+
+                detail:
+                  document.getElementById(
+                    'homeRelDetail'
+                  )?.value ||
+                  ''
+              };
             }
 
             function currentScopeTitle(ctx){
 
-              let title=
-                'M.B. Summary';
-
               if(ctx.type==='JE'){
-                title=
-                  'Junior Engineer : '+
+                return 'Junior Engineer : '+
                   (ctx.target||'सर्व JE');
               }
 
               if(ctx.type==='MB'){
-                title=
-                  'M.B. : '+
+                return 'M.B. : '+
                   (ctx.target||'सर्व M.B.');
               }
 
               if(ctx.type==='WORK'){
-                title=
-                  'काम : '+
+                return 'काम : '+
                   (ctx.target||'सर्व कामे');
               }
 
               if(ctx.type==='CONTRACTOR'){
-                title=
-                  'Contractor / Agency : '+
+                return 'Contractor / Agency : '+
                   (ctx.target||'सर्व');
               }
 
               if(ctx.type==='BILL'){
-                title=
-                  'Bill : '+
+                return 'Bill : '+
                   (ctx.target||'सर्व Bill');
               }
 
-              return title;
+              return 'M.B. Summary';
             }
 
-            function renderLinkedSections(
-              ctx,
-              data
-            ){
+            function line(label,value){
+
+              return (
+                '<div style="display:grid;'
+                +'grid-template-columns:145px 1fr;'
+                +'gap:5px;padding:3px 0;'
+                +'border-bottom:1px solid #edf1f4">'
+                +'<b>'
+                +esc(label)
+                +'</b>'
+                +'<span>'
+                +esc(value==null||value===''?'-':value)
+                +'</span>'
+                +'</div>'
+              );
+            }
+
+            function renderLinkedSections(ctx,data){
 
               const mbs=
-                safeArray(data.mbs);
+                data.mbs.slice().sort(
+                  (a,b)=>
+                    mbNo(a).localeCompare(
+                      mbNo(b),
+                      undefined,
+                      {
+                        numeric:true,
+                        sensitivity:'base'
+                      }
+                    )
+                );
 
               const works=
-                safeArray(data.works);
+                data.works.slice().sort(
+                  (a,b)=>
+                    workName(a).localeCompare(
+                      workName(b),
+                      undefined,
+                      {
+                        numeric:true,
+                        sensitivity:'base'
+                      }
+                    )
+                );
 
               const bills=
-                safeArray(data.bills);
+                data.bills.slice();
+
+              const assigns=
+                data.assigns.slice();
 
               const transfers=
-                safeArray(data.transfers);
+                data.transfers.slice();
+
+              const contractorNames=
+                uniqueSorted(
+                  works.map(
+                    x=>x?.contractor
+                  ).concat(
+                    bills.map(
+                      x=>x?.contractor
+                    ),
+                    assigns.map(
+                      x=>x?.contractor
+                    )
+                  )
+                );
+
+              const jeNames=
+                uniqueSorted(
+                  works.map(
+                    x=>x?.je
+                  ).concat(
+                    bills.map(
+                      x=>x?.je
+                    ),
+                    assigns.map(
+                      x=>x?.je
+                    )
+                  )
+                );
 
               let html='';
 
               html+=
-                '<div class="rel-head">'+
-                esc(
+                '<div style="font-weight:900;'
+                +'font-size:16px;margin-bottom:8px">'
+                +esc(
                   currentScopeTitle(ctx)
-                )+
-                '</div>';
+                )
+                +'</div>';
 
               html+=
-                '<div class="rel-section">'+
-                '<b>M.B. ची संपूर्ण माहिती</b>'+
-                '</div>';
+                '<div class="rel-section">'
+                +'<div class="rel-section-title">'
+                +'M.B. ची संपूर्ण माहिती ('
+                +mbs.length
+                +')'
+                +'</div>';
+
+              if(mbs.length){
+
+                html+=
+                  mbs.map(
+                    (m,i)=>
+                      '<div style="border-top:1px solid #e8eef2;'
+                      +'padding:7px 0">'
+                      +line('अ.क्र.',i+1)
+                      +line(
+                        'M.B. क्रमांक',
+                        mbNo(m)
+                      )
+                      +line(
+                        'M.B. प्रकार',
+                        m?.size||'-'
+                      )
+                      +line(
+                        'Status',
+                        m?.status||'-'
+                      )
+                      +line(
+                        'कोणाकडून प्राप्त',
+                        m?.from||
+                        m?.receivedFrom||
+                        '-'
+                      )
+                      +line(
+                        'प्राप्त दिनांक',
+                        date(
+                          m?.receivedDate||
+                          m?.date||
+                          m?.createdAt
+                        )
+                      )
+                      +line(
+                        'सध्या कुणाकडे',
+                        holderName(
+                          mbNo(m)
+                        )
+                      )
+                      +'</div>'
+                  ).join('');
+
+              }else{
+
+                html+=
+                  '<div class="rel-empty">'
+                  +'या निवडीनुसार M.B. नोंद उपलब्ध नाही.'
+                  +'</div>';
+              }
+
+              html+='</div>';
 
               html+=
-                mbs.length
-                  ? mbs.map(
-                      (m,i)=>
-                        '<div class="rel-row">'+
-                        (i+1)+'. '+
-                        'M.B. : '+
-                        esc(mbNo(m))+
-                        ' | Size : '+
-                        esc(
-                          m?.size||'-'
-                        )+
-                        ' | Status : '+
-                        esc(
-                          m?.status||'-'
-                        )+
-                        ' | सध्या कुणाकडे : '+
-                        esc(
-                          holderName(
-                            mbNo(m)
-                          )
-                        )+
-                        '</div>'
-                    ).join('')
-                  : '<div class="rel-empty">नोंद उपलब्ध नाही.</div>';
+                '<div class="rel-section">'
+                +'<div class="rel-section-title">'
+                +'कामांची संपूर्ण माहिती ('
+                +works.length
+                +')'
+                +'</div>';
+
+              if(works.length){
+
+                html+=
+                  works.map(
+                    (w,i)=>
+                      '<div style="border-top:1px solid #e8eef2;'
+                      +'padding:7px 0">'
+                      +line('अ.क्र.',i+1)
+                      +line(
+                        'कामाचे नाव',
+                        workName(w)
+                      )
+                      +line(
+                        'M.B. क्रमांक',
+                        w?.mb||'-'
+                      )
+                      +line(
+                        'Junior Engineer',
+                        w?.je||'-'
+                      )
+                      +line(
+                        'Contractor / Agency',
+                        w?.contractor||'-'
+                      )
+                      +'</div>'
+                  ).join('');
+
+              }else{
+
+                html+=
+                  '<div class="rel-empty">'
+                  +'या निवडीनुसार कामाची नोंद उपलब्ध नाही.'
+                  +'</div>';
+              }
+
+              html+='</div>';
 
               html+=
-                '<div class="rel-section">'+
-                '<b>कामांची संपूर्ण माहिती</b>'+
-                '</div>';
+                '<div class="rel-section">'
+                +'<div class="rel-section-title">'
+                +'Contractor / Agency माहिती ('
+                +contractorNames.length
+                +')'
+                +'</div>';
+
+              if(contractorNames.length){
+
+                html+=
+                  contractorNames.map(
+                    c=>{
+
+                      const cw=
+                        works.filter(
+                          x=>
+                            n(
+                              x?.contractor
+                            )===
+                            n(c)
+                        );
+
+                      const cb=
+                        bills.filter(
+                          x=>
+                            n(
+                              x?.contractor
+                            )===
+                            n(c)
+                        );
+
+                      return (
+                        '<div style="border-top:1px solid #e8eef2;'
+                        +'padding:7px 0">'
+                        +line(
+                          'Contractor / Agency',
+                          c
+                        )
+                        +line(
+                          'संबंधित कामे',
+                          cw.length
+                        )
+                        +line(
+                          'संबंधित M.B.',
+                          uniqueSorted(
+                            cw.map(
+                              x=>x?.mb
+                            ).concat(
+                              cb.map(
+                                x=>x?.mb
+                              )
+                            )
+                          ).join(', ')||'-'
+                        )
+                        +line(
+                          'संबंधित Bills',
+                          cb.length
+                        )
+                        +'</div>'
+                      );
+                    }
+                  ).join('');
+
+              }else{
+
+                html+=
+                  '<div class="rel-empty">'
+                  +'या निवडीनुसार Contractor / Agency नोंद उपलब्ध नाही.'
+                  +'</div>';
+              }
+
+              html+='</div>';
 
               html+=
-                works.length
-                  ? works.map(
-                      (w,i)=>
-                        '<div class="rel-row">'+
-                        (i+1)+'. '+
-                        'काम : '+
-                        esc(
-                          workName(w)
-                        )+
-                        ' | M.B. : '+
-                        esc(
-                          w?.mb||'-'
-                        )+
-                        ' | JE : '+
-                        esc(
-                          w?.je||'-'
-                        )+
-                        ' | Contractor / Agency : '+
-                        esc(
-                          w?.contractor||'-'
-                        )+
-                        '</div>'
-                    ).join('')
-                  : '<div class="rel-empty">नोंद उपलब्ध नाही.</div>';
+                '<div class="rel-section">'
+                +'<div class="rel-section-title">'
+                +'Bill ची संपूर्ण माहिती ('
+                +bills.length
+                +')'
+                +'</div>';
+
+              if(bills.length){
+
+                html+=
+                  bills.map(
+                    (b,i)=>
+                      '<div style="border-top:1px solid #e8eef2;'
+                      +'padding:7px 0">'
+                      +line('अ.क्र.',i+1)
+                      +line(
+                        'Bill प्रकार',
+                        b?.billType||'-'
+                      )
+                      +line(
+                        'Bill क्रमांक',
+                        b?.billNo||'-'
+                      )
+                      +line(
+                        'Bill दिनांक',
+                        date(
+                          b?.billDate||
+                          b?.savedAt
+                        )
+                      )
+                      +line(
+                        'M.B. क्रमांक',
+                        b?.mb||'-'
+                      )
+                      +line(
+                        'कामाचे नाव',
+                        workName(b)||'-'
+                      )
+                      +line(
+                        'Junior Engineer',
+                        b?.je||'-'
+                      )
+                      +line(
+                        'Contractor / Agency',
+                        b?.contractor||'-'
+                      )
+                      +line(
+                        'Bill रक्कम',
+                        amount(b?.amount)
+                      )
+                      +line(
+                        'Payment Status',
+                        typeof billStatusText==='function'
+                          ? billStatusText(
+                              b?.paymentStatus
+                            )
+                          : (
+                              b?.paymentStatus||
+                              '-'
+                            )
+                      )
+                      +line(
+                        'Payment Date',
+                        date(
+                          b?.paymentDate
+                        )
+                      )
+                      +line(
+                        'Paid Amount',
+                        amount(
+                          b?.paidAmount||0
+                        )
+                      )
+                      +'</div>'
+                  ).join('');
+
+              }else{
+
+                html+=
+                  '<div class="rel-empty">'
+                  +'या निवडीनुसार Bill नोंद उपलब्ध नाही.'
+                  +'</div>';
+              }
+
+              html+='</div>';
 
               html+=
-                '<div class="rel-section">'+
-                '<b>Bill ची संपूर्ण माहिती</b>'+
-                '</div>';
+                '<div class="rel-section">'
+                +'<div class="rel-section-title">'
+                +'M.B. Assignment माहिती ('
+                +assigns.length
+                +')'
+                +'</div>';
+
+              if(assigns.length){
+
+                html+=
+                  assigns.map(
+                    (a,i)=>
+                      '<div style="border-top:1px solid #e8eef2;'
+                      +'padding:7px 0">'
+                      +line('अ.क्र.',i+1)
+                      +line(
+                        'M.B. क्रमांक',
+                        a?.mb||'-'
+                      )
+                      +line(
+                        'Junior Engineer',
+                        a?.je||'-'
+                      )
+                      +line(
+                        'काम',
+                        a?.work||
+                        a?.name||
+                        '-'
+                      )
+                      +line(
+                        'Contractor / Agency',
+                        a?.contractor||'-'
+                      )
+                      +line(
+                        'दिनांक',
+                        date(
+                          a?.date||
+                          a?.assignedDate||
+                          a?.createdAt
+                        )
+                      )
+                      +line(
+                        'Status',
+                        a?.status||
+                        'Assigned'
+                      )
+                      +'</div>'
+                  ).join('');
+
+              }else{
+
+                html+=
+                  '<div class="rel-empty">'
+                  +'या निवडीनुसार Assignment नोंद उपलब्ध नाही.'
+                  +'</div>';
+              }
+
+              html+='</div>';
 
               html+=
-                bills.length
-                  ? bills.map(
-                      (b,i)=>
-                        '<div class="rel-row">'+
-                        (i+1)+'. '+
-                        'Bill : '+
-                        esc(
-                          b?.billType||'-'
-                        )+
-                        ' | Bill No. : '+
-                        esc(
-                          b?.billNo||'-'
-                        )+
-                        ' | M.B. : '+
-                        esc(
-                          b?.mb||'-'
-                        )+
-                        ' | काम : '+
-                        esc(
-                          workName(b)
-                        )+
-                        ' | JE : '+
-                        esc(
-                          b?.je||'-'
-                        )+
-                        ' | Contractor : '+
-                        esc(
-                          b?.contractor||'-'
-                        )+
-                        ' | रक्कम : '+
-                        esc(
-                          amount(
-                            b?.amount
-                          )
-                        )+
-                        '</div>'
-                    ).join('')
-                  : '<div class="rel-empty">Bill नोंद उपलब्ध नाही.</div>';
+                '<div class="rel-section">'
+                +'<div class="rel-section-title">'
+                +'M.B. Transfer / History ('
+                +transfers.length
+                +')'
+                +'</div>';
 
-              html+=
-                '<div class="rel-section">'+
-                '<b>M.B. हस्तांतरण / Transfer इतिहास</b>'+
-                '</div>';
+              if(transfers.length){
 
-              html+=
-                transfers.length
-                  ? transfers.map(
-                      (t,i)=>
-                        '<div class="rel-row">'+
-                        (i+1)+'. '+
-                        'M.B. : '+
-                        esc(
-                          t?.number||
-                          t?.mb||
-                          '-'
-                        )+
-                        ' | दिनांक : '+
-                        esc(
-                          date(
-                            t?.date||
-                            t?.transferDate||
-                            t?.savedAt
-                          )
-                        )+
-                        ' | नाव / कार्यालय : '+
-                        esc(
-                          t?.receiverName||
-                          t?.name||
-                          t?.receiver||
-                          t?.to||
-                          '-'
-                        )+
-                        '</div>'
-                    ).join('')
-                  : '<div class="rel-empty">Transfer नोंद उपलब्ध नाही.</div>';
+                html+=
+                  transfers.map(
+                    (t,i)=>
+                      '<div style="border-top:1px solid #e8eef2;'
+                      +'padding:7px 0">'
+                      +line('अ.क्र.',i+1)
+                      +line(
+                        'M.B. क्रमांक',
+                        t?.number||
+                        t?.mb||
+                        '-'
+                      )
+                      +line(
+                        'दिनांक',
+                        date(
+                          t?.date||
+                          t?.transferDate||
+                          t?.savedAt
+                        )
+                      )
+                      +line(
+                        'प्राप्तकर्ता / नाव',
+                        t?.receiverName||
+                        t?.name||
+                        t?.receiver||
+                        t?.to||
+                        '-'
+                      )
+                      +line(
+                        'प्रकार',
+                        t?.recipientType||
+                        t?.type||
+                        '-'
+                      )
+                      +line(
+                        'कार्यालय',
+                        t?.officeName||
+                        t?.departmentOffice||
+                        '-'
+                      )
+                      +'</div>'
+                  ).join('');
+
+              }else{
+
+                html+=
+                  '<div class="rel-empty">'
+                  +'या निवडीनुसार Transfer नोंद उपलब्ध नाही.'
+                  +'</div>';
+              }
+
+              html+='</div>';
 
               return html;
             }
@@ -1601,24 +1790,26 @@ jobs:
                   'homeRelDetail'
                 );
 
+              const billType=
+                document.getElementById(
+                  'homeRelBillType'
+                );
+
               if(!sel){
                 return;
               }
 
-              const target=
-                ctx.target;
-
-              const ctype=
-                ctx.ctype;
+              if(billType){
+                billType.style.display='none';
+                billType.value='';
+              }
 
               if(
-                !target ||
-                !ctype
+                !ctx.target ||
+                !ctx.ctype
               ){
 
-                sel.style.display=
-                  'none';
-
+                sel.style.display='none';
                 sel.innerHTML='';
 
                 showHomeRelationshipV124();
@@ -1634,37 +1825,27 @@ jobs:
 
               const opts=[];
 
-              if(ctype==='ALL'){
+              if(ctx.ctype==='ALL'){
 
                 opts.push({
-                  value:
-                    ALL_DETAIL,
-                  label:
-                    'सर्व माहिती'
+                  value:ALL_DETAIL,
+                  label:'सर्व माहिती'
                 });
 
-              }else if(
-                ctype==='MB'
-              ){
+              }else if(ctx.ctype==='MB'){
 
                 opts.push(
                   {
-                    value:
-                      ALL_DETAIL,
-                    label:
-                      'सर्व M.B.'
+                    value:ALL_DETAIL,
+                    label:'सर्व M.B.'
                   },
                   {
-                    value:
-                      SMALL,
-                    label:
-                      'Small M.B.'
+                    value:SMALL,
+                    label:'Small M.B.'
                   },
                   {
-                    value:
-                      LARGE,
-                    label:
-                      'Big M.B.'
+                    value:LARGE,
+                    label:'Big M.B.'
                   }
                 );
 
@@ -1684,15 +1865,11 @@ jobs:
                   }
                 );
 
-              }else if(
-                ctype==='WORK'
-              ){
+              }else if(ctx.ctype==='WORK'){
 
                 opts.push({
-                  value:
-                    ALL_DETAIL,
-                  label:
-                    'सर्व कामे'
+                  value:ALL_DETAIL,
+                  label:'सर्व कामे'
                 });
 
                 uniqueSorted(
@@ -1708,15 +1885,11 @@ jobs:
                   }
                 );
 
-              }else if(
-                ctype==='JE'
-              ){
+              }else if(ctx.ctype==='JE'){
 
                 opts.push({
-                  value:
-                    ALL_DETAIL,
-                  label:
-                    'सर्व JE'
+                  value:ALL_DETAIL,
+                  label:'सर्व JE'
                 });
 
                 uniqueSorted(
@@ -1740,12 +1913,11 @@ jobs:
                 );
 
               }else if(
-                ctype==='CONTRACTOR'
+                ctx.ctype==='CONTRACTOR'
               ){
 
                 opts.push({
-                  value:
-                    ALL_DETAIL,
+                  value:ALL_DETAIL,
                   label:
                     'सर्व Contractor / Agency'
                 });
@@ -1770,15 +1942,11 @@ jobs:
                   }
                 );
 
-              }else if(
-                ctype==='BILL'
-              ){
+              }else if(ctx.ctype==='BILL'){
 
                 opts.push({
-                  value:
-                    ALL_DETAIL,
-                  label:
-                    'सर्व Bill'
+                  value:ALL_DETAIL,
+                  label:'सर्व Bill'
                 });
 
                 uniqueSorted(
@@ -1795,14 +1963,12 @@ jobs:
                 );
 
               }else if(
-                ctype==='TRANSFER'
+                ctx.ctype==='TRANSFER'
               ){
 
                 opts.push({
-                  value:
-                    ALL_DETAIL,
-                  label:
-                    'सर्व हस्तांतरण'
+                  value:ALL_DETAIL,
+                  label:'सर्व हस्तांतरण'
                 });
               }
 
@@ -1847,9 +2013,9 @@ jobs:
               if(!ctx.target){
 
                 box.innerHTML=
-                  '<div class="rel-empty">'+
-                  'मुख्य नोंद निवडा.'+
-                  '</div>';
+                  '<div class="rel-empty">'
+                  +'मुख्य नोंद निवडा.'
+                  +'</div>';
 
                 return;
               }
@@ -1857,9 +2023,9 @@ jobs:
               if(!ctx.ctype){
 
                 box.innerHTML=
-                  '<div class="rel-empty">'+
-                  'संबंधित प्रकार निवडा.'+
-                  '</div>';
+                  '<div class="rel-empty">'
+                  +'संबंधित प्रकार निवडा.'
+                  +'</div>';
 
                 return;
               }
@@ -1876,60 +2042,95 @@ jobs:
 
             function printLinkedRelationshipReport(){
 
-              const ctx=
-                getHomeRelationshipContext();
+              try{
 
-              const data=
-                linkedData(ctx);
+                const ctx=
+                  getHomeRelationshipContext();
 
-              const printArea=
-                document.getElementById(
-                  'printArea'
-                );
+                const data=
+                  linkedData(ctx);
 
-              if(!printArea){
-                alert(
-                  'Report print area उपलब्ध नाही.'
-                );
-                return;
-              }
+                let printArea=
+                  document.getElementById(
+                    'printArea'
+                  );
 
-              printArea.innerHTML=
-                '<div class="a4-page">'+
-                '<h2>'+
-                'M.B. SUMMARY — LINKED REPORT'+
-                '</h2>'+
-                '<p>'+
-                esc(
-                  currentScopeTitle(
-                    ctx
+                if(!printArea){
+
+                  printArea=
+                    document.createElement(
+                      'div'
+                    );
+
+                  printArea.id=
+                    'printArea';
+
+                  document.body.appendChild(
+                    printArea
+                  );
+                }
+
+                printArea.innerHTML=
+                  '<div class="a4-page" '
+                  +'style="background:#fff;'
+                  +'color:#111;'
+                  +'padding:18mm;'
+                  +'box-sizing:border-box;'
+                  +'width:210mm;'
+                  +'min-height:297mm">'
+                  +'<h2 style="text-align:center">'
+                  +'M.B. SUMMARY — LINKED REPORT'
+                  +'</h2>'
+                  +'<div style="text-align:center;'
+                  +'font-weight:700;'
+                  +'margin-bottom:10px">'
+                  +esc(
+                    currentScopeTitle(ctx)
                   )
-                )+
-                '</p>'+
-                renderLinkedSections(
-                  ctx,
-                  data
-                )+
-                '<div class="a4-footer">'+
-                'Created By : विठ्ठल कोकाटे पाटील'+
-                '</div>'+
-                '</div>';
+                  +'</div>'
+                  +renderLinkedSections(
+                    ctx,
+                    data
+                  )
+                  +'<div style="margin-top:20px;'
+                  +'text-align:center">'
+                  +'Created By : विठ्ठल कोकाटे पाटील'
+                  +'</div>'
+                  +'</div>';
 
-              setTimeout(
-                ()=>{
-                  window.print();
-                },
-                100
-              );
-            }
+                const oldTitle=
+                  document.title;
 
-            function renderDetailOptionsOnly(){
+                document.title=
+                  'MBMS Summary Linked Report';
 
-              return loadHomeRelDetailsV124();
+                setTimeout(
+                  ()=>{
+                    window.print();
+
+                    setTimeout(
+                      ()=>{
+                        document.title=
+                          oldTitle;
+                      },
+                      1000
+                    );
+                  },
+                  100
+                );
+
+              }catch(e){
+
+                console.error(e);
+
+                alert(
+                  'M.B. Summary Report तयार करताना त्रुटी आली.'
+                );
+              }
             }
 
             window.loadHomeRelDetails=
-              renderDetailOptionsOnly;
+              loadHomeRelDetailsV124;
 
             window.showHomeRelationship=
               showHomeRelationshipV124;
@@ -1943,7 +2144,9 @@ jobs:
 
                 if(
                   e.target?.id===
-                    'homeRelDetail'
+                    'homeRelDetail' ||
+                  e.target?.id===
+                    'homeRelBillType'
                 ){
 
                   setTimeout(
@@ -1955,16 +2158,16 @@ jobs:
               true
             );
 
-            const bs=
+            const billType=
               document.getElementById(
                 'homeRelBillType'
               );
 
-            if(bs){
-              bs.style.display='none';
+            if(billType){
+              billType.style.display='none';
             }
 
-            window.mbmsV126SummaryFixLoaded=
+            window.mbmsV127SummaryFixLoaded=
               true;
 
           })();
@@ -1991,7 +2194,7 @@ jobs:
 
           if "</script>" in patch.lower():
               raise SystemExit(
-                  "ERROR: Patch contains raw </script> token."
+                  "ERROR: MB Summary patch contains unsafe </script>."
               )
 
           marker = "</body>"
@@ -2006,7 +2209,7 @@ jobs:
               )
 
           script_block = (
-              '<script id="V126_MBMS_SUMMARY_LINKED_FIX">\n'
+              '<script id="V127_MBMS_SUMMARY_LINKED_FIX">\n'
               + patch
               + '\n</script>\n'
           )
@@ -2016,6 +2219,21 @@ jobs:
               + script_block
               + text[pos:]
           )
+
+          required = [
+              "loadHomeRelDetailsV124",
+              "showHomeRelationshipV124",
+              "printLinkedRelationshipReport",
+              "__SMALL_MB__",
+              "__LARGE_MB__"
+          ]
+
+          for item in required:
+              if item not in text:
+                  raise SystemExit(
+                      "ERROR: Missing MB Summary marker: "
+                      + item
+                  )
 
           html_path.write_text(
               text,
@@ -2029,8 +2247,12 @@ jobs:
           print(
               "NO BASE64 USED."
           )
-          PY
 
+          print(
+              "MB SUMMARY PATCH IS INSIDE <script>."
+          )
+
+          PY
 
       - name: Verify MB Summary Patch Placement
         shell: bash
@@ -2039,7 +2261,6 @@ jobs:
 
           python3 <<'PY'
           from pathlib import Path
-          import re
 
           text = Path(
               "mbms_work/index.html"
@@ -2047,9 +2268,39 @@ jobs:
               encoding="utf-8"
           )
 
+          opening = (
+              '<script id="V127_MBMS_SUMMARY_LINKED_FIX">'
+          )
+
+          closing = "</script>"
+
+          start_pos = text.find(
+              opening
+          )
+
+          if start_pos < 0:
+              raise SystemExit(
+                  "ERROR: V127 MB Summary opening tag not found."
+              )
+
+          start =
+          start_pos + len(opening)
+
+          finish = text.find(
+              closing,
+              start
+          )
+
+          if finish < 0:
+              raise SystemExit(
+                  "ERROR: V127 MB Summary closing tag not found."
+              )
+
+          body = text[
+              start:finish
+          ]
+
           required = [
-              "V126_MBMS_SUMMARY_LINKED_FIX",
-              "mbmsV126SummaryFixLoaded",
               "loadHomeRelDetailsV124",
               "showHomeRelationshipV124",
               "printLinkedRelationshipReport",
@@ -2057,37 +2308,37 @@ jobs:
               "__LARGE_MB__"
           ]
 
-          for item in required:
-              if item not in text:
-                  raise SystemExit(
-                      "ERROR: Missing MB Summary marker: " +
-                      item
-                  )
+          missing = [
+              x for x in required
+              if x not in body
+          ]
 
-          blocks = re.findall(
-              r"<script[^>]*>(.*?)</script>",
-              text,
-              flags=re.I | re.S
-          )
-
-          if not any(
-              "V126_MBMS_SUMMARY_LINKED_FIX" in b
-              for b in blocks
-          ):
+          if missing:
               raise SystemExit(
-                  "ERROR: MB Summary fix is not inside a <script> block."
+                  "ERROR: Missing MB Summary code: "
+                  + ", ".join(missing)
               )
 
-          if "base64.b64decode" in text:
+          if (
+              "base64.b64decode" in text or
+              "Incorrect padding" in text
+          ):
               raise SystemExit(
-                  "ERROR: Broken Base64 code is still present."
+                  "ERROR: Old broken Base64 patch detected."
               )
 
           print(
               "MB SUMMARY SCRIPT PLACEMENT VERIFIED."
           )
-          PY
 
+          print(
+              "V127 MB Summary patch is inside executable <script>."
+          )
+
+          print(
+              "NO BASE64 PATCH IS USED."
+          )
+          PY
 
       - name: Validate Final HTML JavaScript
         shell: bash
@@ -2133,18 +2384,14 @@ jobs:
 
           for f in /tmp/mbms_script_*.js
           do
-            echo "Checking $f"
+            echo "Checking JavaScript: $f"
             node --check "$f"
           done
 
-          test -n \
-            "$(grep -oi '</body>' mbms_work/index.html | head -n 1)"
-
-          test -n \
-            "$(grep -oi '</html>' mbms_work/index.html | head -n 1)"
+          test "$(grep -oi '</body>' mbms_work/index.html | wc -l)" -ge 1
+          test "$(grep -oi '</html>' mbms_work/index.html | wc -l)" -ge 1
 
           echo "FINAL HTML JAVASCRIPT VALIDATION PASSED."
-
 
       - name: Create Android project
         shell: bash
@@ -2164,7 +2411,6 @@ jobs:
           cp \
             mbms_work/index.html \
             mbms_android/app/src/main/assets/index.html
-
 
           cat > mbms_android/settings.gradle <<'EOF'
           pluginManagement {
@@ -2191,13 +2437,11 @@ jobs:
           include(":app")
           EOF
 
-
           cat > mbms_android/build.gradle <<'EOF'
           plugins {
               id 'com.android.application' version '8.6.1' apply false
           }
           EOF
-
 
           cat > mbms_android/gradle.properties <<'EOF'
           org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
@@ -2205,57 +2449,42 @@ jobs:
           android.nonTransitiveRClass=true
           EOF
 
-
           cat > mbms_android/app/build.gradle <<'EOF'
           plugins {
               id 'com.android.application'
           }
 
           android {
-
               namespace 'com.mbms.app'
 
               compileSdk 35
 
               defaultConfig {
-
                   applicationId 'com.mbms.app'
-
                   minSdk 26
-
                   targetSdk 35
-
-                  versionCode 126
-
-                  versionName 'V126'
+                  versionCode 127
+                  versionName 'V127'
               }
 
               buildTypes {
-
                   debug {
-
                       minifyEnabled false
-
                       shrinkResources false
                   }
 
                   release {
-
                       minifyEnabled false
-
                       shrinkResources false
                   }
               }
 
               compileOptions {
-
                   sourceCompatibility JavaVersion.VERSION_17
-
                   targetCompatibility JavaVersion.VERSION_17
               }
           }
           EOF
-
 
           cat > mbms_android/app/src/main/res/values/strings.xml <<'EOF'
           <resources>
@@ -2263,10 +2492,8 @@ jobs:
           </resources>
           EOF
 
-
           cat > mbms_android/app/src/main/res/values/styles.xml <<'EOF'
           <resources>
-
               <style
                   name="AppTheme"
                   parent="android:style/Theme.Material.Light.NoActionBar">
@@ -2284,10 +2511,8 @@ jobs:
                   </item>
 
               </style>
-
           </resources>
           EOF
-
 
           cat > mbms_android/app/src/main/AndroidManifest.xml <<'EOF'
           <manifest
@@ -2331,11 +2556,9 @@ jobs:
           </manifest>
           EOF
 
-
           cat > mbms_android/app/proguard-rules.pro <<'EOF'
           # MBMS
           EOF
-
 
       - name: Create MainActivity.java
         shell: bash
@@ -2366,6 +2589,8 @@ jobs:
           import android.webkit.WebViewClient;
           import android.widget.Toast;
 
+          import java.io.File;
+          import java.io.FileOutputStream;
           import java.io.OutputStream;
           import java.nio.charset.StandardCharsets;
 
@@ -2392,25 +2617,15 @@ jobs:
                           webView.getSettings();
 
                   settings.setJavaScriptEnabled(true);
-
                   settings.setDomStorageEnabled(true);
-
                   settings.setDatabaseEnabled(true);
-
                   settings.setAllowFileAccess(true);
-
                   settings.setAllowContentAccess(true);
-
                   settings.setBuiltInZoomControls(false);
-
                   settings.setDisplayZoomControls(false);
-
                   settings.setSupportZoom(false);
-
                   settings.setLoadWithOverviewMode(false);
-
                   settings.setUseWideViewPort(false);
-
                   settings.setTextZoom(100);
 
                   webView.addJavascriptInterface(
@@ -2430,7 +2645,6 @@ jobs:
                                   if(
                                       filePathCallback != null
                                   ) {
-
                                       filePathCallback
                                               .onReceiveValue(null);
                                   }
@@ -2737,13 +2951,52 @@ jobs:
                                               null
                                           );
 
-                                          success = true;
+                                          success =
+                                              true;
 
                                       } else {
 
-                                          throw new Exception(
-                                              "Android version below 29 not supported."
-                                          );
+                                          File directory =
+                                              Environment
+                                              .getExternalStoragePublicDirectory(
+                                                  Environment
+                                                  .DIRECTORY_DOWNLOADS
+                                              );
+
+                                          if(
+                                              !directory.exists()
+                                          ) {
+                                              directory.mkdirs();
+                                          }
+
+                                          File file =
+                                              new File(
+                                                  directory,
+                                                  filename
+                                              );
+
+                                          FileOutputStream output =
+                                              new FileOutputStream(
+                                                  file
+                                              );
+
+                                          try {
+
+                                              output.write(
+                                                  json.getBytes(
+                                                      StandardCharsets.UTF_8
+                                                  )
+                                              );
+
+                                              output.flush();
+
+                                          } finally {
+
+                                              output.close();
+                                          }
+
+                                          success =
+                                              true;
                                       }
 
                                   } catch(Exception e) {
@@ -2763,10 +3016,13 @@ jobs:
                                               Toast.makeText(
                                                   MainActivity.this,
                                                   result
-                                                      ? "Backup Downloads मध्ये Save झाला."
-                                                      : "Backup Save मध्ये त्रुटी आली.",
+                                                  ?
+                                                  "Backup Downloads मध्ये Save झाला."
+                                                  :
+                                                  "Backup Save मध्ये त्रुटी आली.",
                                                   Toast.LENGTH_LONG
                                               ).show();
+
                                           }
                                       }
                                   );
@@ -2789,13 +3045,19 @@ jobs:
                   );
 
                   if(
-                      requestCode != REQUEST_FILE ||
+                      requestCode != REQUEST_FILE
+                  ) {
+                      return;
+                  }
+
+                  if(
                       filePathCallback == null
                   ) {
                       return;
                   }
 
-                  Uri[] results = null;
+                  Uri[] results =
+                          null;
 
                   if(
                       resultCode == RESULT_OK &&
@@ -2812,7 +3074,8 @@ jobs:
                   filePathCallback
                       .onReceiveValue(results);
 
-                  filePathCallback = null;
+                  filePathCallback =
+                          null;
               }
 
               @Override
@@ -2837,9 +3100,7 @@ jobs:
                   if(webView != null) {
 
                       webView.stopLoading();
-
                       webView.destroy();
-
                       webView = null;
                   }
 
@@ -2848,35 +3109,37 @@ jobs:
           }
           EOF
 
-
-      - name: Validate Android project
+      - name: Verify Android project
         shell: bash
         run: |
           set -e
 
-          test -s \
-            mbms_android/settings.gradle
+          test -s mbms_android/settings.gradle
+          test -s mbms_android/build.gradle
+          test -s mbms_android/gradle.properties
+          test -s mbms_android/app/build.gradle
+          test -s mbms_android/app/src/main/AndroidManifest.xml
+          test -s mbms_android/app/src/main/java/com/mbms/app/MainActivity.java
+          test -s mbms_android/app/src/main/res/values/strings.xml
+          test -s mbms_android/app/src/main/res/values/styles.xml
+          test -s mbms_android/app/src/main/assets/index.html
 
-          test -s \
-            mbms_android/build.gradle
+          python3 <<'PY'
+          import xml.etree.ElementTree as ET
 
-          test -s \
-            mbms_android/gradle.properties
+          files = [
+              "mbms_android/app/src/main/res/values/strings.xml",
+              "mbms_android/app/src/main/res/values/styles.xml",
+              "mbms_android/app/src/main/AndroidManifest.xml"
+          ]
 
-          test -s \
-            mbms_android/app/build.gradle
+          for f in files:
+              ET.parse(f)
+              print("XML OK:", f)
 
-          test -s \
-            mbms_android/app/src/main/AndroidManifest.xml
+          PY
 
-          test -s \
-            mbms_android/app/src/main/java/com/mbms/app/MainActivity.java
-
-          test -s \
-            mbms_android/app/src/main/assets/index.html
-
-          echo "ANDROID PROJECT FILES VERIFIED."
-
+          echo "ANDROID PROJECT VALIDATION PASSED."
 
       - name: Verify generated Android project
         working-directory: mbms_android
@@ -2885,21 +3148,14 @@ jobs:
           set -Eeuo pipefail
 
           test -f settings.gradle
-
           test -f build.gradle
-
           test -f gradle.properties
-
           test -f app/build.gradle
-
           test -f app/src/main/AndroidManifest.xml
-
           test -f app/src/main/java/com/mbms/app/MainActivity.java
-
           test -s app/src/main/assets/index.html
 
-          echo "ANDROID PROJECT VERIFICATION PASSED."
-
+          echo "ANDROID PROJECT FILES VERIFIED."
 
       - name: Compile Android Java
         working-directory: mbms_android
@@ -2910,8 +3166,7 @@ jobs:
           for attempt in 1 2
           do
 
-            echo \
-              "Java compilation attempt $attempt/2"
+            echo "Java compilation attempt $attempt/2"
 
             if gradle \
                 --no-daemon \
@@ -2919,28 +3174,21 @@ jobs:
                 :app:compileDebugJavaWithJavac
             then
 
-              echo \
-                "JAVA COMPILATION PASSED."
-
+              echo "JAVA COMPILATION PASSED."
               exit 0
 
             fi
 
             if [ "$attempt" -lt 2 ]
             then
-              echo \
-                "Retrying Java compilation..."
-
+              echo "Java compilation failed; retrying..."
               sleep 5
             fi
 
           done
 
-          echo \
-            "ERROR: Java compilation failed."
-
+          echo "ERROR: Java compilation failed."
           exit 1
-
 
       - name: Build Final MBMS APK
         working-directory: mbms_android
@@ -2951,8 +3199,7 @@ jobs:
           for attempt in 1 2
           do
 
-            echo \
-              "APK build attempt $attempt/2"
+            echo "APK build attempt $attempt/2"
 
             if gradle \
                 --no-daemon \
@@ -2961,81 +3208,63 @@ jobs:
                 :app:assembleDebug
             then
 
-              echo \
-                "GRADLE APK BUILD PASSED."
-
+              echo "GRADLE APK BUILD PASSED."
               break
 
             fi
 
             if [ "$attempt" -lt 2 ]
             then
-
-              echo \
-                "APK build failed; retrying..."
-
+              echo "APK build failed; retrying..."
               sleep 5
 
             else
-
-              echo \
-                "ERROR: APK build failed."
-
+              echo "ERROR: APK build failed."
               exit 1
-
             fi
 
           done
 
-          APK=
-          "app/build/outputs/apk/debug/app-debug.apk"
+          APK="app/build/outputs/apk/debug/app-debug.apk"
 
-          test -s \
-            "app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
 
           cp \
-            "app/build/outputs/apk/debug/app-debug.apk" \
-            "../release/MBMS-V126-MB-SUMMARY-LINKED-STABLE.apk"
+            "$APK" \
+            "../release/MBMS-V127-MB-SUMMARY-LINKED-STABLE.apk"
 
           ls -lh \
-            "../release/MBMS-V126-MB-SUMMARY-LINKED-STABLE.apk"
-
+            "../release/MBMS-V127-MB-SUMMARY-LINKED-STABLE.apk"
 
       - name: Verify APK
         shell: bash
         run: |
           set -e
 
-          APK=
-          "release/MBMS-V126-MB-SUMMARY-LINKED-STABLE.apk"
+          APK="release/MBMS-V127-MB-SUMMARY-LINKED-STABLE.apk"
 
-          test -s \
-            "release/MBMS-V126-MB-SUMMARY-LINKED-STABLE.apk"
+          test -s "$APK"
 
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" \
             verify \
             --verbose \
-            "release/MBMS-V126-MB-SUMMARY-LINKED-STABLE.apk"
+            "$APK"
 
           unzip -t \
-            "release/MBMS-V126-MB-SUMMARY-LINKED-STABLE.apk" \
+            "$APK" \
             >/dev/null
 
           sha256sum \
-            "release/MBMS-V126-MB-SUMMARY-LINKED-STABLE.apk" \
+            "$APK" \
             | tee release/SHA256.txt
 
-          echo \
-            "APK SIGNATURE AND ZIP VERIFICATION PASSED."
-
+          echo "APK SIGNATURE AND ZIP VERIFICATION PASSED."
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v7
         with:
-          name: MBMS-V126-MB-SUMMARY-LINKED-STABLE
-
+          name: MBMS-V127-MB-SUMMARY-LINKED-STABLE
           path: |
-            release/MBMS-V126-MB-SUMMARY-LINKED-STABLE.apk
+            release/MBMS-V127-MB-SUMMARY-LINKED-STABLE.apk
             release/SHA256.txt
-
           if-no-files-found: error
