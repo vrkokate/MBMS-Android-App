@@ -1,4 +1,4 @@
-name: MBMS V128 FINAL - M.B. Summary Linked - Corrected
+name: MBMS V128 FINAL - M.B. Summary Linked - JE Selection Fixed
 
 on:
   workflow_dispatch:
@@ -26,6 +26,7 @@ jobs:
         uses: android-actions/setup-android@v4
 
       - name: Install SDK
+        shell: bash
         run: |
           set -euo pipefail
 
@@ -37,6 +38,7 @@ jobs:
             "build-tools;35.0.0"
 
       - name: Install Gradle
+        shell: bash
         run: |
           set -euo pipefail
 
@@ -130,1202 +132,2354 @@ jobs:
           print("Received -> JE full list correction applied.")
           PY
 
-      - name: Add MB Summary linked report
+      - name: Add M.B. Summary linked selection fix
         shell: bash
         run: |
           set -euo pipefail
 
+          cat > /tmp/mbms_summary_patch.js <<'PATCH_JS'
+          (function(){
+            "use strict";
+
+            /*
+             * V128 M.B. SUMMARY
+             *
+             * Flow:
+             * Date range
+             * -> Related Type
+             * -> Main Record
+             * -> Related Information
+             * -> Required Detail
+             * -> Linked Report / Print
+             *
+             * Important:
+             * Main Record is NOT automatically forced to "All".
+             * For JE, the user can select an individual JE name.
+             */
+
+            const TYPE_LABELS={
+              MB:"M.B.",
+              JE:"Junior Engineer",
+              WORK:"Work",
+              CONTRACTOR:"Contractor / Agency",
+              BILL:"Bill",
+              TRANSFER:"Transfer / History"
+            };
+
+            const DETAIL_ALL="__ALL_DETAIL__";
+            const MB_SMALL="__SMALL_MB__";
+            const MB_LARGE="__LARGE_MB__";
+            const MB_PREFIX="__MBNO__::";
+
+            function A(v){
+              return Array.isArray(v)?v:[];
+            }
+
+            function S(v){
+              return v==null?"":String(v).trim();
+            }
+
+            function N(v){
+              try{
+                return hrNorm(v);
+              }catch(e){
+                return S(v).toLowerCase().replace(/\s+/g," ");
+              }
+            }
+
+            function E(v){
+              try{
+                return escapeHtml(S(v));
+              }catch(e){
+                return S(v).replace(
+                  /[&<>"']/g,
+                  function(c){
+                    return {
+                      "&":"&amp;",
+                      "<":"&lt;",
+                      ">":"&gt;",
+                      '"':"&quot;",
+                      "'":"&#39;"
+                    }[c];
+                  }
+                );
+              }
+            }
+
+            function D(v){
+              try{
+                return hrDate(v||"");
+              }catch(e){
+                return S(v)||"-";
+              }
+            }
+
+            function amount(v){
+              try{
+                return billAmountText(v);
+              }catch(e){
+                return "₹ "+
+                  (Number(v)||0).toLocaleString(
+                    "en-IN",
+                    {
+                      minimumFractionDigits:2,
+                      maximumFractionDigits:2
+                    }
+                  );
+              }
+            }
+
+            function uniq(a){
+              return [
+                ...new Set(
+                  a.map(S).filter(Boolean)
+                )
+              ].sort(
+                function(x,y){
+                  return x.localeCompare(
+                    y,
+                    undefined,
+                    {
+                      numeric:true,
+                      sensitivity:"base"
+                    }
+                  );
+                }
+              );
+            }
+
+            function mbNo(x){
+              return S(
+                x?.number ||
+                x?.mbNumber ||
+                x?.mb
+              );
+            }
+
+            function workName(x){
+              return S(
+                x?.name ||
+                x?.workName ||
+                x?.work
+              );
+            }
+
+            function jeName(x){
+              return S(
+                x?.je ||
+                x?.jeName ||
+                x?.juniorEngineer
+              );
+            }
+
+            function contractor(x){
+              return S(
+                x?.contractor ||
+                x?.agency ||
+                x?.contractorName ||
+                x?.agencyName
+              );
+            }
+
+            function billType(x){
+              return S(
+                x?.billType ||
+                x?.type ||
+                x?.billName
+              );
+            }
+
+            function billNo(x){
+              return S(
+                x?.billNo ||
+                x?.number ||
+                x?.billNumber
+              );
+            }
+
+            function transferNo(x){
+              return S(
+                x?.number ||
+                x?.mb ||
+                x?.mbNumber
+              );
+            }
+
+            function size(x){
+              const z=N(x);
+
+              if(
+                z==="small" ||
+                z.includes("small") ||
+                z.includes("लहान")
+              ){
+                return "SMALL";
+              }
+
+              if(
+                z==="large" ||
+                z.includes("large") ||
+                z.includes("big") ||
+                z.includes("मोठ")
+              ){
+                return "LARGE";
+              }
+
+              return "";
+            }
+
+            function data(){
+              try{
+                const d=homeRelData();
+
+                return {
+                  mbs:A(d.mbs),
+                  jes:A(d.jes),
+                  works:A(d.works),
+                  assigns:A(d.assigns),
+                  transfers:A(d.transfers),
+                  bills:A(d.bills)
+                };
+
+              }catch(e){
+
+                return {
+                  mbs:[],
+                  jes:[],
+                  works:[],
+                  assigns:[],
+                  transfers:[],
+                  bills:[]
+                };
+              }
+            }
+
+            function dateFilter(d){
+
+              const from=
+                document.getElementById(
+                  "homeRelFrom"
+                )?.value||"";
+
+              const to=
+                document.getElementById(
+                  "homeRelTo"
+                )?.value||"";
+
+              if(!from&&!to){
+                return d;
+              }
+
+              return {
+                mbs:d.mbs.filter(
+                  x=>inRange(
+                    x.receivedDate ||
+                    x.date ||
+                    x.createdAt,
+                    from,
+                    to
+                  )
+                ),
+
+                /*
+                 * JE master list is not date-filtered.
+                 * This keeps the complete JE list available.
+                 */
+                jes:d.jes,
+
+                works:d.works.filter(
+                  x=>inRange(
+                    x.createdAt ||
+                    x.date ||
+                    x.workDate,
+                    from,
+                    to
+                  )
+                ),
+
+                assigns:d.assigns.filter(
+                  x=>inRange(
+                    x.date ||
+                    x.assignedDate ||
+                    x.createdAt,
+                    from,
+                    to
+                  )
+                ),
+
+                transfers:d.transfers.filter(
+                  x=>inRange(
+                    x.date ||
+                    x.transferDate ||
+                    x.savedAt,
+                    from,
+                    to
+                  )
+                ),
+
+                bills:d.bills.filter(
+                  x=>inRange(
+                    x.billDate ||
+                    x.date ||
+                    x.savedAt,
+                    from,
+                    to
+                  )
+                )
+              };
+            }
+
+            function inRange(v,from,to){
+              try{
+                return homeRelInRange(
+                  v,
+                  from,
+                  to
+                );
+              }catch(e){
+
+                const k=S(v);
+
+                return (
+                  (!from||k>=from) &&
+                  (!to||k<=to)
+                );
+              }
+            }
+
+            function ctx(){
+
+              const type=
+                document.getElementById(
+                  "homeRelType"
+                )?.value||"";
+
+              const target=
+                document.getElementById(
+                  "homeRelTarget"
+                )?.value||"";
+
+              const component=
+                document.getElementById(
+                  "homeRelComponent"
+                )?.value||"";
+
+              const parts=
+                component.split("::");
+
+              return {
+                type:type,
+                target:target,
+                ctype:parts[0]||"",
+                cvalue:parts.slice(1).join("::"),
+                detail:
+                  document.getElementById(
+                    "homeRelDetail"
+                  )?.value||"",
+                billType:
+                  document.getElementById(
+                    "homeRelBillType"
+                  )?.value||""
+              };
+            }
+
+            function linkedByMB(d,mbs){
+
+              const set=
+                new Set(
+                  mbs.map(N).filter(Boolean)
+                );
+
+              return {
+                mbs:d.mbs.filter(
+                  x=>set.has(
+                    N(mbNo(x))
+                  )
+                ),
+
+                works:d.works.filter(
+                  x=>set.has(
+                    N(x?.mb)
+                  )
+                ),
+
+                assigns:d.assigns.filter(
+                  x=>set.has(
+                    N(x?.mb)
+                  )
+                ),
+
+                transfers:d.transfers.filter(
+                  x=>set.has(
+                    N(transferNo(x))
+                  )
+                ),
+
+                bills:d.bills.filter(
+                  x=>set.has(
+                    N(x?.mb)
+                  )
+                )
+              };
+            }
+
+            function baseFor(c,d){
+
+              const all=
+                c.target==="__ALL__";
+
+              const t=N(c.target);
+
+              if(c.type==="MB"){
+
+                const mbs=
+                  all
+                  ? d.mbs
+                  : d.mbs.filter(
+                      x=>N(mbNo(x))===t
+                    );
+
+                return Object.assign(
+                  {
+                    jes:d.jes
+                  },
+                  linkedByMB(
+                    d,
+                    mbs.map(mbNo)
+                  )
+                );
+              }
+
+              if(c.type==="JE"){
+
+                /*
+                 * For JE:
+                 * "सर्व JE" shows every linked record.
+                 * Selecting an actual JE name filters
+                 * Work / Bill / Assignment records
+                 * to that JE.
+                 */
+
+                const works=
+                  all
+                  ? d.works
+                  : d.works.filter(
+                      x=>N(jeName(x))===t
+                    );
+
+                const bills=
+                  all
+                  ? d.bills
+                  : d.bills.filter(
+                      x=>N(jeName(x))===t
+                    );
+
+                const assigns=
+                  all
+                  ? d.assigns
+                  : d.assigns.filter(
+                      x=>N(jeName(x))===t
+                    );
+
+                const mbNumbers=
+                  uniq(
+                    works.map(x=>x?.mb)
+                      .concat(
+                        bills.map(x=>x?.mb),
+                        assigns.map(x=>x?.mb)
+                      )
+                  );
+
+                return {
+                  mbs:d.mbs.filter(
+                    x=>mbNumbers.some(
+                      m=>N(mbNo(x))===N(m)
+                    )
+                  ),
+
+                  works:works,
+
+                  assigns:assigns,
+
+                  transfers:d.transfers.filter(
+                    x=>mbNumbers.some(
+                      m=>N(transferNo(x))===N(m)
+                    )
+                  ),
+
+                  bills:bills,
+
+                  jes:d.jes
+                };
+              }
+
+              if(c.type==="WORK"){
+
+                const works=
+                  all
+                  ? d.works
+                  : d.works.filter(
+                      x=>N(workName(x))===t
+                    );
+
+                const bills=
+                  all
+                  ? d.bills
+                  : d.bills.filter(
+                      x=>
+                        N(x?.work)===t ||
+                        N(workName(x))===t
+                    );
+
+                const mbNumbers=
+                  uniq(
+                    works.map(x=>x?.mb)
+                      .concat(
+                        bills.map(x=>x?.mb)
+                      )
+                  );
+
+                return {
+                  mbs:d.mbs.filter(
+                    x=>mbNumbers.some(
+                      m=>N(mbNo(x))===N(m)
+                    )
+                  ),
+
+                  works:works,
+
+                  assigns:d.assigns.filter(
+                    x=>mbNumbers.some(
+                      m=>N(x?.mb)===N(m)
+                    )
+                  ),
+
+                  transfers:d.transfers.filter(
+                    x=>mbNumbers.some(
+                      m=>N(transferNo(x))===N(m)
+                    )
+                  ),
+
+                  bills:bills,
+
+                  jes:d.jes
+                };
+              }
+
+              if(c.type==="CONTRACTOR"){
+
+                const works=
+                  all
+                  ? d.works
+                  : d.works.filter(
+                      x=>N(contractor(x))===t
+                    );
+
+                const bills=
+                  all
+                  ? d.bills
+                  : d.bills.filter(
+                      x=>N(contractor(x))===t
+                    );
+
+                const assigns=
+                  all
+                  ? d.assigns
+                  : d.assigns.filter(
+                      x=>N(contractor(x))===t
+                    );
+
+                const mbNumbers=
+                  uniq(
+                    works.map(x=>x?.mb)
+                      .concat(
+                        bills.map(x=>x?.mb),
+                        assigns.map(x=>x?.mb)
+                      )
+                  );
+
+                return {
+                  mbs:d.mbs.filter(
+                    x=>mbNumbers.some(
+                      m=>N(mbNo(x))===N(m)
+                    )
+                  ),
+
+                  works:works,
+                  assigns:assigns,
+
+                  transfers:d.transfers.filter(
+                    x=>mbNumbers.some(
+                      m=>N(transferNo(x))===N(m)
+                    )
+                  ),
+
+                  bills:bills,
+                  jes:d.jes
+                };
+              }
+
+              if(c.type==="BILL"){
+
+                const bills=
+                  all
+                  ? d.bills
+                  : d.bills.filter(
+                      x=>
+                        N(billNo(x))===t ||
+                        N(billType(x))===t
+                    );
+
+                const mbNumbers=
+                  uniq(
+                    bills.map(x=>x?.mb)
+                  );
+
+                return {
+                  mbs:d.mbs.filter(
+                    x=>mbNumbers.some(
+                      m=>N(mbNo(x))===N(m)
+                    )
+                  ),
+
+                  works:d.works.filter(
+                    x=>
+                      mbNumbers.some(
+                        m=>N(x?.mb)===N(m)
+                      ) ||
+                      bills.some(
+                        b=>
+                          N(workName(b))===
+                          N(workName(x))
+                      )
+                  ),
+
+                  assigns:d.assigns.filter(
+                    x=>mbNumbers.some(
+                      m=>N(x?.mb)===N(m)
+                    )
+                  ),
+
+                  transfers:d.transfers.filter(
+                    x=>mbNumbers.some(
+                      m=>N(transferNo(x))===N(m)
+                    )
+                  ),
+
+                  bills:bills,
+                  jes:d.jes
+                };
+              }
+
+              if(c.type==="TRANSFER"){
+
+                const transfers=
+                  all
+                  ? d.transfers
+                  : d.transfers.filter(
+                      x=>N(transferNo(x))===t
+                    );
+
+                const mbNumbers=
+                  uniq(
+                    transfers.map(transferNo)
+                  );
+
+                return {
+                  mbs:d.mbs.filter(
+                    x=>mbNumbers.some(
+                      m=>N(mbNo(x))===N(m)
+                    )
+                  ),
+
+                  works:d.works.filter(
+                    x=>mbNumbers.some(
+                      m=>N(x?.mb)===N(m)
+                    )
+                  ),
+
+                  assigns:d.assigns.filter(
+                    x=>mbNumbers.some(
+                      m=>N(x?.mb)===N(m)
+                    )
+                  ),
+
+                  transfers:transfers,
+
+                  bills:d.bills.filter(
+                    x=>mbNumbers.some(
+                      m=>N(x?.mb)===N(m)
+                    )
+                  ),
+
+                  jes:d.jes
+                };
+              }
+
+              return {
+                mbs:[],
+                works:[],
+                assigns:[],
+                transfers:[],
+                bills:[],
+                jes:d.jes
+              };
+            }
+
+            function applyComponentFilter(c,b){
+
+              const detail=c.detail;
+
+              if(
+                c.ctype==="ALL" ||
+                !c.ctype
+              ){
+                return b;
+              }
+
+              if(c.ctype==="MB"){
+
+                let m=b.mbs;
+
+                if(
+                  detail===MB_SMALL
+                ){
+                  m=m.filter(
+                    x=>size(x?.size)==="SMALL"
+                  );
+                }
+
+                else if(
+                  detail===MB_LARGE
+                ){
+                  m=m.filter(
+                    x=>size(x?.size)==="LARGE"
+                  );
+                }
+
+                else if(
+                  detail.startsWith(MB_PREFIX)
+                ){
+                  m=m.filter(
+                    x=>
+                      N(mbNo(x))===
+                      N(
+                        detail.slice(
+                          MB_PREFIX.length
+                        )
+                      )
+                  );
+                }
+
+                return linkedByMB(
+                  Object.assign(
+                    {},
+                    b,
+                    {mbs:b.mbs}
+                  ),
+                  m.map(mbNo)
+                );
+              }
+
+              if(
+                c.ctype==="WORK" &&
+                detail &&
+                detail!==DETAIL_ALL
+              ){
+
+                const works=
+                  b.works.filter(
+                    x=>
+                      N(workName(x))===
+                      N(detail)
+                  );
+
+                const names=
+                  new Set(
+                    works.map(
+                      x=>N(workName(x))
+                    )
+                  );
+
+                return {
+                  mbs:b.mbs.filter(
+                    x=>works.some(
+                      y=>N(y?.mb)===
+                         N(mbNo(x))
+                    )
+                  ),
+
+                  works:works,
+
+                  assigns:b.assigns.filter(
+                    x=>works.some(
+                      y=>N(y?.mb)===
+                         N(x?.mb)
+                    )
+                  ),
+
+                  transfers:b.transfers.filter(
+                    x=>works.some(
+                      y=>N(y?.mb)===
+                         N(transferNo(x))
+                    )
+                  ),
+
+                  bills:b.bills.filter(
+                    x=>names.has(
+                      N(workName(x))
+                    )
+                  ),
+
+                  jes:b.jes
+                };
+              }
+
+              if(
+                c.ctype==="JE" &&
+                detail &&
+                detail!==DETAIL_ALL
+              ){
+
+                const works=
+                  b.works.filter(
+                    x=>
+                      N(jeName(x))===
+                      N(detail)
+                  );
+
+                const bills=
+                  b.bills.filter(
+                    x=>
+                      N(jeName(x))===
+                      N(detail)
+                  );
+
+                const assigns=
+                  b.assigns.filter(
+                    x=>
+                      N(jeName(x))===
+                      N(detail)
+                  );
+
+                const mbNumbers=
+                  uniq(
+                    works.map(x=>x?.mb)
+                      .concat(
+                        bills.map(x=>x?.mb),
+                        assigns.map(x=>x?.mb)
+                      )
+                  );
+
+                return {
+                  mbs:b.mbs.filter(
+                    x=>mbNumbers.some(
+                      m=>N(mbNo(x))===N(m)
+                    )
+                  ),
+
+                  works:works,
+                  assigns:assigns,
+
+                  transfers:b.transfers.filter(
+                    x=>mbNumbers.some(
+                      m=>N(transferNo(x))===N(m)
+                    )
+                  ),
+
+                  bills:bills,
+                  jes:b.jes
+                };
+              }
+
+              if(
+                c.ctype==="CONTRACTOR" &&
+                detail &&
+                detail!==DETAIL_ALL
+              ){
+
+                const works=
+                  b.works.filter(
+                    x=>
+                      N(contractor(x))===
+                      N(detail)
+                  );
+
+                const bills=
+                  b.bills.filter(
+                    x=>
+                      N(contractor(x))===
+                      N(detail)
+                  );
+
+                const assigns=
+                  b.assigns.filter(
+                    x=>
+                      N(contractor(x))===
+                      N(detail)
+                  );
+
+                const mbNumbers=
+                  uniq(
+                    works.map(x=>x?.mb)
+                      .concat(
+                        bills.map(x=>x?.mb),
+                        assigns.map(x=>x?.mb)
+                      )
+                  );
+
+                return {
+                  mbs:b.mbs.filter(
+                    x=>mbNumbers.some(
+                      m=>N(mbNo(x))===N(m)
+                    )
+                  ),
+
+                  works:works,
+                  assigns:assigns,
+
+                  transfers:b.transfers.filter(
+                    x=>mbNumbers.some(
+                      m=>N(transferNo(x))===N(m)
+                    )
+                  ),
+
+                  bills:bills,
+                  jes:b.jes
+                };
+              }
+
+              if(
+                c.ctype==="BILL" &&
+                detail &&
+                detail!==DETAIL_ALL
+              ){
+
+                const bills=
+                  b.bills.filter(
+                    x=>
+                      N(billType(x))===
+                      N(detail) ||
+                      N(billNo(x))===
+                      N(detail)
+                  );
+
+                const mbNumbers=
+                  uniq(
+                    bills.map(x=>x?.mb)
+                  );
+
+                return {
+                  mbs:b.mbs.filter(
+                    x=>mbNumbers.some(
+                      m=>N(mbNo(x))===N(m)
+                    )
+                  ),
+
+                  works:b.works.filter(
+                    x=>
+                      mbNumbers.some(
+                        m=>N(x?.mb)===N(m)
+                      ) ||
+                      bills.some(
+                        bb=>
+                          N(workName(bb))===
+                          N(workName(x))
+                      )
+                  ),
+
+                  assigns:b.assigns.filter(
+                    x=>mbNumbers.some(
+                      m=>N(x?.mb)===N(m)
+                    )
+                  ),
+
+                  transfers:b.transfers.filter(
+                    x=>mbNumbers.some(
+                      m=>N(transferNo(x))===N(m)
+                    )
+                  ),
+
+                  bills:bills,
+                  jes:b.jes
+                };
+              }
+
+              if(
+                c.ctype==="TRANSFER"
+              ){
+
+                const transfers=
+                  b.transfers;
+
+                return {
+                  mbs:b.mbs,
+                  works:b.works,
+                  assigns:b.assigns,
+                  transfers:transfers,
+                  bills:b.bills,
+                  jes:b.jes
+                };
+              }
+
+              return b;
+            }
+
+            function current(){
+
+              const c=ctx();
+
+              const d=
+                dateFilter(
+                  data()
+                );
+
+              const b=
+                baseFor(
+                  c,
+                  d
+                );
+
+              return applyComponentFilter(
+                c,
+                b
+              );
+            }
+
+            function relatedOptions(c,d){
+
+              const b=
+                baseFor(
+                  c,
+                  d
+                );
+
+              const o=[];
+
+              if(c.ctype==="MB"){
+
+                o.push(
+                  [DETAIL_ALL,"सर्व M.B."],
+                  [MB_SMALL,"Small M.B."],
+                  [MB_LARGE,"Big M.B."]
+                );
+
+                uniq(
+                  b.mbs.map(mbNo)
+                ).forEach(
+                  function(x){
+                    o.push(
+                      [
+                        MB_PREFIX+x,
+                        "M.B. क्रमांक "+x
+                      ]
+                    );
+                  }
+                );
+              }
+
+              else if(c.ctype==="WORK"){
+
+                o.push(
+                  [
+                    DETAIL_ALL,
+                    "सर्व कामे"
+                  ]
+                );
+
+                uniq(
+                  b.works.map(workName)
+                ).forEach(
+                  function(x){
+                    o.push(
+                      [x,x]
+                    );
+                  }
+                );
+              }
+
+              else if(c.ctype==="JE"){
+
+                o.push(
+                  [
+                    DETAIL_ALL,
+                    "सर्व JE"
+                  ]
+                );
+
+                uniq(
+                  b.works
+                    .map(jeName)
+                    .concat(
+                      b.bills.map(jeName),
+                      b.assigns.map(jeName)
+                    )
+                ).forEach(
+                  function(x){
+                    o.push(
+                      [x,x]
+                    );
+                  }
+                );
+              }
+
+              else if(
+                c.ctype==="CONTRACTOR"
+              ){
+
+                o.push(
+                  [
+                    DETAIL_ALL,
+                    "सर्व Contractor / Agency"
+                  ]
+                );
+
+                uniq(
+                  b.works.map(contractor)
+                    .concat(
+                      b.bills.map(contractor),
+                      b.assigns.map(contractor)
+                    )
+                ).forEach(
+                  function(x){
+                    o.push(
+                      [x,x]
+                    );
+                  }
+                );
+              }
+
+              else if(
+                c.ctype==="BILL"
+              ){
+
+                o.push(
+                  [
+                    DETAIL_ALL,
+                    "सर्व Bill"
+                  ]
+                );
+
+                uniq(
+                  b.bills.map(billType)
+                    .concat(
+                      b.bills.map(billNo)
+                    )
+                ).forEach(
+                  function(x){
+                    o.push(
+                      [x,x]
+                    );
+                  }
+                );
+              }
+
+              else if(
+                c.ctype==="TRANSFER"
+              ){
+
+                o.push(
+                  [
+                    DETAIL_ALL,
+                    "सर्व Transfer / History"
+                  ]
+                );
+
+                uniq(
+                  b.transfers.map(
+                    transferNo
+                  )
+                ).forEach(
+                  function(x){
+                    o.push(
+                      [
+                        x,
+                        "M.B. "+x+
+                        " — Transfer History"
+                      ]
+                    );
+                  }
+                );
+              }
+
+              return o;
+            }
+
+            function componentOptions(c){
+
+              const map={
+
+                MB:[
+                  ["ALL","सर्व माहिती"],
+                  ["WORK","कामाचे नाव"],
+                  ["JE","JE चे नाव"],
+                  ["CONTRACTOR","Contractor / Agency"],
+                  ["BILL","Bill"],
+                  ["TRANSFER","Transfer / History"]
+                ],
+
+                JE:[
+                  ["ALL","सर्व माहिती"],
+                  ["WORK","कामाचे नाव"],
+                  ["MB","M.B."],
+                  ["CONTRACTOR","Contractor / Agency"],
+                  ["BILL","Bill"],
+                  ["TRANSFER","Transfer / History"]
+                ],
+
+                WORK:[
+                  ["ALL","सर्व माहिती"],
+                  ["JE","JE चे नाव"],
+                  ["MB","M.B."],
+                  ["CONTRACTOR","Contractor / Agency"],
+                  ["BILL","Bill"],
+                  ["TRANSFER","Transfer / History"]
+                ],
+
+                CONTRACTOR:[
+                  ["ALL","सर्व माहिती"],
+                  ["WORK","कामाचे नाव"],
+                  ["JE","JE चे नाव"],
+                  ["MB","M.B."],
+                  ["BILL","Bill"],
+                  ["TRANSFER","Transfer / History"]
+                ],
+
+                BILL:[
+                  ["ALL","सर्व माहिती"],
+                  ["MB","M.B."],
+                  ["WORK","कामाचे नाव"],
+                  ["JE","JE चे नाव"],
+                  ["CONTRACTOR","Contractor / Agency"],
+                  ["TRANSFER","Transfer / History"]
+                ],
+
+                TRANSFER:[
+                  ["ALL","सर्व माहिती"],
+                  ["MB","M.B."],
+                  ["WORK","कामाचे नाव"],
+                  ["JE","JE चे नाव"],
+                  ["CONTRACTOR","Contractor / Agency"],
+                  ["BILL","Bill"]
+                ]
+              };
+
+              return map[c.type]||[];
+            }
+
+            function renderType(){
+
+              const type=
+                document.getElementById(
+                  "homeRelType"
+                );
+
+              if(!type)return;
+
+              type.innerHTML=
+                '<option value="">संबंधित प्रकार निवडा</option>'+
+                Object.keys(TYPE_LABELS)
+                  .map(
+                    function(k){
+                      return (
+                        '<option value="'+
+                        E(k)+
+                        '">'+
+                        E(TYPE_LABELS[k])+
+                        '</option>'
+                      );
+                    }
+                  )
+                  .join("");
+
+              type.disabled=false;
+            }
+
+            function renderTargets(){
+
+              const c=ctx();
+
+              const sel=
+                document.getElementById(
+                  "homeRelTarget"
+                );
+
+              if(!sel)return;
+
+              if(
+                typeof homeRelRangeValid==="function" &&
+                !homeRelRangeValid()
+              ){
+
+                sel.innerHTML=
+                  '<option value="">दिनांक कालावधी निवडा</option>';
+
+                sel.disabled=true;
+
+                return;
+              }
+
+              const d=
+                dateFilter(
+                  data()
+                );
+
+              const arrays={
+
+                MB:
+                  uniq(
+                    d.mbs.map(mbNo)
+                      .concat(
+                        d.works.map(
+                          x=>x?.mb
+                        ),
+                        d.bills.map(
+                          x=>x?.mb
+                        ),
+                        d.assigns.map(
+                          x=>x?.mb
+                        ),
+                        d.transfers.map(
+                          transferNo
+                        )
+                      )
+                  ),
+
+                /*
+                 * IMPORTANT JE FIX:
+                 * Use the complete JE master list first,
+                 * then add JE names found in linked records.
+                 */
+                JE:
+                  uniq(
+                    d.jes.map(S)
+                      .concat(
+                        d.works.map(jeName),
+                        d.bills.map(jeName),
+                        d.assigns.map(jeName)
+                      )
+                  ),
+
+                WORK:
+                  uniq(
+                    d.works.map(workName)
+                      .concat(
+                        d.bills.map(workName)
+                      )
+                  ),
+
+                CONTRACTOR:
+                  uniq(
+                    d.works.map(contractor)
+                      .concat(
+                        d.assigns.map(contractor),
+                        d.bills.map(contractor)
+                      )
+                  ),
+
+                BILL:
+                  uniq(
+                    d.bills.map(billNo)
+                      .concat(
+                        d.bills.map(billType)
+                      )
+                  ),
+
+                TRANSFER:
+                  uniq(
+                    d.transfers.map(
+                      transferNo
+                    )
+                  )
+              };
+
+              const list=
+                arrays[c.type]||[];
+
+              const allLabels={
+                MB:"सर्व M.B.",
+                JE:"सर्व JE",
+                WORK:"सर्व कामे",
+                CONTRACTOR:"सर्व Contractor / Agency",
+                BILL:"सर्व Bill",
+                TRANSFER:"सर्व Transfer / History"
+              };
+
+              const placeholders={
+                MB:"M.B. क्रमांक निवडा",
+                JE:"JE चे नाव निवडा",
+                WORK:"कामाचे नाव निवडा",
+                CONTRACTOR:"Contractor / Agency निवडा",
+                BILL:"Bill निवडा",
+                TRANSFER:"Transfer / History निवडा"
+              };
+
+              /*
+               * IMPORTANT:
+               * Do NOT automatically select "सर्व".
+               * User must explicitly choose the main record.
+               */
+              sel.innerHTML=
+                '<option value="">'+
+                E(
+                  placeholders[c.type] ||
+                  "मुख्य नोंद निवडा"
+                )+
+                '</option>'+
+                '<option value="__ALL__">'+
+                E(
+                  allLabels[c.type] ||
+                  "सर्व"
+                )+
+                '</option>'+
+                list.map(
+                  function(x){
+                    return (
+                      '<option value="'+
+                      E(x)+
+                      '">'+
+                      E(x)+
+                      '</option>'
+                    );
+                  }
+                ).join("");
+
+              sel.disabled=false;
+              sel.value="";
+            }
+
+            function renderComponents(){
+
+              const c=ctx();
+
+              const sel=
+                document.getElementById(
+                  "homeRelComponent"
+                );
+
+              const detail=
+                document.getElementById(
+                  "homeRelDetail"
+                );
+
+              if(!sel)return;
+
+              const opts=
+                componentOptions(c);
+
+              sel.innerHTML=
+                '<option value="">पुढील संबंधित माहिती निवडा</option>'+
+                opts.map(
+                  function(x){
+                    return (
+                      '<option value="'+
+                      E(x[0]+"::"+x[0])+
+                      '">'+
+                      E(x[1])+
+                      '</option>'
+                    );
+                  }
+                ).join("");
+
+              sel.disabled=
+                !c.target ||
+                !c.type;
+
+              if(detail){
+
+                detail.style.display=
+                  "none";
+
+                detail.innerHTML=
+                  '<option value="">तपशील निवडा</option>';
+
+                detail.value="";
+              }
+
+              const bs=
+                document.getElementById(
+                  "homeRelBillType"
+                );
+
+              if(bs){
+
+                bs.style.display=
+                  "none";
+
+                bs.value="";
+              }
+            }
+
+            function renderDetails(){
+
+              const c=ctx();
+
+              const sel=
+                document.getElementById(
+                  "homeRelDetail"
+                );
+
+              if(!sel)return;
+
+              if(
+                !c.ctype ||
+                c.ctype==="ALL"
+              ){
+
+                sel.style.display=
+                  "none";
+
+                sel.innerHTML=
+                  '<option value="'+
+                  DETAIL_ALL+
+                  '">सर्व माहिती</option>';
+
+                sel.value=
+                  DETAIL_ALL;
+
+                renderResult();
+
+                return;
+              }
+
+              const d=
+                dateFilter(
+                  data()
+                );
+
+              const opts=
+                relatedOptions(
+                  c,
+                  d
+                );
+
+              sel.innerHTML=
+                '<option value="">तपशील निवडा</option>'+
+                opts.map(
+                  function(x){
+                    return (
+                      '<option value="'+
+                      E(x[0])+
+                      '">'+
+                      E(x[1])+
+                      '</option>'
+                    );
+                  }
+                ).join("");
+
+              sel.style.display=
+                opts.length
+                ? "block"
+                : "none";
+
+              sel.disabled=false;
+              sel.value="";
+
+              renderResult();
+            }
+
+            function section(
+              title,
+              rows
+            ){
+
+              return (
+                '<div class="rel-section">'+
+                  '<div class="rel-section-title">'+
+                    E(title)+
+                  '</div>'+
+                  rows.map(
+                    function(r){
+                      return (
+                        '<div class="rel-line">'+
+                          '<b>'+
+                          E(r[0])+
+                          ':</b> '+
+                          E(
+                            r[1]===undefined ||
+                            r[1]===""
+                              ? "-"
+                              : r[1]
+                          )+
+                        '</div>'
+                      );
+                    }
+                  ).join("")+
+                '</div>'
+              );
+            }
+
+            function listSection(
+              title,
+              items,
+              fn
+            ){
+
+              if(!items.length){
+
+                return section(
+                  title,
+                  [
+                    [
+                      "नोंद",
+                      "उपलब्ध नाही"
+                    ]
+                  ]
+                );
+              }
+
+              return (
+                '<div class="rel-section">'+
+                  '<div class="rel-section-title">'+
+                    E(title)+
+                    " ("+
+                    items.length+
+                    ")"+
+                  '</div>'+
+                  items.map(
+                    function(x,i){
+                      return (
+                        '<div style="border-top:1px solid #e8eef2;padding:7px 0">'+
+                        fn(x,i)+
+                        '</div>'
+                      );
+                    }
+                  ).join("")+
+                '</div>'
+              );
+            }
+
+            function reportHTML(){
+
+              const c=ctx();
+
+              const b=current();
+
+              const title=
+                (
+                  TYPE_LABELS[c.type] ||
+                  "संबंधित"
+                )+
+                " → "+
+                (
+                  c.target==="__ALL__"
+                    ? "सर्व"
+                    : c.target
+                );
+
+              let h=
+                '<div class="rel-head">'+
+                E(title)+
+                '</div>';
+
+              h+=section(
+                "सारांश",
+                [
+                  ["M.B.",b.mbs.length],
+                  ["कामे",b.works.length],
+                  [
+                    "Contractor / Agency",
+                    uniq(
+                      b.works.map(contractor)
+                        .concat(
+                          b.bills.map(contractor),
+                          b.assigns.map(contractor)
+                        )
+                    ).length
+                  ],
+                  ["Bills",b.bills.length],
+                  [
+                    "Transfer / History",
+                    b.transfers.length
+                  ]
+                ]
+              );
+
+              h+=listSection(
+                "M.B. ची संपूर्ण माहिती",
+                b.mbs,
+                function(m,i){
+
+                  return section(
+                    "M.B. "+mbNo(m),
+                    [
+                      [
+                        "M.B. क्रमांक",
+                        mbNo(m)
+                      ],
+                      [
+                        "Size",
+                        m.size||"-"
+                      ],
+                      [
+                        "Status",
+                        m.status||"-"
+                      ],
+                      [
+                        "प्राप्त दिनांक",
+                        D(
+                          m.receivedDate ||
+                          m.date ||
+                          m.createdAt
+                        )
+                      ],
+                      [
+                        "सध्या कुणाकडे",
+                        (
+                          function(){
+                            try{
+                              return (
+                                mbSummaryCurrentHolder(
+                                  mbNo(m)
+                                ).name||
+                                "-"
+                              );
+                            }catch(e){
+                              return "-";
+                            }
+                          }
+                        )()
+                      ]
+                    ]
+                  );
+                }
+              );
+
+              h+=listSection(
+                "कामांची संपूर्ण माहिती",
+                b.works,
+                function(w,i){
+
+                  return (
+                    "<b>"+
+                    (i+1)+
+                    ") "+
+                    E(
+                      workName(w)||
+                      "-"
+                    )+
+                    "</b>"+
+                    section(
+                      "काम",
+                      [
+                        [
+                          "Work Name",
+                          workName(w)
+                        ],
+                        [
+                          "M.B.",
+                          w.mb||"-"
+                        ],
+                        [
+                          "JE",
+                          jeName(w)||"-"
+                        ],
+                        [
+                          "Contractor / Agency",
+                          contractor(w)||"-"
+                        ]
+                      ]
+                    )
+                  );
+                }
+              );
+
+              const contractors=
+                uniq(
+                  b.works.map(contractor)
+                    .concat(
+                      b.bills.map(contractor),
+                      b.assigns.map(contractor)
+                    )
+                );
+
+              h+=listSection(
+                "Contractor / Agency माहिती",
+                contractors.map(
+                  function(x){
+                    return {
+                      name:x
+                    };
+                  }
+                ),
+                function(c0,i){
+
+                  const co=c0.name;
+
+                  const works=
+                    b.works.filter(
+                      x=>
+                        N(contractor(x))===
+                        N(co)
+                    );
+
+                  const bills=
+                    b.bills.filter(
+                      x=>
+                        N(contractor(x))===
+                        N(co)
+                    );
+
+                  return section(
+                    co,
+                    [
+                      [
+                        "कामे",
+                        works.length
+                      ],
+                      [
+                        "Bills",
+                        bills.length
+                      ],
+                      [
+                        "M.B.",
+                        uniq(
+                          works.map(
+                            x=>x.mb
+                          ).concat(
+                            bills.map(
+                              x=>x.mb
+                            )
+                          )
+                        ).join(", ")||
+                        "-"
+                      ]
+                    ]
+                  );
+                }
+              );
+
+              h+=listSection(
+                "Bill ची संपूर्ण माहिती",
+                b.bills,
+                function(x,i){
+
+                  return section(
+                    (
+                      i+1+
+                      ") "+
+                      (
+                        billType(x)||
+                        "Bill"
+                      )
+                    ),
+                    [
+                      [
+                        "Bill प्रकार",
+                        billType(x)||"-"
+                      ],
+                      [
+                        "Bill क्रमांक",
+                        billNo(x)||"-"
+                      ],
+                      [
+                        "Bill दिनांक",
+                        D(
+                          x.billDate ||
+                          x.date ||
+                          x.savedAt
+                        )
+                      ],
+                      [
+                        "M.B.",
+                        x.mb||"-"
+                      ],
+                      [
+                        "काम",
+                        workName(x)||"-"
+                      ],
+                      [
+                        "JE",
+                        jeName(x)||"-"
+                      ],
+                      [
+                        "Contractor / Agency",
+                        contractor(x)||"-"
+                      ],
+                      [
+                        "रक्कम",
+                        amount(x.amount)
+                      ],
+                      [
+                        "Payment Status",
+                        x.paymentStatus||"-"
+                      ]
+                    ]
+                  );
+                }
+              );
+
+              h+=listSection(
+                "Transfer / History",
+                b.transfers,
+                function(x,i){
+
+                  return section(
+                    (
+                      i+1+
+                      ") M.B. "+
+                      (
+                        transferNo(x)||
+                        "-"
+                      )
+                    ),
+                    [
+                      [
+                        "M.B.",
+                        transferNo(x)||"-"
+                      ],
+                      [
+                        "दिनांक",
+                        D(
+                          x.date ||
+                          x.transferDate ||
+                          x.savedAt
+                        )
+                      ],
+                      [
+                        "कोणाकडे",
+                        x.receiverName ||
+                        x.receiver ||
+                        x.to ||
+                        x.name ||
+                        "-"
+                      ],
+                      [
+                        "काम",
+                        x.workName ||
+                        x.work ||
+                        "-"
+                      ],
+                      [
+                        "JE",
+                        jeName(x)||"-"
+                      ],
+                      [
+                        "Contractor / Agency",
+                        contractor(x)||"-"
+                      ]
+                    ]
+                  );
+                }
+              );
+
+              return h;
+            }
+
+            function renderResult(){
+
+              const box=
+                document.getElementById(
+                  "homeRelResult"
+                );
+
+              if(!box)return;
+
+              const c=ctx();
+
+              if(!c.type){
+
+                box.innerHTML=
+                  '<div class="rel-empty">'+
+                  'संबंधित प्रकार निवडा.'+
+                  '</div>';
+
+                return;
+              }
+
+              if(!c.target){
+
+                box.innerHTML=
+                  '<div class="rel-empty">'+
+                  'प्रथम मुख्य नोंद निवडा. '+
+                  'JE साठी JE चे नाव निवडा.'+
+                  '</div>';
+
+                return;
+              }
+
+              if(!c.ctype){
+
+                box.innerHTML=
+                  '<div class="rel-empty">'+
+                  'पुढील संबंधित माहिती निवडा.'+
+                  '</div>';
+
+                return;
+              }
+
+              if(
+                c.ctype!=="ALL" &&
+                !c.detail
+              ){
+
+                box.innerHTML=
+                  '<div class="rel-empty">'+
+                  'पुढील तपशील निवडा.'+
+                  '</div>';
+
+                return;
+              }
+
+              box.innerHTML=
+                reportHTML();
+            }
+
+            function printReport(){
+
+              const c=ctx();
+
+              if(
+                !c.type ||
+                !c.target ||
+                !c.ctype ||
+                (
+                  c.ctype!=="ALL" &&
+                  !c.detail
+                )
+              ){
+
+                alert(
+                  "कृपया Related Type → मुख्य नोंद → संबंधित प्रकार → तपशील पूर्ण निवडा."
+                );
+
+                return;
+              }
+
+              const pa=
+                document.getElementById(
+                  "printArea"
+                );
+
+              if(!pa){
+
+                window.print();
+
+                return;
+              }
+
+              pa.innerHTML=
+                '<div class="a4-page">'+
+
+                  '<div class="a4-header">'+
+
+                    '<div class="dept">'+
+                      'सार्वजनिक बांधकाम विभाग'+
+                    '</div>'+
+
+                    '<div class="system">'+
+                      'मोजमाप पुस्तिका नियंत्रण प्रणाली'+
+                    '</div>'+
+
+                    '<div class="report-title">'+
+                      'M.B. SUMMARY — LINKED REPORT'+
+                    '</div>'+
+
+                  '</div>'+
+
+                  '<div class="a4-meta">'+
+
+                    '<span>'+
+                      '<b>निवड :</b> '+
+                      E(
+                        (
+                          TYPE_LABELS[c.type]||
+                          ""
+                        )+
+                        " → "+
+                        (
+                          c.target==="__ALL__"
+                            ? "सर्व"
+                            : c.target
+                        )
+                      )+
+                    '</span>'+
+
+                    '<span>'+
+                      '<b>कालावधी :</b> '+
+                      E(
+                        D(
+                          document.getElementById(
+                            "homeRelFrom"
+                          )?.value
+                        )
+                      )+
+                      " ते "+
+                      E(
+                        D(
+                          document.getElementById(
+                            "homeRelTo"
+                          )?.value
+                        )
+                      )+
+                    '</span>'+
+
+                  '</div>'+
+
+                  reportHTML()+
+
+                  '<div class="a4-footer">'+
+                    'Created By : विठ्ठल कोकाटे पाटील'+
+                  '</div>'+
+
+                '</div>';
+
+              const old=
+                document.title;
+
+              document.title=
+                "MBMS M.B. Summary Linked Report";
+
+              setTimeout(
+                function(){
+                  window.print();
+                },
+                80
+              );
+
+              setTimeout(
+                function(){
+                  document.title=old;
+                },
+                1200
+              );
+            }
+
+            function bind(){
+
+              const type=
+                document.getElementById(
+                  "homeRelType"
+                );
+
+              const target=
+                document.getElementById(
+                  "homeRelTarget"
+                );
+
+              const comp=
+                document.getElementById(
+                  "homeRelComponent"
+                );
+
+              const detail=
+                document.getElementById(
+                  "homeRelDetail"
+                );
+
+              const from=
+                document.getElementById(
+                  "homeRelFrom"
+                );
+
+              const to=
+                document.getElementById(
+                  "homeRelTo"
+                );
+
+              const btn=
+                document.querySelector(
+                  'button[onclick="printHomeRelationshipReport()"]'
+                );
+
+              if(
+                !type ||
+                !target ||
+                !comp ||
+                !detail
+              ){
+                return false;
+              }
+
+              renderType();
+
+              type.onchange=
+                function(){
+
+                  renderTargets();
+
+                  renderComponents();
+
+                  renderResult();
+                };
+
+              target.onchange=
+                function(){
+
+                  renderComponents();
+
+                  renderResult();
+                };
+
+              comp.onchange=
+                function(){
+
+                  renderDetails();
+                };
+
+              detail.onchange=
+                function(){
+
+                  renderResult();
+                };
+
+              if(from){
+
+                from.onchange=
+                  function(){
+
+                    renderTargets();
+
+                    renderComponents();
+
+                    renderResult();
+                  };
+              }
+
+              if(to){
+
+                to.onchange=
+                  function(){
+
+                    renderTargets();
+
+                    renderComponents();
+
+                    renderResult();
+                  };
+              }
+
+              if(btn){
+
+                btn.onclick=
+                  printReport;
+              }
+
+              target.disabled=true;
+              comp.disabled=true;
+              detail.style.display=
+                "none";
+
+              if(
+                typeof homeRelRangeValid!=="function" ||
+                homeRelRangeValid()
+              ){
+                renderResult();
+              }
+
+              return true;
+            }
+
+            window.loadHomeRelDetails=
+              function(){
+                renderDetails();
+              };
+
+            window.showHomeRelationship=
+              function(){
+                renderResult();
+              };
+
+            window.printHomeRelationshipReport=
+              printReport;
+
+            window.loadHomeRelTargets=
+              function(){
+                renderTargets();
+                renderComponents();
+                renderResult();
+              };
+
+            window.loadHomeRelComponents=
+              function(){
+                renderComponents();
+                renderDetails();
+              };
+
+            if(
+              document.readyState===
+              "loading"
+            ){
+
+              document.addEventListener(
+                "DOMContentLoaded",
+                bind
+              );
+
+            }else{
+
+              bind();
+            }
+
+          })();
+          PATCH_JS
+
           python3 <<'PY'
           from pathlib import Path
 
-          html_path = Path("mbms_work/index.html")
-          text = html_path.read_text(encoding="utf-8")
+          html_path = Path(
+              "mbms_work/index.html"
+          )
 
-          marker = '<script id="V128_MBMS_SUMMARY_LINKED_FIX">'
+          patch_path = Path(
+              "/tmp/mbms_summary_patch.js"
+          )
 
-          if marker in text:
-              print("MB Summary patch already exists.")
-              raise SystemExit(0)
+          text = html_path.read_text(
+              encoding="utf-8"
+          )
 
-          patch = r'''
-          <script id="V128_MBMS_SUMMARY_LINKED_FIX">
-          (function () {
-              "use strict";
+          patch = patch_path.read_text(
+              encoding="utf-8"
+          ).rstrip()
 
-              const TYPE_LABELS = {
-                  MB: "M.B.",
-                  JE: "Junior Engineer",
-                  WORK: "Work",
-                  CONTRACTOR: "Contractor / Agency",
-                  BILL: "Bill",
-                  TRANSFER: "Transfer / History"
-              };
+          if "</script>" in patch.lower():
+              raise SystemExit(
+                  "ERROR: Unsafe </script> found in patch."
+              )
 
-              function A(id) {
-                  return document.getElementById(id);
-              }
+          marker = "</body>"
 
-              function S(value) {
-                  return value == null ? "" : String(value).trim();
-              }
+          pos = text.lower().rfind(
+              marker.lower()
+          )
 
-              function N(value) {
-                  const n = Number(value);
-                  return Number.isFinite(n) ? n : 0;
-              }
-
-              function E(value) {
-                  return S(value)
-                      .replace(/&/g, "&amp;")
-                      .replace(/</g, "&lt;")
-                      .replace(/>/g, "&gt;")
-                      .replace(/"/g, "&quot;");
-              }
-
-              function D(value) {
-                  return S(value)
-                      .replace(/\//g, "-")
-                      .replace(/\./g, "-");
-              }
-
-              function amount(value) {
-                  const n = N(value);
-                  if (!n) return "";
-                  return n.toLocaleString("en-IN", {
-                      maximumFractionDigits: 2
-                  });
-              }
-
-              function uniq(items) {
-                  const seen = new Set();
-                  const result = [];
-
-                  items.forEach(function (item) {
-                      const key = S(item);
-                      if (!key || seen.has(key)) return;
-                      seen.add(key);
-                      result.push(key);
-                  });
-
-                  return result;
-              }
-
-              function mbNo(row) {
-                  return S(
-                      row.mbNo ||
-                      row.mbNumber ||
-                      row.mb_number ||
-                      row["M.B. Number"] ||
-                      row["MB Number"] ||
-                      row["M.B."] ||
-                      row["MB"]
-                  );
-              }
-
-              function workName(row) {
-                  return S(
-                      row.workName ||
-                      row.work ||
-                      row.name ||
-                      row.work_name ||
-                      row["Work Name"] ||
-                      row["कामाचे नाव"] ||
-                      row["काम"]
-                  );
-              }
-
-              function jeName(row) {
-                  return S(
-                      row.jeName ||
-                      row.je ||
-                      row.juniorEngineer ||
-                      row.junior_engineer ||
-                      row["Junior Engineer"] ||
-                      row["JE Name"] ||
-                      row["JE"] ||
-                      row["कनिष्ठ अभियंता"]
-                  );
-              }
-
-              function contractor(row) {
-                  return S(
-                      row.contractor ||
-                      row.contractorName ||
-                      row.agency ||
-                      row.agencyName ||
-                      row.contractor_name ||
-                      row["Contractor"] ||
-                      row["Agency"] ||
-                      row["Contractor / Agency"] ||
-                      row["कंत्राटदार"]
-                  );
-              }
-
-              function billType(row) {
-                  return S(
-                      row.billType ||
-                      row.type ||
-                      row.bill_type ||
-                      row["Bill Type"] ||
-                      row["Bill Type / Type"] ||
-                      row["बिल प्रकार"]
-                  );
-              }
-
-              function billNo(row) {
-                  return S(
-                      row.billNo ||
-                      row.billNumber ||
-                      row.bill_no ||
-                      row["Bill No"] ||
-                      row["Bill Number"] ||
-                      row["बिल क्रमांक"]
-                  );
-              }
-
-              function transferNo(row) {
-                  return S(
-                      row.transferNo ||
-                      row.transferNumber ||
-                      row.transfer_no ||
-                      row["Transfer No"] ||
-                      row["Transfer Number"] ||
-                      row["हस्तांतरण क्रमांक"]
-                  );
-              }
-
-              function size(row) {
-                  return S(
-                      row.size ||
-                      row.mbSize ||
-                      row.mb_size ||
-                      row["MB Size"] ||
-                      row["M.B. Size"] ||
-                      row["Size"]
-                  );
-              }
-
-              function dateValue(row) {
-                  return S(
-                      row.date ||
-                      row.entryDate ||
-                      row.mbDate ||
-                      row.billDate ||
-                      row.transferDate ||
-                      row.createdAt ||
-                      row["Date"] ||
-                      row["दिनांक"]
-                  );
-              }
-
-              function dateFilter(row) {
-                  const from =
-                      S(A("homeRelFrom") && A("homeRelFrom").value);
-
-                  const to =
-                      S(A("homeRelTo") && A("homeRelTo").value);
-
-                  if (!from && !to) return true;
-
-                  const raw = dateValue(row);
-
-                  if (!raw) return true;
-
-                  const normalized = D(raw);
-
-                  if (from && normalized < D(from)) {
-                      return false;
-                  }
-
-                  if (to && normalized > D(to)) {
-                      return false;
-                  }
-
-                  return true;
-              }
-
-              function data() {
-                  if (
-                      typeof window.homeRelData ===
-                      "function"
-                  ) {
-                      try {
-                          const result =
-                              window.homeRelData();
-
-                          if (Array.isArray(result)) {
-                              return result;
-                          }
-
-                          if (
-                              result &&
-                              Array.isArray(result.records)
-                          ) {
-                              return result.records;
-                          }
-                      } catch (e) {
-                          console.warn(
-                              "homeRelData failed",
-                              e
-                          );
-                      }
-                  }
-
-                  const sources = [
-                      window.mbs,
-                      window.mbData,
-                      window.mbList,
-                      window.works,
-                      window.workList,
-                      window.bills,
-                      window.billList,
-                      window.transfers,
-                      window.transferHistory
-                  ];
-
-                  const result = [];
-
-                  sources.forEach(function (source) {
-                      if (!Array.isArray(source)) return;
-
-                      source.forEach(function (row) {
-                          if (
-                              row &&
-                              typeof row === "object"
-                          ) {
-                              result.push(row);
-                          }
-                      });
-                  });
-
-                  return result;
-              }
-
-              function ctx() {
-                  return {
-                      type:
-                          S(
-                              A("homeRelType") &&
-                              A("homeRelType").value
-                          ) || "MB",
-
-                      target:
-                          S(
-                              A("homeRelTarget") &&
-                              A("homeRelTarget").value
-                          ),
-
-                      component:
-                          S(
-                              A("homeRelComponent") &&
-                              A("homeRelComponent").value
-                          ),
-
-                      detail:
-                          S(
-                              A("homeRelDetail") &&
-                              A("homeRelDetail").value
-                          ),
-
-                      billType:
-                          S(
-                              A("homeRelBillType") &&
-                              A("homeRelBillType").value
-                          )
-                  };
-              }
-
-              function linkedByMB(row, selectedMB) {
-                  if (!selectedMB) return true;
-
-                  return (
-                      mbNo(row) === selectedMB
-                  );
-              }
-
-              function baseFor(type, rows) {
-                  const result = rows.filter(
-                      function (row) {
-                          if (!dateFilter(row)) {
-                              return false;
-                          }
-
-                          return true;
-                      }
-                  );
-
-                  if (type === "MB") {
-                      return result.filter(
-                          function (row) {
-                              return !!mbNo(row);
-                          }
-                      );
-                  }
-
-                  if (type === "JE") {
-                      return result.filter(
-                          function (row) {
-                              return !!jeName(row);
-                          }
-                      );
-                  }
-
-                  if (type === "WORK") {
-                      return result.filter(
-                          function (row) {
-                              return !!workName(row);
-                          }
-                      );
-                  }
-
-                  if (type === "CONTRACTOR") {
-                      return result.filter(
-                          function (row) {
-                              return !!contractor(row);
-                          }
-                      );
-                  }
-
-                  if (type === "BILL") {
-                      return result.filter(
-                          function (row) {
-                              return (
-                                  !!billNo(row) ||
-                                  !!billType(row)
-                              );
-                          }
-                      );
-                  }
-
-                  if (type === "TRANSFER") {
-                      return result.filter(
-                          function (row) {
-                              return (
-                                  !!transferNo(row) ||
-                                  !!mbNo(row)
-                              );
-                          }
-                      );
-                  }
-
-                  return result;
-              }
-
-              function clearSelect(select) {
-                  if (!select) return;
-
-                  while (select.options.length) {
-                      select.remove(0);
-                  }
-              }
-
-              function addOption(
-                  select,
-                  value,
-                  label
-              ) {
-                  if (!select) return;
-
-                  const option =
-                      document.createElement("option");
-
-                  option.value = value;
-                  option.textContent = label;
-
-                  select.appendChild(option);
-              }
-
-              function renderTargets() {
-                  const c = ctx();
-                  const rows = baseFor(
-                      c.type,
-                      data()
-                  );
-
-                  const target = A("homeRelTarget");
-
-                  if (!target) return;
-
-                  clearSelect(target);
-
-                  const values = [];
-
-                  rows.forEach(function (row) {
-
-                      if (c.type === "MB") {
-                          values.push(mbNo(row));
-                      }
-
-                      if (c.type === "JE") {
-                          values.push(jeName(row));
-                      }
-
-                      if (c.type === "WORK") {
-                          values.push(workName(row));
-                      }
-
-                      if (
-                          c.type ===
-                          "CONTRACTOR"
-                      ) {
-                          values.push(
-                              contractor(row)
-                          );
-                      }
-
-                      if (c.type === "BILL") {
-                          values.push(
-                              billNo(row)
-                          );
-                      }
-
-                      if (
-                          c.type ===
-                          "TRANSFER"
-                      ) {
-                          values.push(
-                              transferNo(row)
-                          );
-                      }
-                  });
-
-                  const unique =
-                      uniq(values);
-
-                  addOption(
-                      target,
-                      "",
-                      c.type === "MB"
-                          ? "सर्व M.B."
-                          : c.type === "JE"
-                          ? "सर्व JE"
-                          : c.type === "WORK"
-                          ? "सर्व कामे"
-                          : c.type === "CONTRACTOR"
-                          ? "सर्व Contractor / Agency"
-                          : c.type === "BILL"
-                          ? "सर्व Bill"
-                          : "सर्व Transfer / History"
-                  );
-
-                  unique.sort(
-                      function (a, b) {
-                          return a.localeCompare(
-                              b,
-                              undefined,
-                              {
-                                  numeric: true,
-                                  sensitivity: "base"
-                              }
-                          );
-                      }
-                  );
-
-                  unique.forEach(
-                      function (value) {
-                          addOption(
-                              target,
-                              value,
-                              value
-                          );
-                      }
-                  );
-              }
-
-              function renderComponents() {
-                  const c = ctx();
-                  const component =
-                      A("homeRelComponent");
-
-                  if (!component) return;
-
-                  clearSelect(component);
-
-                  const options = {
-                      MB: [
-                          ["", "Select Information"],
-                          ["ALL", "All M.B. Details"],
-                          ["SMALL", "Small M.B."],
-                          ["BIG", "Big M.B."],
-                          ["WORK", "Work Details"],
-                          ["JE", "Junior Engineer"],
-                          ["CONTRACTOR", "Contractor / Agency"],
-                          ["BILL", "Bill Details"],
-                          ["TRANSFER", "Transfer / History"]
-                      ],
-
-                      JE: [
-                          ["", "Select Information"],
-                          ["MB", "M.B. Details"],
-                          ["WORK", "Work Details"],
-                          ["CONTRACTOR", "Contractor / Agency"],
-                          ["BILL", "Bill Details"],
-                          ["TRANSFER", "Transfer / History"]
-                      ],
-
-                      WORK: [
-                          ["", "Select Information"],
-                          ["MB", "M.B. Details"],
-                          ["JE", "Junior Engineer"],
-                          ["CONTRACTOR", "Contractor / Agency"],
-                          ["BILL", "Bill Details"],
-                          ["TRANSFER", "Transfer / History"]
-                      ],
-
-                      CONTRACTOR: [
-                          ["", "Select Information"],
-                          ["WORK", "Work Details"],
-                          ["MB", "M.B. Details"],
-                          ["JE", "Junior Engineer"],
-                          ["BILL", "Bill Details"],
-                          ["TRANSFER", "Transfer / History"]
-                      ],
-
-                      BILL: [
-                          ["", "Select Information"],
-                          ["FIRST", "First RA Bill"],
-                          ["SECOND", "Second RA Bill"],
-                          ["THIRD", "Third RA Bill"],
-                          ["FOURTH", "Fourth RA Bill"],
-                          ["FIFTH", "Fifth RA Bill"],
-                          ["SIXTH", "Sixth RA Bill"],
-                          ["SEVENTH", "Seventh RA Bill"],
-                          ["EIGHTH", "Eighth RA Bill"],
-                          ["NINTH", "Ninth RA Bill"],
-                          ["TENTH", "Tenth RA Bill"],
-                          ["FINAL", "Final Bill"],
-                          ["WITHHELD", "Withheld Bill"],
-                          ["MB", "M.B. Details"],
-                          ["WORK", "Work Details"],
-                          ["JE", "Junior Engineer"],
-                          ["CONTRACTOR", "Contractor / Agency"]
-                      ],
-
-                      TRANSFER: [
-                          ["", "Select Information"],
-                          ["MB", "M.B. Details"],
-                          ["JE", "Junior Engineer"],
-                          ["WORK", "Work Details"],
-                          ["CONTRACTOR", "Contractor / Agency"],
-                          ["BILL", "Bill Details"],
-                          ["HISTORY", "Complete Transfer / History"]
-                      ]
-                  };
-
-                  (
-                      options[c.type] ||
-                      options.MB
-                  ).forEach(
-                      function (item) {
-                          addOption(
-                              component,
-                              item[0],
-                              item[1]
-                          );
-                      }
-                  );
-              }
-
-              function renderDetails() {
-                  const c = ctx();
-                  const detail =
-                      A("homeRelDetail");
-
-                  if (!detail) return;
-
-                  clearSelect(detail);
-
-                  if (c.type === "BILL") {
-
-                      [
-                          "First and final RA bill",
-                          "Second and final RA bill",
-                          "Third and final RA bill",
-                          "Fourth and final RA bill",
-                          "Fifth and final RA bill",
-                          "Sixth and final RA bill",
-                          "Seventh and final RA bill",
-                          "Eighth and final RA bill",
-                          "Ninth and final RA bill",
-                          "Tenth and final RA bill",
-                          "Final Bill",
-                          "Withheld Bill"
-                      ].forEach(
-                          function (item) {
-                              addOption(
-                                  detail,
-                                  item,
-                                  item
-                              );
-                          }
-                      );
-
-                      return;
-                  }
-
-                  [
-                      ["", "All"],
-                      ["MB", "M.B."],
-                      ["WORK", "Work"],
-                      ["JE", "Junior Engineer"],
-                      ["CONTRACTOR", "Contractor / Agency"],
-                      ["BILL", "Bill"],
-                      ["TRANSFER", "Transfer / History"]
-                  ].forEach(
-                      function (item) {
-                          addOption(
-                              detail,
-                              item[0],
-                              item[1]
-                          );
-                      }
-                  );
-              }
-
-              function filterDetail(rows) {
-                  const c = ctx();
-
-                  if (!c.target) {
-                      return rows;
-                  }
-
-                  return rows.filter(
-                      function (row) {
-
-                          if (c.type === "MB") {
-                              return mbNo(row) === c.target;
-                          }
-
-                          if (c.type === "JE") {
-                              return jeName(row) === c.target;
-                          }
-
-                          if (c.type === "WORK") {
-                              return workName(row) === c.target;
-                          }
-
-                          if (
-                              c.type ===
-                              "CONTRACTOR"
-                          ) {
-                              return (
-                                  contractor(row) ===
-                                  c.target
-                              );
-                          }
-
-                          if (c.type === "BILL") {
-                              return (
-                                  billNo(row) ===
-                                      c.target ||
-                                  billType(row) ===
-                                      c.target
-                              );
-                          }
-
-                          if (
-                              c.type ===
-                              "TRANSFER"
-                          ) {
-                              return (
-                                  transferNo(row) ===
-                                      c.target ||
-                                  mbNo(row) ===
-                                      c.target
-                              );
-                          }
-
-                          return true;
-                      }
-                  );
-              }
-
-              function rowHtml(row, index) {
-
-                  const bill =
-                      billNo(row) ||
-                      billType(row);
-
-                  const values = [
-                      ["M.B. Number", mbNo(row)],
-                      ["Work Name", workName(row)],
-                      ["Contractor / Agency", contractor(row)],
-                      ["Junior Engineer", jeName(row)],
-                      ["M.B. Size", size(row)],
-                      ["Bill No.", bill],
-                      ["Bill Type", billType(row)],
-                      ["Transfer No.", transferNo(row)],
-                      ["Date", dateValue(row)]
-                  ];
-
-                  let html =
-                      '<div class="v128-rel-row" ' +
-                      'style="' +
-                      'border:1px solid #bbb;' +
-                      'border-radius:8px;' +
-                      'padding:8px;' +
-                      'margin:6px 0;' +
-                      'background:#fff;">';
-
-                  html +=
-                      '<div style="' +
-                      'font-weight:700;' +
-                      'margin-bottom:5px;">' +
-                      (index + 1) +
-                      ". Linked Record</div>";
-
-                  values.forEach(
-                      function (item) {
-                          if (!item[1]) return;
-
-                          html +=
-                              '<div>' +
-                              '<b>' +
-                              E(item[0]) +
-                              ':</b> ' +
-                              E(item[1]) +
-                              '</div>';
-                      }
-                  );
-
-                  const amountValue =
-                      row.amount ||
-                      row.billAmount ||
-                      row.totalAmount ||
-                      row["Amount"] ||
-                      row["Bill Amount"];
-
-                  if (amountValue) {
-                      html +=
-                          '<div><b>Amount:</b> ' +
-                          E(amount(amountValue)) +
-                          "</div>";
-                  }
-
-                  html += "</div>";
-
-                  return html;
-              }
-
-              function renderResult() {
-                  const c = ctx();
-
-                  let rows =
-                      baseFor(
-                          c.type,
-                          data()
-                      );
-
-                  rows =
-                      filterDetail(rows);
-
-                  if (
-                      c.target &&
-                      c.component
-                  ) {
-
-                      const component =
-                          c.component;
-
-                      rows =
-                          rows.filter(
-                              function (row) {
-
-                                  if (
-                                      component ===
-                                      "MB"
-                                  ) {
-                                      return !!mbNo(row);
-                                  }
-
-                                  if (
-                                      component ===
-                                      "WORK"
-                                  ) {
-                                      return !!workName(row);
-                                  }
-
-                                  if (
-                                      component ===
-                                      "JE"
-                                  ) {
-                                      return !!jeName(row);
-                                  }
-
-                                  if (
-                                      component ===
-                                      "CONTRACTOR"
-                                  ) {
-                                      return !!contractor(row);
-                                  }
-
-                                  if (
-                                      component ===
-                                      "BILL"
-                                  ) {
-                                      return (
-                                          !!billNo(row) ||
-                                          !!billType(row)
-                                      );
-                                  }
-
-                                  if (
-                                      component ===
-                                      "TRANSFER" ||
-                                      component ===
-                                      "HISTORY"
-                                  ) {
-                                      return (
-                                          !!transferNo(row) ||
-                                          !!mbNo(row)
-                                      );
-                                  }
-
-                                  if (
-                                      component ===
-                                      "SMALL"
-                                  ) {
-                                      return (
-                                          size(row)
-                                              .toLowerCase()
-                                              .includes(
-                                                  "small"
-                                              )
-                                      );
-                                  }
-
-                                  if (
-                                      component ===
-                                      "BIG"
-                                  ) {
-                                      return (
-                                          size(row)
-                                              .toLowerCase()
-                                              .includes(
-                                                  "big"
-                                              )
-                                      );
-                                  }
-
-                                  return true;
-                              }
-                          );
-                  }
-
-                  const result =
-                      A("homeRelResult");
-
-                  if (!result) return;
-
-                  let html =
-                      '<div style="' +
-                      'font-weight:700;' +
-                      'font-size:16px;' +
-                      'margin-bottom:8px;">' +
-                      "Linked Report - " +
-                      E(
-                          TYPE_LABELS[c.type] ||
-                          c.type
-                      ) +
-                      "</div>";
-
-                  html +=
-                      '<div style="' +
-                      'margin-bottom:8px;">' +
-                      "Total Records: " +
-                      rows.length +
-                      "</div>";
-
-                  if (!rows.length) {
-
-                      html +=
-                          '<div style="' +
-                          'padding:12px;' +
-                          'border:1px solid #ccc;' +
-                          'border-radius:8px;">' +
-                          "No linked records found." +
-                          "</div>";
-
-                  } else {
-
-                      rows.forEach(
-                          function (row, index) {
-                              html +=
-                                  rowHtml(
-                                      row,
-                                      index
-                                  );
-                          }
-                      );
-                  }
-
-                  result.innerHTML = html;
-
-                  return rows;
-              }
-
-              function printReport() {
-                  const rows =
-                      renderResult();
-
-                  const c = ctx();
-
-                  const title =
-                      "M.B. Summary - Linked Report";
-
-                  let html =
-                      "<!DOCTYPE html>" +
-                      "<html>" +
-                      "<head>" +
-                      '<meta charset="UTF-8">' +
-                      "<title>" +
-                      E(title) +
-                      "</title>" +
-                      "<style>" +
-                      "@page{size:A4;margin:12mm;}" +
-                      "body{font-family:Arial,sans-serif;" +
-                      "font-size:11px;color:#111;}" +
-                      "h1{font-size:18px;}" +
-                      ".row{border:1px solid #777;" +
-                      "padding:7px;margin:6px 0;" +
-                      "border-radius:4px;}" +
-                      ".row div{margin:2px 0;}" +
-                      "</style>" +
-                      "</head>" +
-                      "<body>" +
-                      "<h1>" +
-                      E(title) +
-                      "</h1>";
-
-                  html +=
-                      "<div><b>Category:</b> " +
-                      E(
-                          TYPE_LABELS[c.type] ||
-                          c.type
-                      ) +
-                      "</div>";
-
-                  if (c.target) {
-                      html +=
-                          "<div><b>Selected:</b> " +
-                          E(c.target) +
-                          "</div>";
-                  }
-
-                  html +=
-                      "<div><b>Total:</b> " +
-                      rows.length +
-                      "</div>";
-
-                  rows.forEach(
-                      function (row, index) {
-
-                          html +=
-                              '<div class="row">' +
-                              "<b>" +
-                              (index + 1) +
-                              ". Linked Record</b>";
-
-                          const fields = [
-                              ["M.B. Number", mbNo(row)],
-                              ["Work Name", workName(row)],
-                              ["Contractor / Agency", contractor(row)],
-                              ["Junior Engineer", jeName(row)],
-                              ["M.B. Size", size(row)],
-                              ["Bill No.", billNo(row)],
-                              ["Bill Type", billType(row)],
-                              ["Transfer No.", transferNo(row)],
-                              ["Date", dateValue(row)]
-                          ];
-
-                          fields.forEach(
-                              function (field) {
-                                  if (!field[1]) return;
-
-                                  html +=
-                                      "<div><b>" +
-                                      E(field[0]) +
-                                      ":</b> " +
-                                      E(field[1]) +
-                                      "</div>";
-                              }
-                          );
-
-                          const av =
-                              row.amount ||
-                              row.billAmount ||
-                              row.totalAmount ||
-                              row["Amount"] ||
-                              row["Bill Amount"];
-
-                          if (av) {
-                              html +=
-                                  "<div><b>Amount:</b> " +
-                                  E(amount(av)) +
-                                  "</div>";
-                          }
-
-                          html += "</div>";
-                      }
-                  );
-
-                  html +=
-                      "</body></html>";
-
-                  const win =
-                      window.open(
-                          "",
-                          "_blank"
-                      );
-
-                  if (!win) {
-                      alert(
-                          "Print window could not be opened."
-                      );
-                      return;
-                  }
-
-                  win.document.open();
-                  win.document.write(html);
-                  win.document.close();
-
-                  setTimeout(
-                      function () {
-                          win.focus();
-                          win.print();
-                      },
-                      400
-                  );
-              }
-
-              function bind() {
-
-                  const ids = [
-                      "homeRelType",
-                      "homeRelTarget",
-                      "homeRelComponent",
-                      "homeRelDetail",
-                      "homeRelBillType",
-                      "homeRelFrom",
-                      "homeRelTo"
-                  ];
-
-                  ids.forEach(
-                      function (id) {
-
-                          const element =
-                              A(id);
-
-                          if (!element) return;
-
-                          element.addEventListener(
-                              "change",
-                              function () {
-
-                                  if (
-                                      id ===
-                                      "homeRelType"
-                                  ) {
-                                      renderTargets();
-                                      renderComponents();
-                                      renderDetails();
-                                  }
-
-                                  if (
-                                      id ===
-                                      "homeRelTarget"
-                                  ) {
-                                      renderComponents();
-                                      renderDetails();
-                                  }
-
-                                  renderResult();
-                              }
-                          );
-                      }
-                  );
-
-                  const print =
-                      A(
-                          "homeRelPrint"
-                      );
-
-                  if (print) {
-                      print.addEventListener(
-                          "click",
-                          printReport
-                      );
-                  }
-
-                  renderTargets();
-                  renderComponents();
-                  renderDetails();
-                  renderResult();
-              }
-
-              window.loadHomeRelDetailsV124 =
-                  function () {
-                      renderDetails();
-                      renderResult();
-                  };
-
-              window.showHomeRelationshipV124 =
-                  function () {
-                      renderResult();
-                  };
-
-              window.printLinkedRelationshipReport =
-                  function () {
-                      printReport();
-                  };
-
-              window.loadHomeRelTargets =
-                  function () {
-                      renderTargets();
-                  };
-
-              window.loadHomeRelComponents =
-                  function () {
-                      renderComponents();
-                      renderDetails();
-                  };
-
-              window.printHomeRelationshipReport =
-                  function () {
-                      printReport();
-                  };
-
-              if (
-                  document.readyState ===
-                  "loading"
-              ) {
-                  document.addEventListener(
-                      "DOMContentLoaded",
-                      bind
-                  );
-              } else {
-                  bind();
-              }
-
-          })();
-          </script>
-          '''
-
-          closing = "</body>"
-
-          position = text.rfind(closing)
-
-          if position < 0:
+          if pos < 0:
               raise SystemExit(
                   "ERROR: </body> not found."
               )
 
-          text = (
-              text[:position] +
-              patch +
-              "\n" +
-              text[position:]
+          script_block = (
+              '<script id="V128_MBMS_SUMMARY_LINKED_FIX">\n'
+              +
+              patch
+              +
+              "\n</script>\n"
           )
+
+          text = (
+              text[:pos] +
+              script_block +
+              text[pos:]
+          )
+
+          required = [
+              "V128 M.B. SUMMARY",
+              "जे चे नाव निवडा",
+              "सर्व JE",
+              "loadHomeRelDetails",
+              "showHomeRelationship",
+              "printHomeRelationshipReport"
+          ]
+
+          for item in required:
+
+              if item not in text:
+
+                  raise SystemExit(
+                      "ERROR: Required MB Summary item missing: "+
+                      item
+                  )
 
           html_path.write_text(
               text,
@@ -1333,11 +2487,11 @@ jobs:
           )
 
           print(
-              "MB Summary linked report patch applied."
+              "M.B. Summary JE selection fix applied."
           )
           PY
 
-      - name: Validate Final HTML JavaScript
+      - name: Validate HTML and JavaScript
         shell: bash
         run: |
           set -euo pipefail
@@ -1366,6 +2520,7 @@ jobs:
               )
 
           for i, script in enumerate(scripts):
+
               Path(
                   f"/tmp/mbms_script_{i}.js"
               ).write_text(
@@ -1378,69 +2533,72 @@ jobs:
           )
           PY
 
-          node --check /tmp/mbms_script_0.js
-
           for js in /tmp/mbms_script_*.js
           do
             node --check "$js"
           done
 
           grep -q \
-            'V128_MBMS_SUMMARY_LINKED_FIX' \
+            "V128_MBMS_SUMMARY_LINKED_FIX" \
             mbms_work/index.html
 
           grep -q \
-            'loadHomeRelDetailsV124' \
+            "जे चे नाव निवडा" \
             mbms_work/index.html
 
           grep -q \
-            'printLinkedRelationshipReport' \
+            "सर्व JE" \
             mbms_work/index.html
 
-          echo "FINAL HTML JAVASCRIPT VALIDATION PASSED."
+          echo "FINAL HTML / JAVASCRIPT VALIDATION PASSED."
 
-      - name: Required feature validation
+      - name: Validate required MBMS functions
         shell: bash
         run: |
           set -euo pipefail
 
           HTML="mbms_work/index.html"
 
-          required=(
+          REQUIRED=(
             "mbmsSettingsSnapshot"
             "downloadSettingsBackup"
             "restoreSettingsBackup"
             "generateTransferReport"
             "saveTransferMB"
             "getTransferHistory"
+            "homeRelData"
+            "homeRelInRange"
             "V128_MBMS_SUMMARY_LINKED_FIX"
-            "loadHomeRelDetailsV124"
-            "showHomeRelationshipV124"
-            "printLinkedRelationshipReport"
+            "loadHomeRelDetails"
+            "showHomeRelationship"
+            "printHomeRelationshipReport"
           )
 
-          for item in "${required[@]}"
+          for item in "${REQUIRED[@]}"
           do
+
             grep -q "$item" "$HTML" || {
               echo "ERROR: Required item missing: $item"
               exit 1
             }
+
           done
 
-          echo "REQUIRED FEATURE VALIDATION PASSED."
+          echo "REQUIRED MBMS FUNCTION VALIDATION PASSED."
 
       - name: Create Android project
         shell: bash
         run: |
           set -euo pipefail
 
-          rm -rf mbms_android
-          rm -rf release
+          rm -rf \
+            mbms_android \
+            release
 
           mkdir -p \
+            mbms_android/app/src/main/assets \
             mbms_android/app/src/main/java/com/mbms/app \
             mbms_android/app/src/main/res/values \
-            mbms_android/app/src/main/assets \
             release
 
           cp \
@@ -1510,9 +2668,7 @@ jobs:
 
           cat > mbms_android/app/src/main/res/values/strings.xml <<'EOF'
           <resources>
-              <string name="app_name">
-                  Measurement Book Management System
-              </string>
+              <string name="app_name">Measurement Book Management System</string>
           </resources>
           EOF
 
@@ -1524,7 +2680,6 @@ jobs:
                   parent="android:style/Theme.Material.Light.NoActionBar">
 
                   <item name="android:fontFamily">sans</item>
-                  <item name="android:windowActionModeOverlay">true</item>
                   <item name="android:colorAccent">#176aa4</item>
 
               </style>
@@ -1617,11 +2772,8 @@ jobs:
                           savedInstanceState
                   );
 
-
-                  webView = new WebView(
-                          this
-                  );
-
+                  webView =
+                          new WebView(this);
 
                   WebSettings settings =
                           webView.getSettings();
@@ -1650,11 +2802,9 @@ jobs:
                           false
                   );
 
-
                   webView.setWebViewClient(
                           new WebViewClient()
                   );
-
 
                   webView.setWebChromeClient(
                           new WebChromeClient() {
@@ -1669,6 +2819,7 @@ jobs:
                                           filePathCallback !=
                                           null
                                   ) {
+
                                       filePathCallback
                                               .onReceiveValue(
                                                       null
@@ -1703,17 +2854,14 @@ jobs:
                           }
                   );
 
-
                   webView.addJavascriptInterface(
                           new AndroidBridge(),
                           "AndroidBridge"
                   );
 
-
                   webView.loadUrl(
                           "file:///android_asset/index.html"
                   );
-
 
                   setContentView(
                           webView
@@ -1764,8 +2912,8 @@ jobs:
 
                                           Toast.makeText(
                                                   MainActivity.this,
-                                                  "Print Error: " +
-                                                          e.getMessage(),
+                                                  "Print Error: "+
+                                                  e.getMessage(),
                                                   Toast.LENGTH_LONG
                                           ).show();
                                       }
@@ -1801,31 +2949,31 @@ jobs:
 
                                               values.put(
                                                       MediaStore.Downloads
-                                                              .DISPLAY_NAME,
+                                                          .DISPLAY_NAME,
                                                       filename
                                               );
 
                                               values.put(
                                                       MediaStore.Downloads
-                                                              .MIME_TYPE,
+                                                          .MIME_TYPE,
                                                       "application/json"
                                               );
 
                                               values.put(
                                                       MediaStore.Downloads
-                                                              .RELATIVE_PATH,
+                                                          .RELATIVE_PATH,
                                                       Environment
-                                                              .DIRECTORY_DOWNLOADS
+                                                          .DIRECTORY_DOWNLOADS
                                               );
 
                                               Uri uri =
                                                       getContentResolver()
-                                                              .insert(
-                                                                      MediaStore
-                                                                              .Downloads
-                                                                              .EXTERNAL_CONTENT_URI,
-                                                                      values
-                                                              );
+                                                          .insert(
+                                                              MediaStore
+                                                                  .Downloads
+                                                                  .EXTERNAL_CONTENT_URI,
+                                                              values
+                                                          );
 
                                               if (
                                                       uri !=
@@ -1833,11 +2981,11 @@ jobs:
                                               ) {
 
                                                   try (
-                                                          OutputStream output =
-                                                                  getContentResolver()
-                                                                          .openOutputStream(
-                                                                                  uri
-                                                                          )
+                                                      OutputStream output =
+                                                          getContentResolver()
+                                                              .openOutputStream(
+                                                                  uri
+                                                              )
                                                   ) {
 
                                                       if (
@@ -1846,15 +2994,15 @@ jobs:
                                                       ) {
 
                                                           output.write(
-                                                                  json.getBytes(
-                                                                          StandardCharsets.UTF_8
-                                                                  )
+                                                              json.getBytes(
+                                                                  StandardCharsets.UTF_8
+                                                              )
                                                           );
 
                                                           output.flush();
 
                                                           success =
-                                                                  true;
+                                                              true;
                                                       }
                                                   }
                                               }
@@ -1863,40 +3011,41 @@ jobs:
 
                                               File directory =
                                                       Environment
-                                                              .getExternalStoragePublicDirectory(
-                                                                      Environment
-                                                                              .DIRECTORY_DOWNLOADS
-                                                              );
+                                                          .getExternalStoragePublicDirectory(
+                                                              Environment
+                                                                  .DIRECTORY_DOWNLOADS
+                                                          );
 
                                               if (
                                                       !directory.exists()
                                               ) {
+
                                                   directory.mkdirs();
                                               }
 
                                               File file =
                                                       new File(
-                                                              directory,
-                                                              filename
+                                                          directory,
+                                                          filename
                                                       );
 
                                               try (
-                                                      FileOutputStream output =
-                                                              new FileOutputStream(
-                                                                      file
-                                                              )
+                                                  FileOutputStream output =
+                                                      new FileOutputStream(
+                                                          file
+                                                      )
                                               ) {
 
                                                   output.write(
-                                                          json.getBytes(
-                                                                  StandardCharsets.UTF_8
-                                                          )
+                                                      json.getBytes(
+                                                          StandardCharsets.UTF_8
+                                                      )
                                                   );
 
                                                   output.flush();
 
                                                   success =
-                                                          true;
+                                                      true;
                                               }
                                           }
 
@@ -1907,10 +3056,8 @@ jobs:
                                           e.printStackTrace();
                                       }
 
-
                                       final boolean result =
                                               success;
-
 
                                       runOnUiThread(
                                               new Runnable() {
@@ -1919,11 +3066,11 @@ jobs:
                                                   public void run() {
 
                                                       Toast.makeText(
-                                                              MainActivity.this,
-                                                              result
-                                                                      ? "Backup Downloads मध्ये Save झाला."
-                                                                      : "Backup Save मध्ये त्रुटी आली.",
-                                                              Toast.LENGTH_LONG
+                                                          MainActivity.this,
+                                                          result
+                                                              ? "Backup Downloads मध्ये Save झाला."
+                                                              : "Backup Save मध्ये त्रुटी आली.",
+                                                          Toast.LENGTH_LONG
                                                       ).show();
                                                   }
                                               }
@@ -1947,7 +3094,6 @@ jobs:
                           data
                   );
 
-
                   if (
                           requestCode ==
                                   REQUEST_FILE &&
@@ -1968,13 +3114,13 @@ jobs:
 
                           results =
                                   new Uri[]{
-                                          data.getData()
+                                      data.getData()
                                   };
                       }
 
                       filePathCallback
                               .onReceiveValue(
-                                      results
+                                  results
                               );
 
                       filePathCallback =
@@ -2001,7 +3147,7 @@ jobs:
           }
           EOF
 
-      - name: Validate Android Java
+      - name: Compile Java
         shell: bash
         run: |
           set -euo pipefail
@@ -2027,12 +3173,13 @@ jobs:
 
           cd ..
 
-          test -s \
-            mbms_android/app/build/outputs/apk/debug/app-debug.apk
+          APK="release/MBMS-V128-MB-SUMMARY-LINKED-CORRECTED.apk"
 
           cp \
             mbms_android/app/build/outputs/apk/debug/app-debug.apk \
-            release/MBMS-V128-MB-SUMMARY-LINKED-CORRECTED.apk
+            "$APK"
+
+          test -s "$APK"
 
       - name: Verify APK
         shell: bash
@@ -2040,8 +3187,6 @@ jobs:
           set -euo pipefail
 
           APK="release/MBMS-V128-MB-SUMMARY-LINKED-CORRECTED.apk"
-
-          test -s "$APK"
 
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" \
             verify \
@@ -2053,9 +3198,7 @@ jobs:
           sha256sum "$APK" \
             | tee release/SHA256.txt
 
-          echo "APK SIGNATURE AND ZIP VERIFICATION PASSED."
-
-      - name: Upload APK Artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v7
         with:
           name: MBMS-V128-MB-SUMMARY-LINKED-CORRECTED
