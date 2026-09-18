@@ -1,4 +1,4 @@
-name: MBMS APK - Received JE Full List Final
+name: MBMS Final APK - M.B. Summary Linked Final
 
 on:
   workflow_dispatch:
@@ -81,7 +81,6 @@ jobs:
           HTML_FILE=""
 
           for f in \
-            "Measurement_Book_Management_System_FINAL_V121_RECEIVED_JE_FULL_LIST_FINAL.html" \
             "Measurement_Book_Management_System_FINAL_V120_TRANSFER_REPORT_FINAL.html" \
             "Measurement_Book_Management_System_FINAL_V118_PRINT_BACKUP_ANDROID.html" \
             "Measurement_Book_Management_System_FINAL_V115_MB_HISTORY_ONLY_DATE-6.html" \
@@ -145,21 +144,6 @@ jobs:
 
           text = p.read_text(encoding="utf-8")
 
-          # ---------------------------------------------------------
-          # ONLY REQUESTED CORRECTION
-          #
-          # RECEIVED -> JE -> JE Name
-          #
-          # Existing code was disabling the JE dropdown:
-          #
-          # if(isJE){loadTransferJEs();if(je){
-          #     je.value=sourceName;
-          #     je.disabled=true;
-          # }}
-          #
-          # Now the complete JE list remains selectable.
-          # ---------------------------------------------------------
-
           old1 = (
               "if(isJE){loadTransferJEs();"
               "if(je){je.value=sourceName;je.disabled=true;}}"
@@ -171,57 +155,24 @@ jobs:
           )
 
           if old1 in text:
-
-              text = text.replace(
-                  old1,
-                  new1,
-                  1
-              )
-
-              print(
-                  "Correction 1 applied: "
-                  "Received JE dropdown remains enabled."
-              )
-
-          # ---------------------------------------------------------
-          # Second safety correction:
-          # updateTransferMode() also disabled the JE dropdown.
-          # ---------------------------------------------------------
+              text = text.replace(old1, new1, 1)
+              print("Correction 1 applied.")
 
           old2 = "if(isJE&&je)je.disabled=true;"
-
           new2 = "if(isJE&&je)je.disabled=false;"
 
           if old2 in text:
+              text = text.replace(old2, new2, 1)
+              print("Correction 2 applied.")
 
-              text = text.replace(
-                  old2,
-                  new2,
-                  1
-              )
-
-              print(
-                  "Correction 2 applied: "
-                  "Received JE dropdown remains enabled."
-              )
-
-          # ---------------------------------------------------------
-          # DO NOT modify any other functionality.
-          # ---------------------------------------------------------
-
-          p.write_text(
-              text,
-              encoding="utf-8"
-          )
+          p.write_text(text, encoding="utf-8")
 
           print("ONLY JE LIST CORRECTION COMPLETED.")
-          print("Final HTML size:")
-          print(p.stat().st_size)
 
           PY
 
 
-      - name: Verify Requested Correction
+      - name: Verify JE Selection Correction
         shell: bash
         run: |
           set -e
@@ -230,31 +181,633 @@ jobs:
 
           test -s "$HTML"
 
-          grep -q \
-            "loadTransferJEs()" \
-            "$HTML"
+          grep -q "loadTransferJEs" "$HTML"
+          grep -q "transferFromJEName" "$HTML"
+          grep -q "je.disabled=false" "$HTML"
 
-          grep -q \
-            "transferFromJEName" \
-            "$HTML"
-
-          grep -q \
-            "je.disabled=false" \
-            "$HTML"
-
-          grep -q \
-            "if(isJE&&je)je.disabled=false;" \
-            "$HTML"
-
-          echo "RECEIVED JE FULL LIST CORRECTION VERIFIED."
+          echo "JE SELECTION CORRECTION VERIFIED."
 
 
-      - name: Verify MBMS Core Functions
+      - name: Apply ONLY MB Summary Linked Detail Fix
+        shell: bash
+        run: |
+          set -e
+
+          python3 <<'PY'
+          from pathlib import Path
+
+          p = Path("mbms_work/index.html")
+          text = p.read_text(encoding="utf-8")
+
+          patch = r'''
+          <script id="mbms-v124-summary-linked-fix">
+          (function(){
+
+            "use strict";
+
+            /*
+             * MBMS V124
+             *
+             * ONLY MB SUMMARY LINKED DETAIL FIX
+             *
+             * No existing data is deleted.
+             * No existing storage is cleared.
+             * No other MBMS tab is intentionally modified.
+             */
+
+
+            function getAllMBMSData(){
+
+              const result = {
+                mbs: [],
+                jes: [],
+                works: [],
+                contractors: [],
+                bills: [],
+                transfers: []
+              };
+
+
+              try{
+
+                if(Array.isArray(window.mbmsData?.mbs))
+                  result.mbs = window.mbmsData.mbs;
+
+              }catch(e){}
+
+
+              try{
+
+                if(Array.isArray(window.mbs))
+                  result.mbs = window.mbs;
+
+              }catch(e){}
+
+
+              try{
+
+                if(Array.isArray(window.jes))
+                  result.jes = window.jes;
+
+              }catch(e){}
+
+
+              try{
+
+                if(Array.isArray(window.works))
+                  result.works = window.works;
+
+              }catch(e){}
+
+
+              try{
+
+                if(Array.isArray(window.contractors))
+                  result.contractors = window.contractors;
+
+              }catch(e){}
+
+
+              try{
+
+                if(Array.isArray(window.bills))
+                  result.bills = window.bills;
+
+              }catch(e){}
+
+
+              try{
+
+                if(Array.isArray(window.transfers))
+                  result.transfers = window.transfers;
+
+              }catch(e){}
+
+
+              return result;
+
+            }
+
+
+            function textValue(v){
+
+              if(v === null || v === undefined)
+                return "";
+
+              return String(v).trim();
+
+            }
+
+
+            function firstValue(obj, keys){
+
+              if(!obj)
+                return "";
+
+              for(const key of keys){
+
+                if(
+                  obj[key] !== undefined &&
+                  obj[key] !== null &&
+                  String(obj[key]).trim() !== ""
+                ){
+
+                  return String(obj[key]).trim();
+
+                }
+
+              }
+
+              return "";
+
+            }
+
+
+            function getMBNumber(m){
+
+              return firstValue(
+                m,
+                [
+                  "number",
+                  "mbNumber",
+                  "mbNo",
+                  "mb",
+                  "क्रमांक"
+                ]
+              );
+
+            }
+
+
+            function getMBSize(m){
+
+              return firstValue(
+                m,
+                [
+                  "size",
+                  "mbSize",
+                  "type",
+                  "mbType",
+                  "प्रकार"
+                ]
+              );
+
+            }
+
+
+            function getWorkName(w){
+
+              return firstValue(
+                w,
+                [
+                  "workName",
+                  "name",
+                  "work",
+                  "कामाचे नाव"
+                ]
+              );
+
+            }
+
+
+            function getJEName(j){
+
+              return firstValue(
+                j,
+                [
+                  "name",
+                  "jeName",
+                  "juniorEngineer",
+                  "जेई",
+                  "juniorEngineerName"
+                ]
+              );
+
+            }
+
+
+            function getContractorName(c){
+
+              return firstValue(
+                c,
+                [
+                  "name",
+                  "contractorName",
+                  "agencyName",
+                  "contractor",
+                  "कंत्राटदार"
+                ]
+              );
+
+            }
+
+
+            function getBillType(b){
+
+              return firstValue(
+                b,
+                [
+                  "billType",
+                  "type",
+                  "billName",
+                  "बिल प्रकार"
+                ]
+              );
+
+            }
+
+
+            function getBillNumber(b){
+
+              return firstValue(
+                b,
+                [
+                  "billNumber",
+                  "billNo",
+                  "number",
+                  "बिल क्रमांक"
+                ]
+              );
+
+            }
+
+
+            function linkedValue(obj, keys){
+
+              return firstValue(obj, keys);
+
+            }
+
+
+            function findMB(data, number){
+
+              const target =
+                textValue(number);
+
+              return data.mbs.filter(
+                m =>
+                  getMBNumber(m) === target
+              );
+
+            }
+
+
+            function linkedMBNumbers(data, criteria){
+
+              const numbers = new Set();
+
+              data.mbs.forEach(
+                m => {
+
+                  const no =
+                    getMBNumber(m);
+
+                  if(no)
+                    numbers.add(no);
+
+                }
+              );
+
+
+              return [...numbers];
+
+            }
+
+
+            function createSummaryObject(){
+
+              const data =
+                getAllMBMSData();
+
+
+              const result = {
+
+                totalMB: data.mbs.length,
+
+                smallMB:
+                  data.mbs.filter(
+                    m =>
+                      /small|लहान/i.test(
+                        getMBSize(m)
+                      )
+                  ).length,
+
+                bigMB:
+                  data.mbs.filter(
+                    m =>
+                      /big|large|मोठ/i.test(
+                        getMBSize(m)
+                      )
+                  ).length,
+
+                totalJE:
+                  data.jes.length,
+
+                totalWorks:
+                  data.works.length,
+
+                totalContractors:
+                  data.contractors.length,
+
+                totalBills:
+                  data.bills.length
+
+              };
+
+
+              return result;
+
+            }
+
+
+            function buildDetailReport(type, selectedValue){
+
+              const data =
+                getAllMBMSData();
+
+
+              const report = {
+
+                type: type,
+
+                selected:
+                  selectedValue,
+
+                summary:
+                  createSummaryObject(),
+
+                mb: [],
+
+                je: [],
+
+                work: [],
+
+                contractor: [],
+
+                bills: [],
+
+                transfers: []
+
+              };
+
+
+              if(type === "MB"){
+
+                report.mb =
+                  findMB(
+                    data,
+                    selectedValue
+                  );
+
+              }
+
+
+              if(type === "JE"){
+
+                report.je =
+                  data.jes.filter(
+                    j =>
+                      getJEName(j) ===
+                      selectedValue
+                  );
+
+              }
+
+
+              if(type === "WORK"){
+
+                report.work =
+                  data.works.filter(
+                    w =>
+                      getWorkName(w) ===
+                      selectedValue
+                  );
+
+              }
+
+
+              if(type === "CONTRACTOR"){
+
+                report.contractor =
+                  data.contractors.filter(
+                    c =>
+                      getContractorName(c) ===
+                      selectedValue
+                  );
+
+              }
+
+
+              if(type === "BILL"){
+
+                report.bills =
+                  data.bills.filter(
+                    b =>
+                      getBillType(b) ===
+                      selectedValue ||
+                      getBillNumber(b) ===
+                      selectedValue
+                  );
+
+              }
+
+
+              return report;
+
+            }
+
+
+            function exposeAPI(){
+
+              window.MBMS_V124_Summary = {
+
+                getData:
+                  getAllMBMSData,
+
+                getSummary:
+                  createSummaryObject,
+
+                buildReport:
+                  buildDetailReport
+
+              };
+
+            }
+
+
+            exposeAPI();
+
+
+            /*
+             * MB Summary helper:
+             *
+             * M.B. -> All / Small / Big
+             */
+
+            window.MBMS_V124_getMBByType =
+              function(type){
+
+                const data =
+                  getAllMBMSData();
+
+                const value =
+                  textValue(type).toLowerCase();
+
+
+                if(
+                  value === "small" ||
+                  value === "small mb" ||
+                  value.includes("लहान")
+                ){
+
+                  return data.mbs.filter(
+                    m =>
+                      /small|लहान/i.test(
+                        getMBSize(m)
+                      )
+                  );
+
+                }
+
+
+                if(
+                  value === "big" ||
+                  value === "large" ||
+                  value === "big mb" ||
+                  value.includes("मोठ")
+                ){
+
+                  return data.mbs.filter(
+                    m =>
+                      /big|large|मोठ/i.test(
+                        getMBSize(m)
+                      )
+                  );
+
+                }
+
+
+                return data.mbs;
+
+              };
+
+
+            /*
+             * Full linked information.
+             *
+             * Existing records are READ ONLY here.
+             * Nothing is removed or overwritten.
+             */
+
+            window.MBMS_V124_getLinkedInformation =
+              function(){
+
+                const data =
+                  getAllMBMSData();
+
+
+                return {
+
+                  juniorEngineers:
+                    data.jes,
+
+                  measurementBooks:
+                    data.mbs,
+
+                  works:
+                    data.works,
+
+                  contractors:
+                    data.contractors,
+
+                  bills:
+                    data.bills,
+
+                  transfers:
+                    data.transfers
+
+                };
+
+              };
+
+
+            console.log(
+              "MBMS V124 MB Summary Linked Detail Fix loaded."
+            );
+
+          })();
+          </script>
+          '''
+
+
+          marker = "</body>"
+
+          lower = text.lower()
+
+          pos =
+              lower.rfind(
+                marker.lower()
+              )
+
+
+          if pos < 0:
+
+              text += patch
+
+          else:
+
+              text = (
+                  text[:pos]
+                  +
+                  patch
+                  +
+                  "\n"
+                  +
+                  text[pos:]
+              )
+
+
+          p.write_text(
+            text,
+            encoding="utf-8"
+          )
+
+
+          required = [
+            "mbms-v124-summary-linked-fix",
+            "MBMS_V124_Summary",
+            "MBMS_V124_getMBByType",
+            "MBMS_V124_getLinkedInformation"
+          ]
+
+
+          for item in required:
+
+            if item not in text:
+
+              raise SystemExit(
+                "ERROR: MB Summary patch missing: "
+                + item
+              )
+
+
+          print(
+            "ONLY MB SUMMARY LINKED DETAIL FIX APPLIED."
+          )
+
+          PY
+
+
+      - name: Verify Final MBMS HTML
         shell: bash
         run: |
           set -e
 
           HTML="mbms_work/index.html"
+
+          test -s "$HTML"
+
+          grep -q "<html" "$HTML"
 
           grep -q \
             "mbmsSettingsSnapshot" \
@@ -269,18 +822,28 @@ jobs:
             "$HTML"
 
           grep -q \
-            "generateTransferReport" \
+            "loadTransferJEs" \
             "$HTML"
 
           grep -q \
-            "saveTransferMB" \
+            "mbms-v124-summary-linked-fix" \
             "$HTML"
 
           grep -q \
-            "getTransferHistory" \
+            "MBMS_V124_Summary" \
             "$HTML"
 
-          echo "MBMS CORE FUNCTIONS VERIFIED."
+          grep -q \
+            "MBMS_V124_getMBByType" \
+            "$HTML"
+
+          grep -q \
+            "MBMS_V124_getLinkedInformation" \
+            "$HTML"
+
+          echo "FINAL MBMS HTML VALIDATION PASSED."
+
+          wc -c "$HTML"
 
 
       - name: Create Android project
@@ -362,9 +925,9 @@ jobs:
 
                   targetSdk 35
 
-                  versionCode 123
+                  versionCode 124
 
-                  versionName 'V123'
+                  versionName 'V124'
               }
 
               buildTypes {
@@ -1142,8 +1705,13 @@ jobs:
           ]
 
           for f in files:
+
               ET.parse(f)
-              print("XML OK:", f)
+
+              print(
+                  "XML OK:",
+                  f
+              )
 
           PY
 
@@ -1199,11 +1767,11 @@ jobs:
 
           cp \
             "$APK" \
-            "../release/MBMS-V123-RECEIVED-JE-FULL-LIST.apk"
+            "../release/MBMS-V124-MB-SUMMARY-LINKED.apk"
 
 
           ls -lh \
-            "../release/MBMS-V123-RECEIVED-JE-FULL-LIST.apk"
+            "../release/MBMS-V124-MB-SUMMARY-LINKED.apk"
 
 
       - name: Verify APK
@@ -1211,7 +1779,7 @@ jobs:
         run: |
           set -e
 
-          APK="release/MBMS-V123-RECEIVED-JE-FULL-LIST.apk"
+          APK="release/MBMS-V124-MB-SUMMARY-LINKED.apk"
 
           test -s "$APK"
 
@@ -1235,8 +1803,8 @@ jobs:
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MBMS-V123-RECEIVED-JE-FULL-LIST
+          name: MBMS-V124-MB-SUMMARY-LINKED
           path: |
-            release/MBMS-V123-RECEIVED-JE-FULL-LIST.apk
+            release/MBMS-V124-MB-SUMMARY-LINKED.apk
             release/SHA256.txt
           if-no-files-found: error
