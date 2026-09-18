@@ -1,2659 +1,126 @@
-      - name: Apply ONLY MB Summary Relationship and Detail Fix
+name: MBMS V126 FINAL - Stable APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Final MBMS APK
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Install Android SDK 35
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Install Gradle 8.7
+        shell: bash
+        run: |
+          set -euo pipefail
+          wget -q https://services.gradle.org/distributions/gradle-8.7-bin.zip
+          mkdir -p "$HOME/gradle"
+          unzip -q gradle-8.7-bin.zip -d "$HOME/gradle"
+          echo "$HOME/gradle/gradle-8.7/bin" >> "$GITHUB_PATH"
+
+      - name: Find MBMS HTML
+        shell: bash
+        run: |
+          set -euo pipefail
+          HTML_FILE=""
+
+          for f in \
+            "Measurement_Book_Management_System_FINAL_V120_TRANSFER_REPORT_FINAL.html" \
+            "Measurement_Book_Management_System_FINAL_V118_PRINT_BACKUP_ANDROID.html" \
+            "Measurement_Book_Management_System_FINAL_V115_MB_HISTORY_ONLY_DATE-6.html" \
+            "Measurement_Book_Management_System_FINAL_V115_MB_HISTORY_ONLY_DATE.html" \
+            "Measurement_Book_Management_System_FINAL_V115.html" \
+            "V115.html" \
+            "index.html"
+          do
+            if [ -f "$f" ]; then
+              HTML_FILE="$f"
+              break
+            fi
+          done
+
+          if [ -z "$HTML_FILE" ]; then
+            HTML_FILE="$(
+              find . \
+                -maxdepth 3 \
+                -type f \
+                -iname '*.html' \
+                -not -path './.git/*' \
+                | head -n 1 || true
+            )"
+          fi
+
+          if [ -z "$HTML_FILE" ]; then
+            echo "ERROR: MBMS HTML file not found."
+            exit 1
+          fi
+
+          echo "HTML_FILE=$HTML_FILE" >> "$GITHUB_ENV"
+          echo "Using: $HTML_FILE"
+
+      - name: Prepare MBMS HTML
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          rm -rf mbms_work release mbms_android
+
+          mkdir -p mbms_work release
+
+          cp "$HTML_FILE" mbms_work/index.html
+
+          test -s mbms_work/index.html
+
+      - name: Apply ONLY Received to JE correction
+        shell: bash
+        run: |
+          set -euo pipefail
 
           python3 <<'PY'
           from pathlib import Path
 
           p = Path("mbms_work/index.html")
-          text = p.read_text(encoding="utf-8")
 
-          # ---------------------------------------------------------
-          # ONLY REQUESTED MB SUMMARY CHANGE
-          # ---------------------------------------------------------
-          patch = r'''
-          /* V126 - ONLY HOME MB SUMMARY RELATIONSHIP REPORT FIX */
-          (function(){
-            'use strict';
-
-            const ALL_DETAIL='__ALL_DETAIL__';
-            const SMALL='__SMALL_MB__';
-            const LARGE='__LARGE_MB__';
-            const MBNO='__MBNO__::';
-
-            function safeArray(v){ return Array.isArray(v)?v:[]; }
-
-            function n(v){
-              try{
-                return hrNorm(v);
-              }catch(e){
-                try{
-                  return norm(String(v??''));
-                }catch(e2){
-                  return String(v??'').trim().toLowerCase();
-                }
-              }
-            }
-
-            function s(v){
-              return v==null?'':String(v);
-            }
-
-            function esc(v){
-              try{
-                return escapeHtml(v==null?'':String(v));
-              }catch(e){
-                return String(v??'');
-              }
-            }
-
-            function date(v){
-              try{
-                return hrDate(v||'');
-              }catch(e){
-                try{
-                  return billDateText(v||'')||'-';
-                }catch(e2){
-                  return v||'-';
-                }
-              }
-            }
-
-            function amount(v){
-              try{
-                return billAmountText(v);
-              }catch(e){
-                return '₹ 0.00';
-              }
-            }
-
-            function uniqueSorted(values){
-              return [...new Set(
-                values
-                  .map(v=>s(v).trim())
-                  .filter(Boolean)
-              )].sort(
-                (a,b)=>a.localeCompare(
-                  b,
-                  undefined,
-                  {
-                    numeric:true,
-                    sensitivity:'base'
-                  }
-                )
-              );
-            }
-
-            function mbNo(m){
-              return s(
-                m?.number ||
-                m?.mbNumber ||
-                m?.mb ||
-                ''
-              ).trim();
-            }
-
-            function workName(w){
-              return s(
-                w?.name ||
-                w?.work ||
-                w?.workName ||
-                ''
-              ).trim();
-            }
-
-            function holder(no){
-              try{
-                return mbSummaryCurrentHolder(no);
-              }catch(e){
-                return {
-                  location:'available',
-                  name:'उपलब्ध M.B.',
-                  type:'AVAILABLE',
-                  date:''
-                };
-              }
-            }
-
-            function holderName(no){
-              const h=holder(no);
-
-              if(h.location==='je'){
-                return h.name||'JE';
-              }
-
-              if(h.location==='office'){
-                return 'विभागीय कार्यालय';
-              }
-
-              if(h.location==='available'){
-                return 'उपलब्ध M.B.';
-              }
-
-              return h.name||'इतर';
-            }
-
-            function sizeKey(v){
-              const x=n(v);
-
-              if(
-                x==='small' ||
-                x.includes('small') ||
-                x.includes('लहान')
-              ){
-                return 'SMALL';
-              }
-
-              if(
-                x==='large' ||
-                x.includes('large') ||
-                x.includes('big') ||
-                x.includes('मोठ')
-              ){
-                return 'LARGE';
-              }
-
-              return '';
-            }
-
-            function emptySet(){
-              return {
-                mbs:[],
-                jes:[],
-                works:[],
-                assigns:[],
-                transfers:[],
-                bills:[]
-              };
-            }
-
-            function linkedByMB(d,numbers){
-              const set=new Set(
-                numbers
-                  .filter(Boolean)
-                  .map(n)
-              );
-
-              const out=emptySet();
-
-              out.mbs=d.mbs.filter(
-                x=>set.has(n(mbNo(x)))
-              );
-
-              out.works=d.works.filter(
-                x=>set.has(n(x?.mb))
-              );
-
-              out.assigns=d.assigns.filter(
-                x=>set.has(n(x?.mb))
-              );
-
-              out.bills=d.bills.filter(
-                x=>set.has(n(x?.mb))
-              );
-
-              out.transfers=d.transfers.filter(
-                x=>set.has(
-                  n(x?.number||x?.mb)
-                )
-              );
-
-              return out;
-            }
-
-            function baseForContext(ctx,d){
-              const out=emptySet();
-
-              const target=
-                ctx.target ||
-                '__ALL__';
-
-              const all=
-                target==='__ALL__';
-
-              if(ctx.type==='MB'){
-
-                out.mbs=
-                  all
-                    ? d.mbs
-                    : d.mbs.filter(
-                        x=>n(mbNo(x))===n(target)
-                      );
-
-                const nums=
-                  all
-                    ? null
-                    : new Set(
-                        out.mbs
-                          .map(mbNo)
-                          .map(n)
-                      );
-
-                out.works=
-                  all
-                    ? d.works
-                    : d.works.filter(
-                        x=>nums.has(n(x?.mb))
-                      );
-
-                out.assigns=
-                  all
-                    ? d.assigns
-                    : d.assigns.filter(
-                        x=>nums.has(n(x?.mb))
-                      );
-
-                out.bills=
-                  all
-                    ? d.bills
-                    : d.bills.filter(
-                        x=>nums.has(n(x?.mb))
-                      );
-
-                out.transfers=
-                  all
-                    ? d.transfers
-                    : d.transfers.filter(
-                        x=>nums.has(
-                          n(x?.number||x?.mb)
-                        )
-                      );
-
-                return out;
-              }
-
-              if(ctx.type==='JE'){
-
-                out.works=
-                  all
-                    ? d.works
-                    : d.works.filter(
-                        x=>n(x?.je)===n(target)
-                      );
-
-                out.assigns=
-                  all
-                    ? d.assigns
-                    : d.assigns.filter(
-                        x=>n(x?.je)===n(target)
-                      );
-
-                out.bills=
-                  all
-                    ? d.bills
-                    : d.bills.filter(
-                        x=>n(x?.je)===n(target)
-                      );
-
-                const nums=
-                  uniqueSorted(
-                    out.works.map(x=>x?.mb)
-                      .concat(
-                        out.assigns.map(x=>x?.mb)
-                      )
-                      .concat(
-                        out.bills.map(x=>x?.mb)
-                      )
-                  );
-
-                out.mbs=
-                  nums.length
-                    ? d.mbs.filter(
-                        x=>nums.includes(mbNo(x))
-                      )
-                    : [];
-
-                out.transfers=
-                  nums.length
-                    ? d.transfers.filter(
-                        x=>nums.includes(
-                          s(x?.number||x?.mb).trim()
-                        )
-                      )
-                    : [];
-
-                return out;
-              }
-
-              if(ctx.type==='WORK'){
-
-                out.works=
-                  all
-                    ? d.works
-                    : d.works.filter(
-                        x=>n(workName(x))===n(target)
-                      );
-
-                const names=new Set(
-                  out.works.map(
-                    x=>n(workName(x))
-                  )
-                );
-
-                out.bills=
-                  all
-                    ? d.bills
-                    : d.bills.filter(
-                        x=>names.has(
-                          n(workName(x))
-                        )
-                      );
-
-                const nums=
-                  uniqueSorted(
-                    out.works.map(x=>x?.mb)
-                      .concat(
-                        out.bills.map(x=>x?.mb)
-                      )
-                  );
-
-                out.mbs=
-                  nums.length
-                    ? d.mbs.filter(
-                        x=>nums.includes(mbNo(x))
-                      )
-                    : [];
-
-                out.assigns=
-                  nums.length
-                    ? d.assigns.filter(
-                        x=>nums.includes(
-                          s(x?.mb).trim()
-                        )
-                      )
-                    : [];
-
-                out.transfers=
-                  nums.length
-                    ? d.transfers.filter(
-                        x=>nums.includes(
-                          s(x?.number||x?.mb).trim()
-                        )
-                      )
-                    : [];
-
-                return out;
-              }
-
-              if(ctx.type==='CONTRACTOR'){
-
-                out.works=
-                  all
-                    ? d.works
-                    : d.works.filter(
-                        x=>n(x?.contractor)===n(target)
-                      );
-
-                out.assigns=
-                  all
-                    ? d.assigns
-                    : d.assigns.filter(
-                        x=>n(x?.contractor)===n(target)
-                      );
-
-                out.bills=
-                  all
-                    ? d.bills
-                    : d.bills.filter(
-                        x=>n(x?.contractor)===n(target)
-                      );
-
-                const nums=
-                  uniqueSorted(
-                    out.works.map(x=>x?.mb)
-                      .concat(
-                        out.assigns.map(x=>x?.mb)
-                      )
-                      .concat(
-                        out.bills.map(x=>x?.mb)
-                      )
-                  );
-
-                out.mbs=
-                  nums.length
-                    ? d.mbs.filter(
-                        x=>nums.includes(mbNo(x))
-                      )
-                    : [];
-
-                out.transfers=
-                  nums.length
-                    ? d.transfers.filter(
-                        x=>nums.includes(
-                          s(x?.number||x?.mb).trim()
-                        )
-                      )
-                    : [];
-
-                return out;
-              }
-
-              out.bills=
-                all
-                  ? d.bills
-                  : d.bills.filter(
-                      x=>n(
-                        x?.billNo||x?.billType
-                      )===n(target)
-                    );
-
-              const nums=
-                uniqueSorted(
-                  out.bills.map(x=>x?.mb)
-                );
-
-              out.mbs=
-                nums.length
-                  ? d.mbs.filter(
-                      x=>nums.includes(mbNo(x))
-                    )
-                  : [];
-
-              const mset=
-                new Set(nums.map(n));
-
-              out.works=
-                all
-                  ? d.works
-                  : d.works.filter(
-                      x=>
-                        mset.has(n(x?.mb)) ||
-                        out.bills.some(
-                          b=>
-                            n(workName(b))===
-                            n(workName(x))
-                        )
-                    );
-
-              out.assigns=
-                nums.length
-                  ? d.assigns.filter(
-                      x=>mset.has(n(x?.mb))
-                    )
-                  : [];
-
-              out.transfers=
-                nums.length
-                  ? d.transfers.filter(
-                      x=>mset.has(
-                        n(x?.number||x?.mb)
-                      )
-                    )
-                  : [];
-
-              return out;
-            }
-
-            function filterByComponent(ctx,base,d){
-
-              const c=ctx.ctype;
-              const detail=ctx.detail||'';
-
-              const out={
-                mbs:base.mbs.slice(),
-                jes:base.jes.slice(),
-                works:base.works.slice(),
-                assigns:base.assigns.slice(),
-                transfers:base.transfers.slice(),
-                bills:base.bills.slice()
-              };
-
-              if(c==='ALL'){
-                return out;
-              }
-
-              if(c==='MB'){
-
-                if(
-                  detail===SMALL ||
-                  detail===LARGE
-                ){
-
-                  const wanted=
-                    detail===SMALL
-                      ? 'SMALL'
-                      : 'LARGE';
-
-                  out.mbs=
-                    out.mbs.filter(
-                      x=>sizeKey(x?.size)===wanted
-                    );
-
-                }else if(
-                  detail.startsWith(MBNO)
-                ){
-
-                  const selected=
-                    detail.slice(MBNO.length);
-
-                  out.mbs=
-                    out.mbs.filter(
-                      x=>n(mbNo(x))===n(selected)
-                    );
-                }
-
-                const nums=
-                  new Set(
-                    out.mbs.map(
-                      x=>n(mbNo(x))
-                    )
-                  );
-
-                out.works=
-                  out.works.filter(
-                    x=>nums.has(n(x?.mb))
-                  );
-
-                out.assigns=
-                  out.assigns.filter(
-                    x=>nums.has(n(x?.mb))
-                  );
-
-                out.bills=
-                  out.bills.filter(
-                    x=>nums.has(n(x?.mb))
-                  );
-
-                out.transfers=
-                  out.transfers.filter(
-                    x=>nums.has(
-                      n(x?.number||x?.mb)
-                    )
-                  );
-
-                return out;
-              }
-
-              if(c==='WORK'){
-
-                if(
-                  detail &&
-                  detail!==ALL_DETAIL
-                ){
-
-                  out.works=
-                    out.works.filter(
-                      x=>n(workName(x))===n(detail)
-                    );
-
-                  out.bills=
-                    out.bills.filter(
-                      x=>n(workName(x))===n(detail)
-                    );
-                }
-
-                const nums=
-                  new Set(
-                    out.works.map(x=>n(x?.mb))
-                      .concat(
-                        out.bills.map(x=>n(x?.mb))
-                      )
-                  );
-
-                out.mbs=
-                  out.mbs.filter(
-                    x=>nums.has(n(mbNo(x)))
-                  );
-
-                out.assigns=
-                  out.assigns.filter(
-                    x=>nums.has(n(x?.mb))
-                  );
-
-                out.transfers=
-                  out.transfers.filter(
-                    x=>nums.has(
-                      n(x?.number||x?.mb)
-                    )
-                  );
-
-                return out;
-              }
-
-              if(c==='JE'){
-
-                if(
-                  detail &&
-                  detail!==ALL_DETAIL
-                ){
-
-                  out.works=
-                    out.works.filter(
-                      x=>n(x?.je)===n(detail)
-                    );
-
-                  out.assigns=
-                    out.assigns.filter(
-                      x=>n(x?.je)===n(detail)
-                    );
-
-                  out.bills=
-                    out.bills.filter(
-                      x=>n(x?.je)===n(detail)
-                    );
-                }
-
-                const nums=
-                  new Set(
-                    out.works.map(x=>n(x?.mb))
-                      .concat(
-                        out.assigns.map(x=>n(x?.mb))
-                      )
-                      .concat(
-                        out.bills.map(x=>n(x?.mb))
-                      )
-                  );
-
-                out.mbs=
-                  out.mbs.filter(
-                    x=>nums.has(n(mbNo(x)))
-                  );
-
-                out.transfers=
-                  out.transfers.filter(
-                    x=>nums.has(
-                      n(x?.number||x?.mb)
-                    )
-                  );
-
-                return out;
-              }
-
-              if(c==='CONTRACTOR'){
-
-                if(
-                  detail &&
-                  detail!==ALL_DETAIL
-                ){
-
-                  out.works=
-                    out.works.filter(
-                      x=>n(x?.contractor)===n(detail)
-                    );
-
-                  out.assigns=
-                    out.assigns.filter(
-                      x=>n(x?.contractor)===n(detail)
-                    );
-
-                  out.bills=
-                    out.bills.filter(
-                      x=>n(x?.contractor)===n(detail)
-                    );
-                }
-
-                const nums=
-                  new Set(
-                    out.works.map(x=>n(x?.mb))
-                      .concat(
-                        out.assigns.map(x=>n(x?.mb))
-                      )
-                      .concat(
-                        out.bills.map(x=>n(x?.mb))
-                      )
-                  );
-
-                out.mbs=
-                  out.mbs.filter(
-                    x=>nums.has(n(mbNo(x)))
-                  );
-
-                out.transfers=
-                  out.transfers.filter(
-                    x=>nums.has(
-                      n(x?.number||x?.mb)
-                    )
-                  );
-
-                return out;
-              }
-
-              if(c==='BILL'){
-
-                if(
-                  detail &&
-                  detail!==ALL_DETAIL
-                ){
-
-                  out.bills=
-                    out.bills.filter(
-                      x=>n(x?.billType)===n(detail)
-                    );
-                }
-
-                const nums=
-                  new Set(
-                    out.bills.map(x=>n(x?.mb))
-                  );
-
-                out.mbs=
-                  out.mbs.filter(
-                    x=>nums.has(n(mbNo(x)))
-                  );
-
-                out.works=
-                  out.works.filter(
-                    x=>
-                      nums.has(n(x?.mb)) ||
-                      out.bills.some(
-                        b=>n(workName(b))===
-                           n(workName(x))
-                      )
-                  );
-
-                out.assigns=
-                  out.assigns.filter(
-                    x=>nums.has(n(x?.mb))
-                  );
-
-                out.transfers=
-                  out.transfers.filter(
-                    x=>nums.has(
-                      n(x?.number||x?.mb)
-                    )
-                  );
-
-                return out;
-              }
-
-              if(c==='TRANSFER'){
-
-                const transfers=
-                  detail &&
-                  detail!==ALL_DETAIL
-                    ? out.transfers.filter(
-                        x=>n(
-                          x?.number||
-                          x?.mb
-                        )===n(detail)
-                      )
-                    : out.transfers;
-
-                out.transfers=transfers;
-
-                const nums=
-                  new Set(
-                    transfers.map(
-                      x=>n(x?.number||x?.mb)
-                    )
-                  );
-
-                out.mbs=
-                  out.mbs.filter(
-                    x=>nums.has(n(mbNo(x)))
-                  );
-
-                out.works=
-                  out.works.filter(
-                    x=>nums.has(n(x?.mb))
-                  );
-
-                out.assigns=
-                  out.assigns.filter(
-                    x=>nums.has(n(x?.mb))
-                  );
-
-                out.bills=
-                  out.bills.filter(
-                    x=>nums.has(n(x?.mb))
-                  );
-
-                return out;
-              }
-
-              return out;
-            }
-
-            function homeRelData(){
-
-              const d={
-                mbs:[],
-                jes:[],
-                works:[],
-                assigns:[],
-                transfers:[],
-                bills:[]
-              };
-
-              try{
-                d.mbs=safeArray(
-                  window.mbs ||
-                  window.mbData ||
-                  window.measurementBooks
-                );
-              }catch(e){}
-
-              try{
-                d.jes=safeArray(
-                  window.jes ||
-                  window.jeList ||
-                  window.juniorEngineers
-                );
-              }catch(e){}
-
-              try{
-                d.works=safeArray(
-                  window.works ||
-                  window.workList ||
-                  window.workRecords
-                );
-              }catch(e){}
-
-              try{
-                d.assigns=safeArray(
-                  window.assigns ||
-                  window.mbAssignments ||
-                  window.assignments
-                );
-              }catch(e){}
-
-              try{
-                d.transfers=safeArray(
-                  window.transfers ||
-                  window.transferHistory ||
-                  window.mbTransfers
-                );
-              }catch(e){}
-
-              try{
-                d.bills=safeArray(
-                  window.bills ||
-                  window.billList ||
-                  window.billRecords
-                );
-              }catch(e){}
-
-              return d;
-            }
-
-            function getHomeRelationshipContext(){
-
-              const type=
-                document.getElementById(
-                  'homeRelType'
-                )?.value || '';
-
-              const target=
-                document.getElementById(
-                  'homeRelTarget'
-                )?.value || '';
-
-              const ctype=
-                document.getElementById(
-                  'homeRelComponent'
-                )?.value || '';
-
-              const detail=
-                document.getElementById(
-                  'homeRelDetail'
-                )?.value || '';
-
-              const from=
-                document.getElementById(
-                  'homeRelFromDate'
-                )?.value || '';
-
-              const to=
-                document.getElementById(
-                  'homeRelToDate'
-                )?.value || '';
-
-              return {
-                type,
-                target,
-                ctype,
-                detail,
-                from,
-                to
-              };
-            }
-
-            function dateInRange(v,from,to){
-
-              if(!from && !to){
-                return true;
-              }
-
-              const raw=s(v);
-
-              if(!raw){
-                return false;
-              }
-
-              const d=new Date(raw);
-
-              if(Number.isNaN(d.getTime())){
-                return true;
-              }
-
-              if(from){
-
-                const f=
-                  new Date(from+'T00:00:00');
-
-                if(
-                  !Number.isNaN(f.getTime()) &&
-                  d<f
-                ){
-                  return false;
-                }
-              }
-
-              if(to){
-
-                const t=
-                  new Date(to+'T23:59:59');
-
-                if(
-                  !Number.isNaN(t.getTime()) &&
-                  d>t
-                ){
-                  return false;
-                }
-              }
-
-              return true;
-            }
-
-            function filterDateRange(data,ctx){
-
-              if(!ctx.from && !ctx.to){
-                return data;
-              }
-
-              const out={
-                mbs: data.mbs.slice(),
-                jes: data.jes.slice(),
-                works: data.works.slice(),
-                assigns: data.assigns.slice(),
-                transfers: data.transfers.slice(),
-                bills: data.bills.slice()
-              };
-
-              out.mbs=
-                out.mbs.filter(
-                  x=>dateInRange(
-                    x?.date||
-                    x?.mbDate||
-                    x?.createdAt||
-                    x?.savedAt,
-                    ctx.from,
-                    ctx.to
-                  )
-                );
-
-              out.works=
-                out.works.filter(
-                  x=>dateInRange(
-                    x?.date||
-                    x?.workDate||
-                    x?.createdAt||
-                    x?.savedAt,
-                    ctx.from,
-                    ctx.to
-                  )
-                );
-
-              out.assigns=
-                out.assigns.filter(
-                  x=>dateInRange(
-                    x?.date||
-                    x?.assignDate||
-                    x?.createdAt||
-                    x?.savedAt,
-                    ctx.from,
-                    ctx.to
-                  )
-                );
-
-              out.transfers=
-                out.transfers.filter(
-                  x=>dateInRange(
-                    x?.date||
-                    x?.transferDate||
-                    x?.createdAt||
-                    x?.savedAt,
-                    ctx.from,
-                    ctx.to
-                  )
-                );
-
-              out.bills=
-                out.bills.filter(
-                  x=>dateInRange(
-                    x?.billDate||
-                    x?.date||
-                    x?.createdAt||
-                    x?.savedAt,
-                    ctx.from,
-                    ctx.to
-                  )
-                );
-
-              return out;
-            }
-
-            function linkedData(ctx){
-
-              const d=
-                filterDateRange(
-                  homeRelData(),
-                  ctx
-                );
-
-              const base=
-                baseForContext(
-                  ctx,
-                  d
-                );
-
-              return filterByComponent(
-                ctx,
-                base,
-                d
-              );
-            }
-
-            function currentScopeTitle(ctx){
-
-              let title='M.B. Summary';
-
-              if(ctx.type==='JE'){
-                title=
-                  'Junior Engineer : '+
-                  (ctx.target||'सर्व JE');
-              }
-
-              if(ctx.type==='MB'){
-                title=
-                  'M.B. : '+
-                  (ctx.target||'सर्व M.B.');
-              }
-
-              if(ctx.type==='WORK'){
-                title=
-                  'काम : '+
-                  (ctx.target||'सर्व कामे');
-              }
-
-              if(ctx.type==='CONTRACTOR'){
-                title=
-                  'Contractor / Agency : '+
-                  (ctx.target||'सर्व');
-              }
-
-              if(ctx.type==='BILL'){
-                title=
-                  'Bill : '+
-                  (ctx.target||'सर्व Bill');
-              }
-
-              return title;
-            }
-
-            function billStatusText(v){
-
-              const x=n(v);
-
-              if(
-                x.includes('paid') ||
-                x.includes('अदा')
-              ){
-                return 'अदा';
-              }
-
-              if(
-                x.includes('pending') ||
-                x.includes('प्रलंबित')
-              ){
-                return 'प्रलंबित';
-              }
-
-              return s(v)||'-';
-            }
-
-            function summaryCard(
-              label,
-              value,
-              extra
-            ){
-
-              return `
-                <div
-                  style="
-                    border:1px solid #d6dde4;
-                    border-radius:6px;
-                    padding:6px;
-                    background:#fff;
-                  "
-                >
-                  <div
-                    style="
-                      font-size:11px;
-                      color:#5d6670;
-                    "
-                  >${esc(label)}</div>
-
-                  <div
-                    style="
-                      font-size:16px;
-                      font-weight:700;
-                    "
-                  >${esc(value)}</div>
-
-                  ${
-                    extra
-                      ? `
-                        <div
-                          style="
-                            font-size:10px;
-                            color:#69737d;
-                          "
-                        >
-                          ${esc(extra)}
-                        </div>
-                      `
-                      : ''
-                  }
-                </div>
-              `;
-            }
-
-            function renderLinkedSections(
-              ctx,
-              data
-            ){
-
-              const mbs=
-                safeArray(data.mbs);
-
-              const works=
-                safeArray(data.works);
-
-              const bills=
-                safeArray(data.bills);
-
-              const transfers=
-                safeArray(data.transfers);
-
-              const small=
-                mbs.filter(
-                  x=>sizeKey(x?.size)==='SMALL'
-                ).length;
-
-              const large=
-                mbs.filter(
-                  x=>sizeKey(x?.size)==='LARGE'
-                ).length;
-
-              let html='';
-
-              html+=`
-                <div
-                  style="
-                    display:grid;
-                    grid-template-columns:
-                    repeat(4,minmax(0,1fr));
-                    gap:5px;
-                    margin:6px 0;
-                  "
-                >
-                  ${summaryCard(
-                    'एकूण M.B.',
-                    mbs.length,
-                    `Small ${small} | Big ${large}`
-                  )}
-
-                  ${summaryCard(
-                    'कामे',
-                    works.length
-                  )}
-
-                  ${summaryCard(
-                    'Bills',
-                    bills.length
-                  )}
-
-                  ${summaryCard(
-                    'Transfer',
-                    transfers.length
-                  )}
-                </div>
-              `;
-
-              html+=`
-                <div
-                  class="rel-section"
-                  style="
-                    border-top:1px solid #dfe5ea;
-                    margin-top:7px;
-                    padding-top:6px;
-                  "
-                >
-                  <div
-                    class="rel-section-title"
-                    style="
-                      font-weight:700;
-                      margin-bottom:5px;
-                    "
-                  >
-                    M.B. ची संपूर्ण माहिती
-                    (${mbs.length})
-                  </div>
-              `;
-
-              if(mbs.length){
-
-                html+=mbs.map(
-                  (m,i)=>`
-                    <div
-                      style="
-                        border-top:
-                        1px solid #e8eef2;
-                        padding:6px 0;
-                      "
-                    >
-                      <b>${i+1}. M.B. क्रमांक :</b>
-                      ${esc(mbNo(m))}
-
-                      &nbsp; | &nbsp;
-
-                      <b>Size :</b>
-                      ${esc(m?.size||'-')}
-
-                      &nbsp; | &nbsp;
-
-                      <b>Status :</b>
-                      ${esc(m?.status||'-')}
-
-                      &nbsp; | &nbsp;
-
-                      <b>सध्या कुणाकडे :</b>
-                      ${esc(holderName(mbNo(m)))}
-                    </div>
-                  `
-                ).join('');
-
-              }else{
-
-                html+=`
-                  <div class="rel-empty">
-                    नोंद उपलब्ध नाही.
-                  </div>
-                `;
-              }
-
-              html+=`</div>`;
-
-              html+=`
-                <div
-                  class="rel-section"
-                  style="
-                    border-top:1px solid #dfe5ea;
-                    margin-top:7px;
-                    padding-top:6px;
-                  "
-                >
-                  <div
-                    class="rel-section-title"
-                    style="
-                      font-weight:700;
-                      margin-bottom:5px;
-                    "
-                  >
-                    कामांची संपूर्ण माहिती
-                    (${works.length})
-                  </div>
-              `;
-
-              if(works.length){
-
-                html+=works.map(
-                  (w,i)=>`
-                    <div
-                      style="
-                        border-top:
-                        1px solid #e8eef2;
-                        padding:6px 0;
-                      "
-                    >
-                      <b>${i+1}. काम :</b>
-                      ${esc(workName(w)||'-')}
-
-                      &nbsp; | &nbsp;
-
-                      <b>M.B. :</b>
-                      ${esc(w?.mb||'-')}
-
-                      &nbsp; | &nbsp;
-
-                      <b>JE :</b>
-                      ${esc(w?.je||'-')}
-
-                      &nbsp; | &nbsp;
-
-                      <b>Contractor / Agency :</b>
-                      ${esc(w?.contractor||'-')}
-                    </div>
-                  `
-                ).join('');
-
-              }else{
-
-                html+=`
-                  <div class="rel-empty">
-                    नोंद उपलब्ध नाही.
-                  </div>
-                `;
-              }
-
-              html+=`</div>`;
-
-              html+=`
-                <div
-                  class="rel-section"
-                  style="
-                    border-top:1px solid #dfe5ea;
-                    margin-top:7px;
-                    padding-top:6px;
-                  "
-                >
-                  <div
-                    class="rel-section-title"
-                    style="
-                      font-weight:700;
-                      margin-bottom:5px;
-                    "
-                  >
-                    Bill ची संपूर्ण माहिती
-                    (${bills.length})
-                  </div>
-              `;
-
-              if(bills.length){
-
-                html+=bills.map(
-                  (b,i)=>`
-                    <div
-                      style="
-                        border-top:
-                        1px solid #e8eef2;
-                        padding:6px 0;
-                      "
-                    >
-                      <b>${i+1}. Bill प्रकार :</b>
-                      ${esc(b?.billType||'-')}
-
-                      &nbsp; | &nbsp;
-
-                      <b>Bill No. :</b>
-                      ${esc(b?.billNo||'-')}
-
-                      &nbsp; | &nbsp;
-
-                      <b>Date :</b>
-                      ${esc(
-                        date(
-                          b?.billDate||
-                          b?.savedAt
-                        )
-                      )}
-
-                      &nbsp; | &nbsp;
-
-                      <b>M.B. :</b>
-                      ${esc(b?.mb||'-')}
-
-                      &nbsp; | &nbsp;
-
-                      <b>काम :</b>
-                      ${esc(workName(b)||'-')}
-
-                      &nbsp; | &nbsp;
-
-                      <b>JE :</b>
-                      ${esc(b?.je||'-')}
-
-                      &nbsp; | &nbsp;
-
-                      <b>Contractor :</b>
-                      ${esc(b?.contractor||'-')}
-
-                      &nbsp; | &nbsp;
-
-                      <b>रक्कम :</b>
-                      ${esc(amount(b?.amount))}
-
-                      &nbsp; | &nbsp;
-
-                      <b>Status :</b>
-                      ${esc(
-                        billStatusText(
-                          b?.paymentStatus
-                        )
-                      )}
-                    </div>
-                  `
-                ).join('');
-
-              }else{
-
-                html+=`
-                  <div class="rel-empty">
-                    Bill नोंद उपलब्ध नाही.
-                  </div>
-                `;
-              }
-
-              html+=`</div>`;
-
-              html+=`
-                <div
-                  class="rel-section"
-                  style="
-                    border-top:1px solid #dfe5ea;
-                    margin-top:7px;
-                    padding-top:6px;
-                  "
-                >
-                  <div
-                    class="rel-section-title"
-                    style="
-                      font-weight:700;
-                      margin-bottom:5px;
-                    "
-                  >
-                    M.B. हस्तांतरण / Transfer इतिहास
-                    (${transfers.length})
-                  </div>
-              `;
-
-              if(transfers.length){
-
-                html+=transfers.map(
-                  (t,i)=>`
-                    <div
-                      style="
-                        border-top:
-                        1px solid #e8eef2;
-                        padding:7px 0;
-                      "
-                    >
-
-                      ${hrLine(
-                        'क्र.',
-                        i+1
-                      )}
-
-                      ${hrLine(
-                        'M.B.',
-                        t?.number||
-                        t?.mb||
-                        '-'
-                      )}
-
-                      ${hrLine(
-                        'दिनांक',
-                        date(
-                          t?.date||
-                          t?.transferDate||
-                          t?.savedAt
-                        )
-                      )}
-
-                      ${hrLine(
-                        'हालचाल',
-                        String(
-                          t?.transferType||
-                          ''
-                        ).toUpperCase()==='RECEIVED'
-                          ? 'MB मिळाली'
-                          : 'MB दिली'
-                      )}
-
-                      ${hrLine(
-                        'प्रकार',
-                        t?.transferPartyType||
-                        t?.receiver||
-                        t?.to||
-                        '-'
-                      )}
-
-                      ${hrLine(
-                        'नाव / कार्यालय',
-                        t?.receiverName||
-                        t?.name||
-                        '-'
-                      )}
-
-                    </div>
-                  `
-                ).join('');
-
-              }else{
-
-                html+=`
-                  <div class="rel-empty">
-                    Transfer नोंद उपलब्ध नाही.
-                  </div>
-                `;
-              }
-
-              html+=`</div>`;
-
-              return html;
-            }
-
-            function printLinkedRelationshipReport(){
-
-              try{
-
-                const ctx=
-                  getHomeRelationshipContext();
-
-                const data=
-                  linkedData(ctx);
-
-                const mbs=
-                  safeArray(data.mbs);
-
-                const works=
-                  safeArray(data.works);
-
-                const bills=
-                  safeArray(data.bills);
-
-                const transfers=
-                  safeArray(data.transfers);
-
-                const small=
-                  mbs.filter(
-                    x=>sizeKey(x?.size)==='SMALL'
-                  ).length;
-
-                const large=
-                  mbs.filter(
-                    x=>sizeKey(x?.size)==='LARGE'
-                  ).length;
-
-                const totalAmount=
-                  bills.reduce(
-                    (sum,b)=>{
-                      const raw=
-                        String(
-                          b?.amount||
-                          0
-                        ).replace(
-                          /,/g,
-                          ''
-                        );
-
-                      const num=
-                        Number(
-                          raw.replace(
-                            /[^\d.-]/g,
-                            ''
-                          )
-                        );
-
-                      return sum+
-                        (
-                          Number.isFinite(num)
-                            ? num
-                            : 0
-                        );
-                    },
-                    0
-                  );
-
-                const paidAmount=
-                  bills
-                    .filter(
-                      b=>
-                        n(
-                          b?.paymentStatus
-                        ).includes('paid') ||
-                        n(
-                          b?.paymentStatus
-                        ).includes('अदा')
-                    )
-                    .reduce(
-                      (sum,b)=>{
-                        const raw=
-                          String(
-                            b?.amount||
-                            0
-                          ).replace(
-                            /,/g,
-                            ''
-                          );
-
-                        const num=
-                          Number(
-                            raw.replace(
-                              /[^\d.-]/g,
-                              ''
-                            )
-                          );
-
-                        return sum+
-                          (
-                            Number.isFinite(num)
-                              ? num
-                              : 0
-                          );
-                      },
-                      0
-                    );
-
-                const from=
-                  ctx.from ||
-                  '-';
-
-                const to=
-                  ctx.to ||
-                  '-';
-
-                const title=
-                  currentScopeTitle(ctx);
-
-                const mbRows=
-                  mbs.length
-                    ? mbs.map(
-                        (m,i)=>`
-                          <tr>
-                            <td>${i+1}</td>
-                            <td>
-                              ${esc(mbNo(m))}
-                            </td>
-                            <td>
-                              ${esc(
-                                m?.size||'-'
-                              )}
-                            </td>
-                            <td>
-                              ${esc(
-                                m?.status||'-'
-                              )}
-                            </td>
-                            <td>
-                              ${esc(
-                                holderName(
-                                  mbNo(m)
-                                )
-                              )}
-                            </td>
-                            <td>
-                              ${esc(
-                                m?.receivedFrom||
-                                m?.from||
-                                '-'
-                              )}
-                            </td>
-                            <td>
-                              ${esc(
-                                date(
-                                  m?.date||
-                                  m?.mbDate||
-                                  m?.savedAt
-                                )
-                              )}
-                            </td>
-                          </tr>
-                        `
-                      ).join('')
-                    : `
-                      <tr>
-                        <td colspan="7">
-                          नोंद उपलब्ध नाही.
-                        </td>
-                      </tr>
-                    `;
-
-                const workRows=
-                  works.length
-                    ? works.map(
-                        (w,i)=>`
-                          <tr>
-                            <td>${i+1}</td>
-                            <td>
-                              ${esc(
-                                workName(w)||'-'
-                              )}
-                            </td>
-                            <td>
-                              ${esc(
-                                w?.mb||'-'
-                              )}
-                            </td>
-                            <td>
-                              ${esc(
-                                w?.je||'-'
-                              )}
-                            </td>
-                            <td>
-                              ${esc(
-                                w?.contractor||'-'
-                              )}
-                            </td>
-                          </tr>
-                        `
-                      ).join('')
-                    : `
-                      <tr>
-                        <td colspan="5">
-                          नोंद उपलब्ध नाही.
-                        </td>
-                      </tr>
-                    `;
-
-                const billRows=
-                  bills.length
-                    ? bills.map(
-                        (b,i)=>`
-                          <tr>
-                            <td>${i+1}</td>
-
-                            <td>
-                              ${esc(
-                                b?.billType||'-'
-                              )}
-                            </td>
-
-                            <td>
-                              ${esc(
-                                b?.billNo||'-'
-                              )}
-                            </td>
-
-                            <td>
-                              ${esc(
-                                date(
-                                  b?.billDate||
-                                  b?.savedAt
-                                )
-                              )}
-                            </td>
-
-                            <td>
-                              ${esc(
-                                b?.mb||'-'
-                              )}
-                            </td>
-
-                            <td>
-                              ${esc(
-                                workName(b)||'-'
-                              )}
-                            </td>
-
-                            <td>
-                              ${esc(
-                                b?.je||'-'
-                              )}
-                            </td>
-
-                            <td>
-                              ${esc(
-                                b?.contractor||'-'
-                              )}
-                            </td>
-
-                            <td>
-                              ${esc(
-                                amount(
-                                  b?.amount
-                                )
-                              )}
-                            </td>
-
-                            <td>
-                              ${esc(
-                                billStatusText(
-                                  b?.paymentStatus
-                                )
-                              )}
-                            </td>
-                          </tr>
-                        `
-                      ).join('')
-                    : `
-                      <tr>
-                        <td colspan="10">
-                          नोंद उपलब्ध नाही.
-                        </td>
-                      </tr>
-                    `;
-
-                const transferRows=
-                  transfers.length
-                    ? transfers.map(
-                        (t,i)=>`
-                          <tr>
-
-                            <td>
-                              ${i+1}
-                            </td>
-
-                            <td>
-                              ${esc(
-                                t?.number||
-                                t?.mb||
-                                '-'
-                              )}
-                            </td>
-
-                            <td>
-                              ${esc(
-                                date(
-                                  t?.date||
-                                  t?.transferDate||
-                                  t?.savedAt
-                                )
-                              )}
-                            </td>
-
-                            <td>
-                              ${esc(
-                                String(
-                                  t?.transferType||
-                                  ''
-                                ).toUpperCase()==='RECEIVED'
-                                  ? 'MB मिळाली'
-                                  : 'MB दिली'
-                              )}
-                            </td>
-
-                            <td>
-                              ${esc(
-                                t?.receiverName||
-                                t?.name||
-                                t?.receiver||
-                                t?.to||
-                                '-'
-                              )}
-                            </td>
-
-                            <td>
-                              ${esc(
-                                t?.workName||
-                                t?.work||
-                                '-'
-                              )}
-                            </td>
-
-                          </tr>
-                        `
-                      ).join('')
-                    : `
-                      <tr>
-                        <td colspan="6">
-                          नोंद उपलब्ध नाही.
-                        </td>
-                      </tr>
-                    `;
-
-                const printArea=
-                  document.getElementById(
-                    'printArea'
-                  );
-
-                if(!printArea){
-                  alert(
-                    'Report print area उपलब्ध नाही.'
-                  );
-                  return;
-                }
-
-                printArea.innerHTML=`
-                  <div class="a4-page">
-
-                    <div class="a4-header">
-
-                      <div class="dept">
-                        सार्वजनिक बांधकाम विभाग
-                      </div>
-
-                      <div class="system">
-                        मोजमाप पुस्तिका नियंत्रण प्रणाली
-                      </div>
-
-                      <div class="report-title">
-                        M.B. SUMMARY —
-                        LINKED REPORT
-                      </div>
-
-                    </div>
-
-                    <div class="a4-meta">
-
-                      <span>
-                        <b>निवड :</b>
-                        ${esc(title)}
-                      </span>
-
-                      <span>
-                        <b>कालावधी :</b>
-                        ${esc(from)}
-                        ते
-                        ${esc(to)}
-                      </span>
-
-                    </div>
-
-                    <div
-                      style="
-                        display:grid;
-                        grid-template-columns:
-                        repeat(4,1fr);
-                        gap:5px;
-                        margin:7px 0;
-                      "
-                    >
-
-                      ${summaryCard(
-                        'एकूण M.B.',
-                        mbs.length,
-                        `Small ${small} | Big ${large}`
-                      )}
-
-                      ${summaryCard(
-                        'कामे',
-                        works.length
-                      )}
-
-                      ${summaryCard(
-                        'Bills',
-                        bills.length
-                      )}
-
-                      ${summaryCard(
-                        'Bill रक्कम',
-                        amount(totalAmount),
-                        `अदा ${amount(paidAmount)}`
-                      )}
-
-                    </div>
-
-                    <h3
-                      style="
-                        margin:8px 0 4px
-                      "
-                    >
-                      M.B. ची संपूर्ण माहिती
-                    </h3>
-
-                    <table class="a4-table">
-
-                      <thead>
-
-                        <tr>
-
-                          <th>
-                            अ.क्र.
-                          </th>
-
-                          <th>
-                            M.B. क्रमांक
-                          </th>
-
-                          <th>
-                            प्रकार
-                          </th>
-
-                          <th>
-                            Status
-                          </th>
-
-                          <th>
-                            सध्या कुणाकडे
-                          </th>
-
-                          <th>
-                            कोणाकडून
-                          </th>
-
-                          <th>
-                            प्राप्त दिनांक
-                          </th>
-
-                        </tr>
-
-                      </thead>
-
-                      <tbody>
-                        ${mbRows}
-                      </tbody>
-
-                    </table>
-
-                    <h3
-                      style="
-                        margin:8px 0 4px
-                      "
-                    >
-                      कामांची संपूर्ण माहिती
-                    </h3>
-
-                    <table class="a4-table">
-
-                      <thead>
-
-                        <tr>
-
-                          <th>अ.क्र.</th>
-                          <th>कामाचे नाव</th>
-                          <th>M.B.</th>
-                          <th>JE</th>
-                          <th>
-                            Contractor / Agency
-                          </th>
-
-                        </tr>
-
-                      </thead>
-
-                      <tbody>
-                        ${workRows}
-                      </tbody>
-
-                    </table>
-
-                    <h3
-                      style="
-                        margin:8px 0 4px
-                      "
-                    >
-                      Bill ची संपूर्ण माहिती
-                    </h3>
-
-                    <table class="a4-table">
-
-                      <thead>
-
-                        <tr>
-
-                          <th>अ.क्र.</th>
-                          <th>Bill प्रकार</th>
-                          <th>Bill No.</th>
-                          <th>Date</th>
-                          <th>M.B.</th>
-                          <th>काम</th>
-                          <th>JE</th>
-                          <th>Contractor</th>
-                          <th>रक्कम</th>
-                          <th>Status</th>
-
-                        </tr>
-
-                      </thead>
-
-                      <tbody>
-                        ${billRows}
-                      </tbody>
-
-                    </table>
-
-                    <h3
-                      style="
-                        margin:8px 0 4px
-                      "
-                    >
-                      Transfer इतिहास
-                    </h3>
-
-                    <table class="a4-table">
-
-                      <thead>
-
-                        <tr>
-
-                          <th>अ.क्र.</th>
-                          <th>M.B.</th>
-                          <th>दिनांक</th>
-                          <th>हालचाल</th>
-                          <th>नाव / कार्यालय</th>
-                          <th>काम</th>
-
-                        </tr>
-
-                      </thead>
-
-                      <tbody>
-                        ${transferRows}
-                      </tbody>
-
-                    </table>
-
-                    <div class="a4-footer">
-                      Created By :
-                      विठ्ठल कोकाटे पाटील
-                    </div>
-
-                  </div>
-                `;
-
-                const oldTitle=
-                  document.title;
-
-                document.title=
-                  'MBMS Summary Linked Report';
-
-                requestAnimationFrame(
-                  ()=>{
-                    try{
-                      syncMBLinkedRowsStable(
-                        printArea
-                      );
-                    }catch(e){}
-                  }
-                );
-
-                setTimeout(
-                  ()=>{
-                    window.print();
-                  },
-                  120
-                );
-
-                setTimeout(
-                  ()=>{
-                    document.title=
-                      oldTitle;
-                  },
-                  1500
-                );
-
-              }catch(e){
-
-                console.error(e);
-
-                alert(
-                  'M.B. Summary Report तयार करताना त्रुटी आली. कृपया पुन्हा प्रयत्न करा.'
-                );
-              }
-            }
-
-            function addAllDetail(
-              options,
-              label
-            ){
-              options.push({
-                value:ALL_DETAIL,
-                label
-              });
-            }
-
-            function loadHomeRelDetailsV126(){
-
-              const ctx=
-                getHomeRelationshipContext();
-
-              const d=
-                homeRelData();
-
-              const sel=
-                document.getElementById(
-                  'homeRelDetail'
-                );
-
-              const bs=
-                document.getElementById(
-                  'homeRelBillType'
-                );
-
-              if(!sel){
-                return;
-              }
-
-              const {
-                target,
-                ctype
-              }=ctx;
-
-              if(
-                !target ||
-                !ctype
-              ){
-
-                sel.style.display='none';
-                sel.innerHTML='';
-
-                if(bs){
-                  bs.style.display='none';
-                  bs.value='';
-                }
-
-                showHomeRelationshipV126();
-
-                return;
-              }
-
-              if(bs){
-                bs.style.display='none';
-                bs.value='';
-              }
-
-              const base=
-                baseForContext(
-                  ctx,
-                  d
-                );
-
-              const opts=[];
-
-              if(ctype==='ALL'){
-
-                sel.style.display='none';
-
-                sel.innerHTML=
-                  '<option value="' +
-                  ALL_DETAIL +
-                  '">सर्व माहिती</option>';
-
-                sel.value=
-                  ALL_DETAIL;
-
-                showHomeRelationshipV126();
-
-                return;
-              }
-
-              if(ctype==='MB'){
-
-                addAllDetail(
-                  opts,
-                  'सर्व M.B.'
-                );
-
-                opts.push(
-                  {
-                    value:SMALL,
-                    label:'Small M.B.'
-                  },
-                  {
-                    value:LARGE,
-                    label:'Big M.B.'
-                  }
-                );
-
-                uniqueSorted(
-                  base.mbs.map(
-                    mbNo
-                  )
-                ).forEach(
-                  x=>{
-                    opts.push({
-                      value:MBNO+x,
-                      label:
-                        'M.B. क्रमांक '+
-                        x
-                    });
-                  }
-                );
-
-              }else if(ctype==='WORK'){
-
-                addAllDetail(
-                  opts,
-                  'सर्व कामे'
-                );
-
-                uniqueSorted(
-                  base.works.map(
-                    workName
-                  )
-                ).forEach(
-                  x=>{
-                    opts.push({
-                      value:x,
-                      label:x
-                    });
-                  }
-                );
-
-              }else if(ctype==='JE'){
-
-                addAllDetail(
-                  opts,
-                  'सर्व JE'
-                );
-
-                uniqueSorted(
-                  base.works.map(
-                    x=>x?.je
-                  ).concat(
-                    base.bills.map(
-                      x=>x?.je
-                    )
-                  ).concat(
-                    base.assigns.map(
-                      x=>x?.je
-                    )
-                  )
-                ).forEach(
-                  x=>{
-                    opts.push({
-                      value:x,
-                      label:x
-                    });
-                  }
-                );
-
-              }else if(
-                ctype==='CONTRACTOR'
-              ){
-
-                addAllDetail(
-                  opts,
-                  'सर्व Contractor / Agency'
-                );
-
-                uniqueSorted(
-                  base.works.map(
-                    x=>x?.contractor
-                  ).concat(
-                    base.bills.map(
-                      x=>x?.contractor
-                    )
-                  ).concat(
-                    base.assigns.map(
-                      x=>x?.contractor
-                    )
-                  )
-                ).forEach(
-                  x=>{
-                    opts.push({
-                      value:x,
-                      label:x
-                    });
-                  }
-                );
-
-              }else if(ctype==='BILL'){
-
-                addAllDetail(
-                  opts,
-                  'सर्व Bill'
-                );
-
-                uniqueSorted(
-                  base.bills.map(
-                    x=>x?.billType
-                  )
-                ).forEach(
-                  x=>{
-                    opts.push({
-                      value:x,
-                      label:x
-                    });
-                  }
-                );
-
-              }else if(
-                ctype==='TRANSFER'
-              ){
-
-                addAllDetail(
-                  opts,
-                  'सर्व हस्तांतरण'
-                );
-              }
-
-              sel.innerHTML=
-                '<option value="">तपशील निवडा</option>'+
-                opts.map(
-                  o=>
-                    '<option value="'+
-                    esc(o.value)+
-                    '">'+
-                    esc(o.label)+
-                    '</option>'
-                ).join('');
-
-              sel.style.display=
-                opts.length
-                  ? 'block'
-                  : 'none';
-
-              sel.value=
-                opts.length
-                  ? opts[0].value
-                  : '';
-
-              showHomeRelationshipV126();
-            }
-
-            function showHomeRelationshipV126(){
-
-              const ctx=
-                getHomeRelationshipContext();
-
-              const box=
-                document.getElementById(
-                  'homeRelResult'
-                );
-
-              if(!box){
-                return;
-              }
-
-              if(!ctx.target){
-
-                box.innerHTML=
-                  '<div class="rel-empty">'+
-                  'मुख्य नोंद निवडा.'+
-                  '</div>';
-
-                return;
-              }
-
-              if(!ctx.ctype){
-
-                box.innerHTML=
-                  '<div class="rel-empty">'+
-                  'संबंधित प्रकार निवडा.'+
-                  '</div>';
-
-                return;
-              }
-
-              const data=
-                linkedData(ctx);
-
-              box.innerHTML=
-                '<div class="rel-head">'+
-                esc(
-                  currentScopeTitle(ctx)
-                )+
-                '</div>'+
-                renderLinkedSections(
-                  ctx,
-                  data
-                );
-            }
-
-            const originalLoadHomeRelComponents=
-              window.loadHomeRelComponents;
-
-            function loadHomeRelComponentsV126(){
-
-              if(
-                typeof originalLoadHomeRelComponents===
-                'function'
-              ){
-
-                originalLoadHomeRelComponents();
-              }
-
-              const type=
-                document.getElementById(
-                  'homeRelType'
-                )?.value ||
-                '';
-
-              const target=
-                document.getElementById(
-                  'homeRelTarget'
-                )?.value ||
-                '';
-
-              const sel=
-                document.getElementById(
-                  'homeRelComponent'
-                );
-
-              if(
-                !sel ||
-                !target
-              ){
-                return;
-              }
-
-              /*
-               * Every entity that can point to
-               * a transfer must expose Transfer
-               * history.
-               *
-               * Contractor / Agency and Bill
-               * were omitted by the legacy UI.
-               */
-              if(
-                type==='CONTRACTOR' ||
-                type==='BILL'
-              ){
-
-                const exists=
-                  [...sel.options].some(
-                    o=>
-                      o.value===
-                      'TRANSFER::TRANSFER'
-                  );
-
-                if(!exists){
-
-                  sel.insertAdjacentHTML(
-                    'beforeend',
-                    '<option value="TRANSFER::TRANSFER">'+
-                    'हस्तांतरण'+
-                    '</option>'
-                  );
-                }
-              }
-            }
-
-            function renderDetailOptionsOnly(){
-
-              return loadHomeRelDetailsV126();
-            }
-
-            /*
-             * Override only the M.B. Summary
-             * relationship drill-down/report
-             * functions.
-             */
-            window.loadHomeRelComponents=
-              loadHomeRelComponentsV126;
-
-            window.loadHomeRelDetails=
-              renderDetailOptionsOnly;
-
-            window.showHomeRelationship=
-              showHomeRelationshipV126;
-
-            window.printHomeRelationshipReport=
-              printLinkedRelationshipReport;
-
-            /*
-             * Refresh report after detail selection.
-             */
-            document.addEventListener(
-              'change',
-              function(e){
-
-                if(
-                  e.target?.id===
-                    'homeRelDetail' ||
-                  e.target?.id===
-                    'homeRelBillType'
-                ){
-
-                  setTimeout(
-                    showHomeRelationshipV126,
-                    0
-                  );
-                }
-
-              },
-              true
-            );
-
-            /*
-             * The legacy Bill-specific dropdown
-             * is no longer needed by the new
-             * drill-down.
-             */
-            const bs=
-              document.getElementById(
-                'homeRelBillType'
-              );
-
-            if(bs){
-              bs.style.display='none';
-            }
-
-            window.mbmsV126SummaryFixLoaded=
-              true;
-
-          })();
-          '''
-
-          # ---------------------------------------------------------
-          # CRITICAL FIX:
-          # The previous workflow inserted the JavaScript as raw HTML
-          # text. It must be wrapped in an executable <script> block.
-          # ---------------------------------------------------------
-
-          marker = "</body>"
-          lower = text.lower()
-          pos = lower.rfind(marker.lower())
-
-          script_patch = (
-              '<script id="V126_HOME_MB_SUMMARY_LINKED_FIX">\n'
-              + patch.strip()
-              + '\n</script>\n'
+          text = p.read_text(
+              encoding="utf-8"
           )
 
-          if pos < 0:
-              raise SystemExit(
-                  "ERROR: </body> marker not found; refusing unsafe HTML patch."
-              )
-
-          text = (
-              text[:pos]
-              + script_patch
-              + text[pos:]
+          text = text.replace(
+              "if(isJE){loadTransferJEs();if(je){je.value=sourceName;je.disabled=true;}}",
+              "if(isJE){loadTransferJEs();if(je){je.value=sourceName;je.disabled=false;}}",
+              1
           )
 
-          required = [
-              "mbmsV126SummaryFixLoaded",
-              "loadHomeRelDetailsV126",
-              "showHomeRelationshipV126",
-              "printLinkedRelationshipReport",
-              "__SMALL_MB__",
-              "__LARGE_MB__",
-              "V126_HOME_MB_SUMMARY_LINKED_FIX"
-          ]
-
-          for item in required:
-
-              if item not in text:
-
-                  raise SystemExit(
-                      "ERROR: MB Summary patch marker missing: " +
-                      item
-                  )
+          text = text.replace(
+              "if(isJE&&je)je.disabled=true;",
+              "if(isJE&&je)je.disabled=false;",
+              1
+          )
 
           p.write_text(
               text,
@@ -2661,15 +128,783 @@
           )
 
           print(
-              "ONLY MB SUMMARY RELATIONSHIP/DETAIL FIX APPLIED."
-          )
-
-          print(
-              "Existing MBMS storage/data was not modified by this patch."
-          )
-
-          print(
-              "Final HTML size:",
-              p.stat().st_size
+              "Received -> JE correction applied."
           )
           PY
+
+      - name: Apply ONLY MB Summary Relationship Fix
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python3 <<'PY'
+          from pathlib import Path
+          import base64
+          import gzip
+
+          p = Path(
+              "mbms_work/index.html"
+          )
+
+          text = p.read_text(
+              encoding="utf-8"
+          )
+
+          encoded = '''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'''
+          
+          patch = gzip.decompress(
+              base64.b64decode(encoded)
+          ).decode("utf-8")
+
+          marker = "</body>"
+
+          pos = text.lower().rfind(
+              marker.lower()
+          )
+
+          if pos < 0:
+              raise SystemExit(
+                  "ERROR: </body> marker not found."
+              )
+
+          script = (
+              '<script id="V126_MBMS_SUMMARY_LINKED_FIX">\n'
+              + patch
+              + '\n</script>\n'
+          )
+
+          text = (
+              text[:pos]
+              + script
+              + text[pos:]
+          )
+
+          p.write_text(
+              text,
+              encoding="utf-8"
+          )
+
+          print(
+              "MB Summary relationship fix applied."
+          )
+          PY
+
+      - name: Validate final HTML and JavaScript
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          text = Path(
+              "mbms_work/index.html"
+          ).read_text(
+              encoding="utf-8"
+          )
+
+          required = [
+              "V126_MBMS_SUMMARY_LINKED_FIX",
+              "printLinkedRelationshipReport",
+              "loadHomeRelDetailsV124",
+              "mbmsV126TransferLinkFixLoaded",
+              "je.disabled=false"
+          ]
+
+          for item in required:
+              if item not in text:
+                  raise SystemExit(
+                      "ERROR: Missing required marker: "
+                      + item
+                  )
+
+          scripts = re.findall(
+              r"<script[^>]*>(.*?)</script>",
+              text,
+              flags=re.I | re.S
+          )
+
+          if not scripts:
+              raise SystemExit(
+                  "ERROR: No JavaScript blocks found."
+              )
+
+          for i, script in enumerate(scripts):
+              Path(
+                  f"/tmp/mbms_{i}.js"
+              ).write_text(
+                  script,
+                  encoding="utf-8"
+              )
+
+          print(
+              "JavaScript blocks:",
+              len(scripts)
+          )
+          PY
+
+          for f in /tmp/mbms_*.js
+          do
+            node --check "$f"
+          done
+
+          echo "FINAL HTML/JAVASCRIPT VALIDATION PASSED."
+
+      - name: Create Android project
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p \
+            mbms_android/app/src/main/assets \
+            mbms_android/app/src/main/java/com/mbms/app \
+            mbms_android/app/src/main/res/values
+
+          cp \
+            mbms_work/index.html \
+            mbms_android/app/src/main/assets/index.html
+
+          cat > mbms_android/settings.gradle <<'EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+
+          dependencyResolutionManagement {
+              repositoriesMode.set(
+                  RepositoriesMode.FAIL_ON_PROJECT_REPOS
+              )
+
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+
+          rootProject.name = 'MBMSAndroid'
+
+          include ':app'
+          EOF
+
+          cat > mbms_android/build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application'
+                  version '8.6.1'
+                  apply false
+          }
+          EOF
+
+          cat > mbms_android/gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          android.useAndroidX=false
+          android.nonTransitiveRClass=true
+          EOF
+
+          cat > mbms_android/app/build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application'
+          }
+
+          android {
+              namespace 'com.mbms.app'
+
+              compileSdk 35
+
+              defaultConfig {
+                  applicationId 'com.mbms.app'
+
+                  minSdk 26
+                  targetSdk 35
+
+                  versionCode 126
+                  versionName 'V126'
+              }
+
+              buildTypes {
+                  debug {
+                      minifyEnabled false
+                      shrinkResources false
+                  }
+              }
+
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+          }
+          EOF
+
+          cat > mbms_android/app/src/main/res/values/strings.xml <<'EOF'
+          <resources>
+              <string name="app_name">MBMS</string>
+          </resources>
+          EOF
+
+          cat > mbms_android/app/src/main/res/values/styles.xml <<'EOF'
+          <resources>
+              <style
+                  name="AppTheme"
+                  parent="android:style/Theme.Material.Light.NoActionBar">
+
+                  <item name="android:fontFamily">
+                      sans
+                  </item>
+
+              </style>
+          </resources>
+          EOF
+
+          cat > mbms_android/app/src/main/AndroidManifest.xml <<'EOF'
+          <manifest
+              xmlns:android="http://schemas.android.com/apk/res/android">
+
+              <uses-permission
+                  android:name="android.permission.INTERNET" />
+
+              <application
+                  android:allowBackup="true"
+                  android:usesCleartextTraffic="true"
+                  android:label="@string/app_name"
+                  android:theme="@style/AppTheme">
+
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:screenOrientation="portrait"
+                      android:configChanges="orientation|screenSize|keyboardHidden">
+
+                      <intent-filter>
+
+                          <action
+                              android:name="android.intent.action.MAIN" />
+
+                          <category
+                              android:name="android.intent.category.LAUNCHER" />
+
+                      </intent-filter>
+
+                  </activity>
+
+              </application>
+
+          </manifest>
+          EOF
+
+      - name: Create MainActivity.java
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cat > mbms_android/app/src/main/java/com/mbms/app/MainActivity.java <<'EOF'
+          package com.mbms.app;
+
+          import android.app.Activity;
+          import android.content.ContentValues;
+          import android.content.Intent;
+          import android.net.Uri;
+          import android.os.Build;
+          import android.os.Bundle;
+          import android.os.Environment;
+          import android.provider.MediaStore;
+          import android.print.PrintAttributes;
+          import android.print.PrintDocumentAdapter;
+          import android.print.PrintManager;
+          import android.webkit.JavascriptInterface;
+          import android.webkit.ValueCallback;
+          import android.webkit.WebChromeClient;
+          import android.webkit.WebResourceRequest;
+          import android.webkit.WebSettings;
+          import android.webkit.WebView;
+          import android.webkit.WebViewClient;
+          import android.widget.Toast;
+
+          import java.io.File;
+          import java.io.FileOutputStream;
+          import java.nio.charset.StandardCharsets;
+
+          public class MainActivity extends Activity {
+
+              private WebView webView;
+
+              private ValueCallback<Uri[]> filePathCallback;
+
+              private static final int REQUEST_FILE = 9102;
+
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+
+                  super.onCreate(savedInstanceState);
+
+                  webView = new WebView(this);
+
+                  setContentView(webView);
+
+                  WebSettings settings =
+                      webView.getSettings();
+
+                  settings.setJavaScriptEnabled(true);
+
+                  settings.setDomStorageEnabled(true);
+
+                  settings.setDatabaseEnabled(true);
+
+                  settings.setAllowFileAccess(true);
+
+                  settings.setAllowContentAccess(true);
+
+                  settings.setBuiltInZoomControls(false);
+
+                  settings.setDisplayZoomControls(false);
+
+                  settings.setSupportZoom(false);
+
+                  webView.addJavascriptInterface(
+                      new AndroidBridge(),
+                      "MBMSAndroid"
+                  );
+
+                  webView.setWebChromeClient(
+                      new WebChromeClient() {
+
+                          @Override
+                          public boolean onShowFileChooser(
+                              WebView view,
+                              ValueCallback<Uri[]> callback,
+                              FileChooserParams params) {
+
+                              if (filePathCallback != null) {
+                                  filePathCallback
+                                      .onReceiveValue(null);
+                              }
+
+                              filePathCallback = callback;
+
+                              try {
+
+                                  Intent intent =
+                                      new Intent(
+                                          Intent.ACTION_OPEN_DOCUMENT
+                                      );
+
+                                  intent.addCategory(
+                                      Intent.CATEGORY_OPENABLE
+                                  );
+
+                                  intent.setType(
+                                      "application/json"
+                                  );
+
+                                  startActivityForResult(
+                                      intent,
+                                      REQUEST_FILE
+                                  );
+
+                                  return true;
+
+                              } catch (Exception e) {
+
+                                  filePathCallback = null;
+
+                                  return false;
+                              }
+                          }
+                      }
+                  );
+
+                  webView.setWebViewClient(
+                      new WebViewClient() {
+
+                          @Override
+                          public boolean shouldOverrideUrlLoading(
+                              WebView view,
+                              WebResourceRequest request) {
+
+                              return false;
+                          }
+                      }
+                  );
+
+                  webView.loadUrl(
+                      "file:///android_asset/index.html"
+                  );
+              }
+
+              @JavascriptInterface
+              public void print() {
+
+                  runOnUiThread(
+                      new Runnable() {
+
+                          @Override
+                          public void run() {
+
+                              try {
+
+                                  PrintManager manager =
+                                      (PrintManager)
+                                          getSystemService(
+                                              PRINT_SERVICE
+                                          );
+
+                                  PrintDocumentAdapter adapter =
+                                      webView
+                                          .createPrintDocumentAdapter(
+                                              "MBMS_Report"
+                                          );
+
+                                  manager.print(
+                                      "MBMS Report",
+                                      adapter,
+                                      new PrintAttributes.Builder()
+                                          .setMediaSize(
+                                              PrintAttributes.MediaSize.ISO_A4
+                                          )
+                                          .setMinMargins(
+                                              PrintAttributes.Margins.NO_MARGINS
+                                          )
+                                          .build()
+                                  );
+
+                              } catch (Exception e) {
+
+                                  Toast.makeText(
+                                      MainActivity.this,
+                                      "Print मध्ये त्रुटी आली.",
+                                      Toast.LENGTH_LONG
+                                  ).show();
+                              }
+                          }
+                      }
+                  );
+              }
+
+              @JavascriptInterface
+              public void saveBackup(
+                  final String json,
+                  final String filename) {
+
+                  new Thread(
+                      new Runnable() {
+
+                          @Override
+                          public void run() {
+
+                              boolean success = false;
+
+                              try {
+
+                                  if (Build.VERSION.SDK_INT >= 29) {
+
+                                      ContentValues values =
+                                          new ContentValues();
+
+                                      values.put(
+                                          MediaStore.Downloads.DISPLAY_NAME,
+                                          filename
+                                      );
+
+                                      values.put(
+                                          MediaStore.Downloads.MIME_TYPE,
+                                          "application/json"
+                                      );
+
+                                      values.put(
+                                          MediaStore.Downloads.RELATIVE_PATH,
+                                          Environment.DIRECTORY_DOWNLOADS
+                                      );
+
+                                      values.put(
+                                          MediaStore.Downloads.IS_PENDING,
+                                          1
+                                      );
+
+                                      Uri uri =
+                                          getContentResolver()
+                                              .insert(
+                                                  MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                                                  values
+                                              );
+
+                                      if (uri != null) {
+
+                                          java.io.OutputStream output =
+                                              getContentResolver()
+                                                  .openOutputStream(uri);
+
+                                          if (output != null) {
+
+                                              output.write(
+                                                  json.getBytes(
+                                                      StandardCharsets.UTF_8
+                                                  )
+                                              );
+
+                                              output.flush();
+
+                                              output.close();
+
+                                              success = true;
+                                          }
+
+                                          ContentValues done =
+                                              new ContentValues();
+
+                                          done.put(
+                                              MediaStore.Downloads.IS_PENDING,
+                                              0
+                                          );
+
+                                          getContentResolver()
+                                              .update(
+                                                  uri,
+                                                  done,
+                                                  null,
+                                                  null
+                                              );
+
+                                      }
+
+                                  } else {
+
+                                      File directory =
+                                          Environment
+                                              .getExternalStoragePublicDirectory(
+                                                  Environment
+                                                      .DIRECTORY_DOWNLOADS
+                                              );
+
+                                      if (!directory.exists()) {
+                                          directory.mkdirs();
+                                      }
+
+                                      File file =
+                                          new File(
+                                              directory,
+                                              filename
+                                          );
+
+                                      FileOutputStream output =
+                                          new FileOutputStream(file);
+
+                                      output.write(
+                                          json.getBytes(
+                                              StandardCharsets.UTF_8
+                                          )
+                                      );
+
+                                      output.flush();
+
+                                      output.close();
+
+                                      success = true;
+                                  }
+
+                              } catch (Exception e) {
+
+                                  e.printStackTrace();
+                              }
+
+                              final boolean result =
+                                  success;
+
+                              runOnUiThread(
+                                  new Runnable() {
+
+                                      @Override
+                                      public void run() {
+
+                                          Toast.makeText(
+                                              MainActivity.this,
+                                              result
+                                                  ? "Backup Downloads मध्ये Save झाला."
+                                                  : "Backup Save मध्ये त्रुटी आली.",
+                                              Toast.LENGTH_LONG
+                                          ).show();
+
+                                      }
+                                  }
+                              );
+                          }
+                      }
+                  ).start();
+              }
+
+              private class AndroidBridge {
+
+                  @JavascriptInterface
+                  public void print() {
+                      MainActivity.this.print();
+                  }
+
+                  @JavascriptInterface
+                  public void saveBackup(
+                      String json,
+                      String filename) {
+
+                      MainActivity.this.saveBackup(
+                          json,
+                          filename
+                      );
+                  }
+              }
+
+              @Override
+              protected void onActivityResult(
+                  int requestCode,
+                  int resultCode,
+                  Intent data) {
+
+                  super.onActivityResult(
+                      requestCode,
+                      resultCode,
+                      data
+                  );
+
+                  if (
+                      requestCode != REQUEST_FILE ||
+                      filePathCallback == null
+                  ) {
+                      return;
+                  }
+
+                  Uri[] results = null;
+
+                  if (
+                      resultCode == RESULT_OK &&
+                      data != null &&
+                      data.getData() != null
+                  ) {
+
+                      results =
+                          new Uri[]{
+                              data.getData()
+                          };
+                  }
+
+                  filePathCallback
+                      .onReceiveValue(results);
+
+                  filePathCallback = null;
+              }
+
+              @Override
+              public void onBackPressed() {
+
+                  if (
+                      webView != null &&
+                      webView.canGoBack()
+                  ) {
+
+                      webView.goBack();
+
+                  } else {
+
+                      super.onBackPressed();
+                  }
+              }
+
+              @Override
+              protected void onDestroy() {
+
+                  if (webView != null) {
+
+                      webView.stopLoading();
+
+                      webView.destroy();
+
+                      webView = null;
+                  }
+
+                  super.onDestroy();
+              }
+          }
+          EOF
+
+      - name: Verify Android project
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test -s \
+            mbms_android/app/src/main/assets/index.html
+
+          test -s \
+            mbms_android/app/src/main/AndroidManifest.xml
+
+          test -s \
+            mbms_android/app/src/main/java/com/mbms/app/MainActivity.java
+
+          echo "ANDROID PROJECT VALIDATION PASSED."
+
+      - name: Compile Android Java
+        working-directory: mbms_android
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          gradle \
+            --no-daemon \
+            --stacktrace \
+            :app:compileDebugJavaWithJavac
+
+      - name: Build Final MBMS APK
+        working-directory: mbms_android
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          gradle \
+            --no-daemon \
+            --stacktrace \
+            clean \
+            :app:assembleDebug
+
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+
+          test -s "$APK"
+
+          cp \
+            "$APK" \
+            "../release/MBMS-V126-MB-SUMMARY-LINKED-STABLE.apk"
+
+          ls -lh \
+            "../release/MBMS-V126-MB-SUMMARY-LINKED-STABLE.apk"
+
+      - name: Verify APK
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APK="release/MBMS-V126-MB-SUMMARY-LINKED-STABLE.apk"
+
+          test -s "$APK"
+
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" \
+            verify \
+            --verbose \
+            "$APK"
+
+          unzip -t \
+            "$APK" \
+            >/dev/null
+
+          sha256sum \
+            "$APK" \
+            | tee release/SHA256.txt
+
+          echo "APK VERIFIED SUCCESSFULLY."
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: MBMS-V126-MB-SUMMARY-LINKED-STABLE
+
+          path: |
+            release/MBMS-V126-MB-SUMMARY-LINKED-STABLE.apk
+            release/SHA256.txt
+
+          if-no-files-found: error
