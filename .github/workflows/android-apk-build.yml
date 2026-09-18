@@ -14,53 +14,112 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+
       - name: Java 17
         uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
+
       - name: Android SDK
         uses: android-actions/setup-android@v4
+
       - name: Install SDK
         run: |
           yes | sdkmanager --licenses >/dev/null 2>&1 || true
           sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
       - name: Install Gradle
         run: |
           wget -q https://services.gradle.org/distributions/gradle-8.7-bin.zip
           mkdir -p "$HOME/gradle"
           unzip -q gradle-8.7-bin.zip -d "$HOME/gradle"
           echo "$HOME/gradle/gradle-8.7/bin" >> "$GITHUB_PATH"
+
       - name: Find and prepare HTML
         run: |
           set -euo pipefail
+
           HTML_FILE=""
-          for f in Measurement_Book_Management_System_FINAL_V120_TRANSFER_REPORT_FINAL.html Measurement_Book_Management_System_FINAL_V118_PRINT_BACKUP_ANDROID.html Measurement_Book_Management_System_FINAL_V115_MB_HISTORY_ONLY_DATE-6.html Measurement_Book_Management_System_FINAL_V115_MB_HISTORY_ONLY_DATE.html Measurement_Book_Management_System_FINAL_V115.html V115.html index.html; do
+
+          for f in \
+            Measurement_Book_Management_System_FINAL_V120_TRANSFER_REPORT_FINAL.html \
+            Measurement_Book_Management_System_FINAL_V118_PRINT_BACKUP_ANDROID.html \
+            Measurement_Book_Management_System_FINAL_V115_MB_HISTORY_ONLY_DATE-6.html \
+            Measurement_Book_Management_System_FINAL_V115_MB_HISTORY_ONLY_DATE.html \
+            Measurement_Book_Management_System_FINAL_V115.html \
+            V115.html \
+            index.html
+          do
             [ -f "$f" ] && HTML_FILE="$f" && break
           done
-          [ -n "$HTML_FILE" ] || HTML_FILE=$(find . -maxdepth 3 -type f -iname '*.html' -not -path './.git/*' | head -1 || true)
-          [ -n "$HTML_FILE" ] || { echo 'ERROR: HTML not found'; exit 1; }
+
+          [ -n "$HTML_FILE" ] || \
+            HTML_FILE=$(find . -maxdepth 3 -type f -iname '*.html' \
+            -not -path './.git/*' | head -1 || true)
+
+          [ -n "$HTML_FILE" ] || {
+            echo 'ERROR: HTML not found'
+            exit 1
+          }
+
           echo "HTML_FILE=$HTML_FILE" >> "$GITHUB_ENV"
+
           mkdir -p mbms_work
+
           cp "$HTML_FILE" mbms_work/index.html
+
           test -s mbms_work/index.html
+
       - name: Received -> JE full list correction
         run: |
           python3 <<'PY'
           from pathlib import Path
-          p=Path('mbms_work/index.html'); t=p.read_text(encoding='utf-8')
-          t=t.replace('if(isJE){loadTransferJEs();if(je){je.value=sourceName;je.disabled=true;}}','if(isJE){loadTransferJEs();if(je){je.value=sourceName;je.disabled=false;}}',1)
-          t=t.replace('if(isJE&&je)je.disabled=true;','if(isJE&&je)je.disabled=false;',1)
-          p.write_text(t,encoding='utf-8')
+
+          p = Path('mbms_work/index.html')
+          t = p.read_text(encoding='utf-8')
+
+          t = t.replace(
+              'if(isJE){loadTransferJEs();if(je){je.value=sourceName;je.disabled=true;}}',
+              'if(isJE){loadTransferJEs();if(je){je.value=sourceName;je.disabled=false;}}',
+              1
+          )
+
+          t = t.replace(
+              'if(isJE&&je)je.disabled=true;',
+              'if(isJE&&je)je.disabled=false;',
+              1
+          )
+
+          p.write_text(t, encoding='utf-8')
           PY
-          grep -q 'if(isJE&&je)je.disabled=false;' mbms_work/index.html
+
+          grep -q \
+            'if(isJE&&je)je.disabled=false;' \
+            mbms_work/index.html
+
       - name: Core function checks
         run: |
           set -e
-          for x in mbmsSettingsSnapshot downloadSettingsBackup restoreSettingsBackup generateTransferReport saveTransferMB getTransferHistory; do grep -q "$x" mbms_work/index.html || { echo "Missing $x"; exit 1; }; done
+
+          for x in \
+            mbmsSettingsSnapshot \
+            downloadSettingsBackup \
+            restoreSettingsBackup \
+            generateTransferReport \
+            saveTransferMB \
+            getTransferHistory
+          do
+            grep -q "$x" mbms_work/index.html || {
+              echo "Missing $x"
+              exit 1
+            }
+          done
+
       - name: Apply M.B. Summary linked fix
         run: |
           set -Eeuo pipefail
+
           cat > /tmp/mbms_summary_patch.js <<'PATCH_JS'
           /* V128 - ONLY M.B. SUMMARY LINKED DRILL-DOWN FIX */
           (function(){
@@ -80,142 +139,623 @@ jobs:
             const MB_LARGE='__LARGE_MB__';
             const MB_PREFIX='__MBNO__::';
 
-            function A(v){return Array.isArray(v)?v:[];}
-            function S(v){return v==null?'':String(v).trim();}
-            function N(v){try{return hrNorm(v)}catch(e){return S(v).toLowerCase().replace(/\s+/g,' ');}}
-            function E(v){try{return escapeHtml(S(v))}catch(e){return S(v).replace(/[&<>"']/g,function(c){return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]})}}
-            function D(v){try{return hrDate(v||'')}catch(e){return S(v)||'-';}}
-            function amount(v){try{return billAmountText(v)}catch(e){return '₹ '+(Number(v)||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});}}
-            function uniq(a){return [...new Set(a.map(S).filter(Boolean))].sort((x,y)=>x.localeCompare(y,undefined,{numeric:true,sensitivity:'base'}));}
-            function mbNo(x){return S(x?.number||x?.mbNumber||x?.mb);}
-            function workName(x){return S(x?.name||x?.workName||x?.work);}
-            function jeName(x){return S(x?.je||x?.jeName||x?.juniorEngineer);}
-            function contractor(x){return S(x?.contractor||x?.agency||x?.contractorName||x?.agencyName);}
-            function billType(x){return S(x?.billType||x?.type||x?.billName);}
-            function billNo(x){return S(x?.billNo||x?.number||x?.billNumber);}
-            function transferNo(x){return S(x?.number||x?.mb||x?.mbNumber);}
-            function size(x){const z=N(x);if(z==='small'||z.includes('small')||z.includes('लहान'))return 'SMALL';if(z==='large'||z.includes('large')||z.includes('big')||z.includes('मोठ'))return 'LARGE';return '';}
+            function A(v){
+              return Array.isArray(v)?v:[];
+            }
+
+            function S(v){
+              return v==null?'':String(v).trim();
+            }
+
+            function N(v){
+              try{
+                return hrNorm(v);
+              }catch(e){
+                return S(v)
+                  .toLowerCase()
+                  .replace(/\s+/g,' ');
+              }
+            }
+
+            function E(v){
+              try{
+                return escapeHtml(S(v));
+              }catch(e){
+                return S(v).replace(
+                  /[&<>"']/g,
+                  function(c){
+                    return ({
+                      '&':'&amp;',
+                      '<':'&lt;',
+                      '>':'&gt;',
+                      '"':'&quot;',
+                      "'":'&#39;'
+                    })[c];
+                  }
+                );
+              }
+            }
+
+            function D(v){
+              try{
+                return hrDate(v||'');
+              }catch(e){
+                return S(v)||'-';
+              }
+            }
+
+            function amount(v){
+              try{
+                return billAmountText(v);
+              }catch(e){
+                return '₹ '+(Number(v)||0).toLocaleString(
+                  'en-IN',
+                  {
+                    minimumFractionDigits:2,
+                    maximumFractionDigits:2
+                  }
+                );
+              }
+            }
+
+            function uniq(a){
+              return [...new Set(
+                a.map(S).filter(Boolean)
+              )].sort(
+                (x,y)=>
+                  x.localeCompare(
+                    y,
+                    undefined,
+                    {
+                      numeric:true,
+                      sensitivity:'base'
+                    }
+                  )
+              );
+            }
+
+            function mbNo(x){
+              return S(
+                x?.number ||
+                x?.mbNumber ||
+                x?.mb
+              );
+            }
+
+            function workName(x){
+              return S(
+                x?.name ||
+                x?.workName ||
+                x?.work
+              );
+            }
+
+            function jeName(x){
+              return S(
+                x?.je ||
+                x?.jeName ||
+                x?.juniorEngineer
+              );
+            }
+
+            function contractor(x){
+              return S(
+                x?.contractor ||
+                x?.agency ||
+                x?.contractorName ||
+                x?.agencyName
+              );
+            }
+
+            function billType(x){
+              return S(
+                x?.billType ||
+                x?.type ||
+                x?.billName
+              );
+            }
+
+            function billNo(x){
+              return S(
+                x?.billNo ||
+                x?.number ||
+                x?.billNumber
+              );
+            }
+
+            function transferNo(x){
+              return S(
+                x?.number ||
+                x?.mb ||
+                x?.mbNumber
+              );
+            }
+
+            function size(x){
+              const z=N(x);
+
+              if(
+                z==='small' ||
+                z.includes('small') ||
+                z.includes('लहान')
+              ){
+                return 'SMALL';
+              }
+
+              if(
+                z==='large' ||
+                z.includes('large') ||
+                z.includes('big') ||
+                z.includes('मोठ')
+              ){
+                return 'LARGE';
+              }
+
+              return '';
+            }
 
             function data(){
               try{
                 const d=homeRelData();
-                return {mbs:A(d.mbs),jes:A(d.jes),works:A(d.works),assigns:A(d.assigns),transfers:A(d.transfers),bills:A(d.bills)};
-              }catch(e){return {mbs:[],jes:[],works:[],assigns:[],transfers:[],bills:[]};}
+
+                return {
+                  mbs:A(d.mbs),
+                  jes:A(d.jes),
+                  works:A(d.works),
+                  assigns:A(d.assigns),
+                  transfers:A(d.transfers),
+                  bills:A(d.bills)
+                };
+              }catch(e){
+                return {
+                  mbs:[],
+                  jes:[],
+                  works:[],
+                  assigns:[],
+                  transfers:[],
+                  bills:[]
+                };
+              }
             }
 
             function ctx(){
-              const type=document.getElementById('homeRelType')?.value||'';
-              const target=document.getElementById('homeRelTarget')?.value||'';
-              const cv=document.getElementById('homeRelComponent')?.value||'';
+              const type=
+                document.getElementById(
+                  'homeRelType'
+                )?.value||'';
+
+              const target=
+                document.getElementById(
+                  'homeRelTarget'
+                )?.value||'';
+
+              const cv=
+                document.getElementById(
+                  'homeRelComponent'
+                )?.value||'';
+
               const parts=cv.split('::');
-              return {type,target,ctype:parts[0]||'',cvalue:parts.slice(1).join('::'),detail:document.getElementById('homeRelDetail')?.value||'',billType:document.getElementById('homeRelBillType')?.value||''};
+
+              return {
+                type,
+                target,
+                ctype:parts[0]||'',
+                cvalue:parts.slice(1).join('::'),
+                detail:
+                  document.getElementById(
+                    'homeRelDetail'
+                  )?.value||'',
+                billType:
+                  document.getElementById(
+                    'homeRelBillType'
+                  )?.value||''
+              };
             }
 
-            function inRange(v,from,to){try{return homeRelInRange(v,from,to)}catch(e){const k=S(v);return (!from||k>=from)&&(!to||k<=to)}}
+            function inRange(v,from,to){
+              try{
+                return homeRelInRange(
+                  v,
+                  from,
+                  to
+                );
+              }catch(e){
+                const k=S(v);
+
+                return (
+                  (!from||k>=from) &&
+                  (!to||k<=to)
+                );
+              }
+            }
 
             function dateFilter(d){
-              const from=document.getElementById('homeRelFrom')?.value||'';
-              const to=document.getElementById('homeRelTo')?.value||'';
-              if(!from&&!to)return d;
+              const from=
+                document.getElementById(
+                  'homeRelFrom'
+                )?.value||'';
+
+              const to=
+                document.getElementById(
+                  'homeRelTo'
+                )?.value||'';
+
+              if(!from&&!to){
+                return d;
+              }
+
               return {
-                mbs:d.mbs.filter(x=>inRange(x.receivedDate||x.date||x.createdAt,from,to)),
+                mbs:d.mbs.filter(
+                  x=>
+                    inRange(
+                      x.receivedDate||
+                      x.date||
+                      x.createdAt,
+                      from,
+                      to
+                    )
+                ),
+
                 jes:d.jes,
-                works:d.works.filter(x=>inRange(x.createdAt||x.date||x.workDate,from,to)),
-                assigns:d.assigns.filter(x=>inRange(x.date||x.assignedDate||x.createdAt,from,to)),
-                transfers:d.transfers.filter(x=>inRange(x.date||x.transferDate||x.savedAt,from,to)),
-                bills:d.bills.filter(x=>inRange(x.billDate||x.date||x.savedAt,from,to))
+
+                works:d.works.filter(
+                  x=>
+                    inRange(
+                      x.createdAt||
+                      x.date||
+                      x.workDate,
+                      from,
+                      to
+                    )
+                ),
+
+                assigns:d.assigns.filter(
+                  x=>
+                    inRange(
+                      x.date||
+                      x.assignedDate||
+                      x.createdAt,
+                      from,
+                      to
+                    )
+                ),
+
+                transfers:d.transfers.filter(
+                  x=>
+                    inRange(
+                      x.date||
+                      x.transferDate||
+                      x.savedAt,
+                      from,
+                      to
+                    )
+                ),
+
+                bills:d.bills.filter(
+                  x=>
+                    inRange(
+                      x.billDate||
+                      x.date||
+                      x.savedAt,
+                      from,
+                      to
+                    )
+                )
               };
             }
 
             function linkedByMB(d,mbs){
-              const set=new Set(mbs.map(N).filter(Boolean));
+              const set=new Set(
+                mbs.map(N).filter(Boolean)
+              );
+
               return {
-                mbs:d.mbs.filter(x=>set.has(N(mbNo(x)))),
-                works:d.works.filter(x=>set.has(N(x?.mb))),
-                assigns:d.assigns.filter(x=>set.has(N(x?.mb))),
-                transfers:d.transfers.filter(x=>set.has(N(transferNo(x)))),
-                bills:d.bills.filter(x=>set.has(N(x?.mb)))
+                mbs:d.mbs.filter(
+                  x=>set.has(N(mbNo(x)))
+                ),
+
+                works:d.works.filter(
+                  x=>set.has(N(x?.mb))
+                ),
+
+                assigns:d.assigns.filter(
+                  x=>set.has(N(x?.mb))
+                ),
+
+                transfers:d.transfers.filter(
+                  x=>set.has(N(transferNo(x)))
+                ),
+
+                bills:d.bills.filter(
+                  x=>set.has(N(x?.mb))
+                )
               };
             }
 
             function baseFor(c,d){
-              const all=c.target==='__ALL__';
+              const all=
+                c.target==='__ALL__';
+
               const t=N(c.target);
-              let out={mbs:[],works:[],assigns:[],transfers:[],bills:[],jes:d.jes};
+
+              let out={
+                mbs:[],
+                works:[],
+                assigns:[],
+                transfers:[],
+                bills:[],
+                jes:d.jes
+              };
 
               if(c.type==='MB'){
-                out.mbs=all?d.mbs:d.mbs.filter(x=>N(mbNo(x))===t);
-                return Object.assign(out,linkedByMB(d,out.mbs.map(mbNo)));
+                out.mbs=
+                  all
+                    ? d.mbs
+                    : d.mbs.filter(
+                        x=>N(mbNo(x))===t
+                      );
+
+                return Object.assign(
+                  out,
+                  linkedByMB(
+                    d,
+                    out.mbs.map(mbNo)
+                  )
+                );
               }
 
               if(c.type==='JE'){
-                const w=all?d.works:d.works.filter(x=>N(jeName(x))===t);
-                const b=all?d.bills:d.bills.filter(x=>N(jeName(x))===t);
-                const a=all?d.assigns:d.assigns.filter(x=>N(jeName(x))===t);
-                const mbs=uniq(w.map(x=>x?.mb).concat(b.map(x=>x?.mb),a.map(x=>x?.mb)));
-                out={
-                  mbs:d.mbs.filter(x=>mbs.some(m=>N(mbNo(x))===N(m))),
+                const w=
+                  all
+                    ? d.works
+                    : d.works.filter(
+                        x=>N(jeName(x))===t
+                      );
+
+                const b=
+                  all
+                    ? d.bills
+                    : d.bills.filter(
+                        x=>N(jeName(x))===t
+                      );
+
+                const a=
+                  all
+                    ? d.assigns
+                    : d.assigns.filter(
+                        x=>N(jeName(x))===t
+                      );
+
+                const mbs=uniq(
+                  w.map(x=>x?.mb)
+                    .concat(
+                      b.map(x=>x?.mb),
+                      a.map(x=>x?.mb)
+                    )
+                );
+
+                return {
+                  mbs:d.mbs.filter(
+                    x=>
+                      mbs.some(
+                        m=>N(mbNo(x))===N(m)
+                      )
+                  ),
                   works:w,
                   assigns:a,
-                  transfers:d.transfers.filter(x=>mbs.some(m=>N(transferNo(x))===N(m))),
+                  transfers:d.transfers.filter(
+                    x=>
+                      mbs.some(
+                        m=>N(transferNo(x))===N(m)
+                      )
+                  ),
                   bills:b,
                   jes:d.jes
                 };
-                return out;
               }
 
               if(c.type==='WORK'){
-                const w=all?d.works:d.works.filter(x=>N(workName(x))===t);
-                const names=new Set(w.map(x=>N(workName(x))));
-                const b=all?d.bills:d.bills.filter(x=>names.has(N(workName(x)))||N(x?.work)===t);
-                const mbs=uniq(w.map(x=>x?.mb).concat(b.map(x=>x?.mb)));
+                const w=
+                  all
+                    ? d.works
+                    : d.works.filter(
+                        x=>N(workName(x))===t
+                      );
+
+                const names=new Set(
+                  w.map(x=>N(workName(x)))
+                );
+
+                const b=
+                  all
+                    ? d.bills
+                    : d.bills.filter(
+                        x=>
+                          names.has(
+                            N(workName(x))
+                          ) ||
+                          N(x?.work)===t
+                      );
+
+                const mbs=uniq(
+                  w.map(x=>x?.mb)
+                    .concat(
+                      b.map(x=>x?.mb)
+                    )
+                );
+
                 return {
-                  mbs:d.mbs.filter(x=>mbs.some(m=>N(mbNo(x))===N(m))),
+                  mbs:d.mbs.filter(
+                    x=>
+                      mbs.some(
+                        m=>N(mbNo(x))===N(m)
+                      )
+                  ),
                   works:w,
-                  assigns:d.assigns.filter(x=>mbs.some(m=>N(x?.mb)===N(m))),
-                  transfers:d.transfers.filter(x=>mbs.some(m=>N(transferNo(x))===N(m))),
+                  assigns:d.assigns.filter(
+                    x=>
+                      mbs.some(
+                        m=>N(x?.mb)===N(m)
+                      )
+                  ),
+                  transfers:d.transfers.filter(
+                    x=>
+                      mbs.some(
+                        m=>N(transferNo(x))===N(m)
+                      )
+                  ),
                   bills:b,
                   jes:d.jes
                 };
               }
 
               if(c.type==='CONTRACTOR'){
-                const w=all?d.works:d.works.filter(x=>N(contractor(x))===t);
-                const b=all?d.bills:d.bills.filter(x=>N(contractor(x))===t);
-                const a=all?d.assigns:d.assigns.filter(x=>N(contractor(x))===t);
-                const mbs=uniq(w.map(x=>x?.mb).concat(b.map(x=>x?.mb),a.map(x=>x?.mb)));
+                const w=
+                  all
+                    ? d.works
+                    : d.works.filter(
+                        x=>N(contractor(x))===t
+                      );
+
+                const b=
+                  all
+                    ? d.bills
+                    : d.bills.filter(
+                        x=>N(contractor(x))===t
+                      );
+
+                const a=
+                  all
+                    ? d.assigns
+                    : d.assigns.filter(
+                        x=>N(contractor(x))===t
+                      );
+
+                const mbs=uniq(
+                  w.map(x=>x?.mb)
+                    .concat(
+                      b.map(x=>x?.mb),
+                      a.map(x=>x?.mb)
+                    )
+                );
+
                 return {
-                  mbs:d.mbs.filter(x=>mbs.some(m=>N(mbNo(x))===N(m))),
+                  mbs:d.mbs.filter(
+                    x=>
+                      mbs.some(
+                        m=>N(mbNo(x))===N(m)
+                      )
+                  ),
                   works:w,
                   assigns:a,
-                  transfers:d.transfers.filter(x=>mbs.some(m=>N(transferNo(x))===N(m))),
+                  transfers:d.transfers.filter(
+                    x=>
+                      mbs.some(
+                        m=>N(transferNo(x))===N(m)
+                      )
+                  ),
                   bills:b,
                   jes:d.jes
                 };
               }
 
               if(c.type==='BILL'){
-                const b=all?d.bills:d.bills.filter(x=>N(billNo(x))===t||N(billType(x))===t);
-                const mbs=uniq(b.map(x=>x?.mb));
+                const b=
+                  all
+                    ? d.bills
+                    : d.bills.filter(
+                        x=>
+                          N(billNo(x))===t ||
+                          N(billType(x))===t
+                      );
+
+                const mbs=uniq(
+                  b.map(x=>x?.mb)
+                );
+
                 return {
-                  mbs:d.mbs.filter(x=>mbs.some(m=>N(mbNo(x))===N(m))),
-                  works:d.works.filter(x=>mbs.some(m=>N(x?.mb)===N(m))||b.some(bb=>N(workName(bb))===N(workName(x)))),
-                  assigns:d.assigns.filter(x=>mbs.some(m=>N(x?.mb)===N(m))),
-                  transfers:d.transfers.filter(x=>mbs.some(m=>N(transferNo(x))===N(m))),
+                  mbs:d.mbs.filter(
+                    x=>
+                      mbs.some(
+                        m=>N(mbNo(x))===N(m)
+                      )
+                  ),
+
+                  works:d.works.filter(
+                    x=>
+                      mbs.some(
+                        m=>N(x?.mb)===N(m)
+                      ) ||
+                      b.some(
+                        bb=>
+                          N(workName(bb))===
+                          N(workName(x))
+                      )
+                  ),
+
+                  assigns:d.assigns.filter(
+                    x=>
+                      mbs.some(
+                        m=>N(x?.mb)===N(m)
+                      )
+                  ),
+
+                  transfers:d.transfers.filter(
+                    x=>
+                      mbs.some(
+                        m=>N(transferNo(x))===N(m)
+                      )
+                  ),
+
                   bills:b,
                   jes:d.jes
                 };
               }
 
               if(c.type==='TRANSFER'){
-                const tr=all?d.transfers:d.transfers.filter(x=>N(transferNo(x))===t);
-                const mbs=uniq(tr.map(transferNo));
+                const tr=
+                  all
+                    ? d.transfers
+                    : d.transfers.filter(
+                        x=>
+                          N(transferNo(x))===t
+                      );
+
+                const mbs=uniq(
+                  tr.map(transferNo)
+                );
+
                 return {
-                  mbs:d.mbs.filter(x=>mbs.some(m=>N(mbNo(x))===N(m))),
-                  works:d.works.filter(x=>mbs.some(m=>N(x?.mb)===N(m))),
-                  assigns:d.assigns.filter(x=>mbs.some(m=>N(x?.mb)===N(m))),
+                  mbs:d.mbs.filter(
+                    x=>
+                      mbs.some(
+                        m=>N(mbNo(x))===N(m)
+                      )
+                  ),
+
+                  works:d.works.filter(
+                    x=>
+                      mbs.some(
+                        m=>N(x?.mb)===N(m)
+                      )
+                  ),
+
+                  assigns:d.assigns.filter(
+                    x=>
+                      mbs.some(
+                        m=>N(x?.mb)===N(m)
+                      )
+                  ),
+
                   transfers:tr,
-                  bills:d.bills.filter(x=>mbs.some(m=>N(x?.mb)===N(m))),
+
+                  bills:d.bills.filter(
+                    x=>
+                      mbs.some(
+                        m=>N(x?.mb)===N(m)
+                      )
+                  ),
+
                   jes:d.jes
                 };
               }
@@ -226,70 +766,248 @@ jobs:
             function applyComponentFilter(c,b){
               const detail=c.detail;
 
-              if(c.ctype==='ALL'||!c.ctype)return b;
+              if(
+                c.ctype==='ALL' ||
+                !c.ctype
+              ){
+                return b;
+              }
 
               if(c.ctype==='MB'){
                 let m=b.mbs;
-                if(detail===MB_SMALL)m=m.filter(x=>size(x?.size)==='SMALL');
-                else if(detail===MB_LARGE)m=m.filter(x=>size(x?.size)==='LARGE');
-                else if(detail.startsWith(MB_PREFIX))m=m.filter(x=>N(mbNo(x))===N(detail.slice(MB_PREFIX.length)));
+
+                if(detail===MB_SMALL){
+                  m=m.filter(
+                    x=>size(x?.size)==='SMALL'
+                  );
+                }
+                else if(detail===MB_LARGE){
+                  m=m.filter(
+                    x=>size(x?.size)==='LARGE'
+                  );
+                }
+                else if(
+                  detail.startsWith(MB_PREFIX)
+                ){
+                  m=m.filter(
+                    x=>
+                      N(mbNo(x))===
+                      N(
+                        detail.slice(
+                          MB_PREFIX.length
+                        )
+                      )
+                  );
+                }
 
                 return linkedByMB(
-                  Object.assign({},b,{mbs:b.mbs}),
+                  Object.assign(
+                    {},
+                    b,
+                    {mbs:b.mbs}
+                  ),
                   m.map(mbNo)
                 );
               }
 
-              if(c.ctype==='WORK'&&detail&&detail!==DETAIL_ALL){
-                const w=b.works.filter(x=>N(workName(x))===N(detail));
-                const names=new Set(w.map(x=>N(workName(x))));
+              if(
+                c.ctype==='WORK' &&
+                detail &&
+                detail!==DETAIL_ALL
+              ){
+                const w=b.works.filter(
+                  x=>N(workName(x))===N(detail)
+                );
+
+                const names=new Set(
+                  w.map(x=>N(workName(x)))
+                );
+
                 return {
-                  mbs:b.mbs.filter(x=>w.some(y=>N(y?.mb)===N(mbNo(x)))),
+                  mbs:b.mbs.filter(
+                    x=>
+                      w.some(
+                        y=>N(y?.mb)===N(mbNo(x))
+                      )
+                  ),
+
                   works:w,
-                  assigns:b.assigns.filter(x=>w.some(y=>N(y?.mb)===N(x?.mb))),
-                  transfers:b.transfers.filter(x=>w.some(y=>N(y?.mb)===N(transferNo(x)))),
-                  bills:b.bills.filter(x=>names.has(N(workName(x)))),
+
+                  assigns:b.assigns.filter(
+                    x=>
+                      w.some(
+                        y=>N(y?.mb)===N(x?.mb)
+                      )
+                  ),
+
+                  transfers:b.transfers.filter(
+                    x=>
+                      w.some(
+                        y=>
+                          N(y?.mb)===
+                          N(transferNo(x))
+                      )
+                  ),
+
+                  bills:b.bills.filter(
+                    x=>names.has(N(workName(x)))
+                  ),
+
                   jes:b.jes
                 };
               }
 
-              if(c.ctype==='JE'&&detail&&detail!==DETAIL_ALL){
-                const w=b.works.filter(x=>N(jeName(x))===N(detail));
-                const bills=b.bills.filter(x=>N(jeName(x))===N(detail));
-                const nums=uniq(w.map(x=>x?.mb).concat(bills.map(x=>x?.mb)));
+              if(
+                c.ctype==='JE' &&
+                detail &&
+                detail!==DETAIL_ALL
+              ){
+                const w=b.works.filter(
+                  x=>N(jeName(x))===N(detail)
+                );
+
+                const bills=b.bills.filter(
+                  x=>N(jeName(x))===N(detail)
+                );
+
+                const nums=uniq(
+                  w.map(x=>x?.mb)
+                    .concat(
+                      bills.map(x=>x?.mb)
+                    )
+                );
+
                 return {
-                  mbs:b.mbs.filter(x=>nums.some(m=>N(mbNo(x))===N(m))),
+                  mbs:b.mbs.filter(
+                    x=>
+                      nums.some(
+                        m=>N(mbNo(x))===N(m)
+                      )
+                  ),
+
                   works:w,
-                  assigns:b.assigns.filter(x=>nums.some(m=>N(x?.mb)===N(m))),
-                  transfers:b.transfers.filter(x=>nums.some(m=>N(transferNo(x))===N(m))),
+
+                  assigns:b.assigns.filter(
+                    x=>
+                      nums.some(
+                        m=>N(x?.mb)===N(m)
+                      )
+                  ),
+
+                  transfers:b.transfers.filter(
+                    x=>
+                      nums.some(
+                        m=>N(transferNo(x))===N(m)
+                      )
+                  ),
+
                   bills,
+
                   jes:b.jes
                 };
               }
 
-              if(c.ctype==='CONTRACTOR'&&detail&&detail!==DETAIL_ALL){
-                const w=b.works.filter(x=>N(contractor(x))===N(detail));
-                const bills=b.bills.filter(x=>N(contractor(x))===N(detail));
-                const nums=uniq(w.map(x=>x?.mb).concat(bills.map(x=>x?.mb)));
+              if(
+                c.ctype==='CONTRACTOR' &&
+                detail &&
+                detail!==DETAIL_ALL
+              ){
+                const w=b.works.filter(
+                  x=>N(contractor(x))===N(detail)
+                );
+
+                const bills=b.bills.filter(
+                  x=>N(contractor(x))===N(detail)
+                );
+
+                const nums=uniq(
+                  w.map(x=>x?.mb)
+                    .concat(
+                      bills.map(x=>x?.mb)
+                    )
+                );
+
                 return {
-                  mbs:b.mbs.filter(x=>nums.some(m=>N(mbNo(x))===N(m))),
+                  mbs:b.mbs.filter(
+                    x=>
+                      nums.some(
+                        m=>N(mbNo(x))===N(m)
+                      )
+                  ),
+
                   works:w,
-                  assigns:b.assigns.filter(x=>nums.some(m=>N(x?.mb)===N(m))),
-                  transfers:b.transfers.filter(x=>nums.some(m=>N(transferNo(x))===N(m))),
+
+                  assigns:b.assigns.filter(
+                    x=>
+                      nums.some(
+                        m=>N(x?.mb)===N(m)
+                      )
+                  ),
+
+                  transfers:b.transfers.filter(
+                    x=>
+                      nums.some(
+                        m=>N(transferNo(x))===N(m)
+                      )
+                  ),
+
                   bills,
+
                   jes:b.jes
                 };
               }
 
-              if(c.ctype==='BILL'&&detail&&detail!==DETAIL_ALL){
-                const bills=b.bills.filter(x=>N(billType(x))===N(detail)||N(billNo(x))===N(detail));
-                const nums=uniq(bills.map(x=>x?.mb));
+              if(
+                c.ctype==='BILL' &&
+                detail &&
+                detail!==DETAIL_ALL
+              ){
+                const bills=b.bills.filter(
+                  x=>
+                    N(billType(x))===N(detail) ||
+                    N(billNo(x))===N(detail)
+                );
+
+                const nums=uniq(
+                  bills.map(x=>x?.mb)
+                );
+
                 return {
-                  mbs:b.mbs.filter(x=>nums.some(m=>N(mbNo(x))===N(m))),
-                  works:b.works.filter(x=>nums.some(m=>N(x?.mb)===N(m))||bills.some(bb=>N(workName(bb))===N(workName(x)))),
-                  assigns:b.assigns.filter(x=>nums.some(m=>N(x?.mb)===N(m))),
-                  transfers:b.transfers.filter(x=>nums.some(m=>N(transferNo(x))===N(m))),
+                  mbs:b.mbs.filter(
+                    x=>
+                      nums.some(
+                        m=>N(mbNo(x))===N(m)
+                      )
+                  ),
+
+                  works:b.works.filter(
+                    x=>
+                      nums.some(
+                        m=>N(x?.mb)===N(m)
+                      ) ||
+                      bills.some(
+                        bb=>
+                          N(workName(bb))===
+                          N(workName(x))
+                      )
+                  ),
+
+                  assigns:b.assigns.filter(
+                    x=>
+                      nums.some(
+                        m=>N(x?.mb)===N(m)
+                      )
+                  ),
+
+                  transfers:b.transfers.filter(
+                    x=>
+                      nums.some(
+                        m=>N(transferNo(x))===N(m)
+                      )
+                  ),
+
                   bills,
+
                   jes:b.jes
                 };
               }
@@ -298,11 +1016,13 @@ jobs:
             }
 
             function current(){
+              const c=ctx();
+
               return applyComponentFilter(
-                ctx(),
+                c,
                 dateFilter(
                   baseFor(
-                    ctx(),
+                    c,
                     data()
                   )
                 )
@@ -320,20 +1040,36 @@ jobs:
                   [MB_LARGE,'Big M.B.']
                 );
 
-                uniq(b.mbs.map(mbNo)).forEach(
-                  x=>o.push(
-                    [MB_PREFIX+x,'M.B. क्रमांक '+x]
-                  )
+                uniq(
+                  b.mbs.map(mbNo)
+                ).forEach(
+                  x=>
+                    o.push(
+                      [
+                        MB_PREFIX+x,
+                        'M.B. क्रमांक '+x
+                      ]
+                    )
+                );
+              }
+
+              else if(c.ctype==='WORK'){
+                o.push(
+                  [DETAIL_ALL,'सर्व कामे']
                 );
 
-              }else if(c.ctype==='WORK'){
-                o.push([DETAIL_ALL,'सर्व कामे']);
-                uniq(b.works.map(workName)).forEach(
+                uniq(
+                  b.works.map(workName)
+                ).forEach(
                   x=>o.push([x,x])
                 );
+              }
 
-              }else if(c.ctype==='JE'){
-                o.push([DETAIL_ALL,'सर्व JE']);
+              else if(c.ctype==='JE'){
+                o.push(
+                  [DETAIL_ALL,'सर्व JE']
+                );
+
                 uniq(
                   b.works.map(jeName)
                     .concat(
@@ -343,11 +1079,16 @@ jobs:
                 ).forEach(
                   x=>o.push([x,x])
                 );
+              }
 
-              }else if(c.ctype==='CONTRACTOR'){
+              else if(c.ctype==='CONTRACTOR'){
                 o.push(
-                  [DETAIL_ALL,'सर्व Contractor / Agency']
+                  [
+                    DETAIL_ALL,
+                    'सर्व Contractor / Agency'
+                  ]
                 );
+
                 uniq(
                   b.works.map(contractor)
                     .concat(
@@ -357,9 +1098,13 @@ jobs:
                 ).forEach(
                   x=>o.push([x,x])
                 );
+              }
 
-              }else if(c.ctype==='BILL'){
-                o.push([DETAIL_ALL,'सर्व Bill']);
+              else if(c.ctype==='BILL'){
+                o.push(
+                  [DETAIL_ALL,'सर्व Bill']
+                );
+
                 uniq(
                   b.bills.map(billType)
                     .concat(
@@ -368,21 +1113,27 @@ jobs:
                 ).forEach(
                   x=>o.push([x,x])
                 );
+              }
 
-              }else if(c.ctype==='TRANSFER'){
+              else if(c.ctype==='TRANSFER'){
                 o.push(
-                  [DETAIL_ALL,'सर्व Transfer / History']
+                  [
+                    DETAIL_ALL,
+                    'सर्व Transfer / History'
+                  ]
                 );
+
                 uniq(
                   b.transfers.map(transferNo)
                 ).forEach(
-                  x=>o.push(
-                    [
-                      x,
-                      'M.B. '+x+
-                      ' — Transfer History'
-                    ]
-                  )
+                  x=>
+                    o.push(
+                      [
+                        x,
+                        'M.B. '+x+
+                        ' — Transfer History'
+                      ]
+                    )
                 );
               }
 
@@ -399,6 +1150,7 @@ jobs:
                   ['BILL','Bill'],
                   ['TRANSFER','Transfer / History']
                 ],
+
                 JE:[
                   ['ALL','सर्व माहिती'],
                   ['WORK','कामाचे नाव'],
@@ -407,6 +1159,7 @@ jobs:
                   ['BILL','Bill'],
                   ['TRANSFER','Transfer / History']
                 ],
+
                 WORK:[
                   ['ALL','सर्व माहिती'],
                   ['JE','JE चे नाव'],
@@ -415,6 +1168,7 @@ jobs:
                   ['BILL','Bill'],
                   ['TRANSFER','Transfer / History']
                 ],
+
                 CONTRACTOR:[
                   ['ALL','सर्व माहिती'],
                   ['WORK','कामाचे नाव'],
@@ -423,6 +1177,7 @@ jobs:
                   ['BILL','Bill'],
                   ['TRANSFER','Transfer / History']
                 ],
+
                 BILL:[
                   ['ALL','सर्व माहिती'],
                   ['MB','M.B.'],
@@ -431,6 +1186,7 @@ jobs:
                   ['CONTRACTOR','Contractor / Agency'],
                   ['TRANSFER','Transfer / History']
                 ],
+
                 TRANSFER:[
                   ['ALL','सर्व माहिती'],
                   ['MB','M.B.'],
@@ -445,14 +1201,19 @@ jobs:
             }
 
             function renderType(){
-              const type=document.getElementById('homeRelType');
+              const type=
+                document.getElementById(
+                  'homeRelType'
+                );
+
               if(!type)return;
 
               type.innerHTML=
                 '<option value="">संबंधित प्रकार निवडा</option>'+
                 Object.keys(TYPE_LABELS)
                   .map(
-                    k=>`<option value="${k}">${E(TYPE_LABELS[k])}</option>`
+                    k=>
+                      `<option value="${k}">${E(TYPE_LABELS[k])}</option>`
                   )
                   .join('');
 
@@ -461,7 +1222,12 @@ jobs:
 
             function renderTargets(){
               const c=ctx();
-              const sel=document.getElementById('homeRelTarget');
+
+              const sel=
+                document.getElementById(
+                  'homeRelTarget'
+                );
+
               if(!sel)return;
 
               if(
@@ -470,7 +1236,9 @@ jobs:
               ){
                 sel.innerHTML=
                   '<option value="">दिनांक कालावधी निवडा</option>';
+
                 sel.disabled=true;
+
                 return;
               }
 
@@ -529,14 +1297,19 @@ jobs:
                   )
               };
 
-              const list=arrays[c.type]||[];
+              const list=
+                arrays[c.type]||[];
 
               sel.innerHTML=
                 '<option value="__ALL__">'+
-                E(TYPE_LABELS[c.type]||'सर्व')+
+                E(
+                  TYPE_LABELS[c.type]||
+                  'सर्व'
+                )+
                 ' — सर्व</option>'+
                 list.map(
-                  x=>`<option value="${E(x)}">${E(x)}</option>`
+                  x=>
+                    `<option value="${E(x)}">${E(x)}</option>`
                 ).join('');
 
               sel.disabled=false;
@@ -545,31 +1318,46 @@ jobs:
 
             function renderComponents(){
               const c=ctx();
-              const sel=document.getElementById('homeRelComponent');
-              const detail=document.getElementById('homeRelDetail');
+
+              const sel=
+                document.getElementById(
+                  'homeRelComponent'
+                );
+
+              const detail=
+                document.getElementById(
+                  'homeRelDetail'
+                );
 
               if(!sel)return;
 
-              const opts=componentOptions(c);
+              const opts=
+                componentOptions(c);
 
               sel.innerHTML=
                 '<option value="">संबंधित प्रकार निवडा</option>'+
                 opts.map(
-                  x=>`<option value="${x[0]}::${x[0]}">${E(x[1])}</option>`
+                  x=>
+                    `<option value="${x[0]}::${x[0]}">${E(x[1])}</option>`
                 ).join('');
 
-              sel.disabled=!c.target||!c.type;
+              sel.disabled=
+                !c.target ||
+                !c.type;
 
               if(detail){
                 detail.style.display='none';
+
                 detail.innerHTML=
                   '<option value="">तपशील निवडा</option>';
+
                 detail.value='';
               }
 
-              const bs=document.getElementById(
-                'homeRelBillType'
-              );
+              const bs=
+                document.getElementById(
+                  'homeRelBillType'
+                );
 
               if(bs){
                 bs.style.display='none';
@@ -579,7 +1367,12 @@ jobs:
 
             function renderDetails(){
               const c=ctx();
-              const sel=document.getElementById('homeRelDetail');
+
+              const sel=
+                document.getElementById(
+                  'homeRelDetail'
+                );
+
               if(!sel)return;
 
               if(
@@ -587,26 +1380,41 @@ jobs:
                 c.ctype==='ALL'
               ){
                 sel.style.display='none';
+
                 sel.innerHTML=
                   '<option value="'+
                   DETAIL_ALL+
                   '">सर्व माहिती</option>';
+
                 sel.value=DETAIL_ALL;
+
                 renderResult();
+
                 return;
               }
 
-              const d=dateFilter(data());
-              const opts=relatedOptions(c,d);
+              const d=
+                dateFilter(
+                  data()
+                );
+
+              const opts=
+                relatedOptions(
+                  c,
+                  d
+                );
 
               sel.innerHTML=
                 '<option value="">तपशील निवडा</option>'+
                 opts.map(
-                  x=>`<option value="${E(x[0])}">${E(x[1])}</option>`
+                  x=>
+                    `<option value="${E(x[0])}">${E(x[1])}</option>`
                 ).join('');
 
               sel.style.display=
-                opts.length?'block':'none';
+                opts.length
+                  ? 'block'
+                  : 'none';
 
               sel.disabled=false;
               sel.value='';
@@ -622,16 +1430,16 @@ jobs:
                   </div>
                   ${
                     rows.map(
-                      r=>`
-                        <div class="rel-line">
+                      r=>
+                        `<div class="rel-line">
                           <b>${E(r[0])}:</b>
                           ${E(
-                            r[1]===undefined||r[1]===''
+                            r[1]===undefined ||
+                            r[1]===''
                               ? '-'
                               : r[1]
                           )}
-                        </div>
-                      `
+                        </div>`
                     ).join('')
                   }
                 </div>
@@ -642,19 +1450,28 @@ jobs:
               if(!items.length){
                 return section(
                   title,
-                  [['नोंद','उपलब्ध नाही']]
+                  [
+                    [
+                      'नोंद',
+                      'उपलब्ध नाही'
+                    ]
+                  ]
                 );
               }
 
               return `
                 <div class="rel-section">
                   <div class="rel-section-title">
-                    ${E(title)} (${items.length})
+                    ${E(title)}
+                    (${items.length})
                   </div>
+
                   ${
                     items.map(
                       (x,i)=>
-                        `<div style="border-top:1px solid #e8eef2;padding:7px 0">${fn(x,i)}</div>`
+                        `<div style="border-top:1px solid #e8eef2;padding:7px 0">
+                          ${fn(x,i)}
+                        </div>`
                     ).join('')
                   }
                 </div>
@@ -666,9 +1483,14 @@ jobs:
               const b=current();
 
               const title=
-                (TYPE_LABELS[c.type]||'संबंधित')+
+                (TYPE_LABELS[c.type]||
+                'संबंधित')+
                 ' → '+
-                (c.target==='__ALL__'?'सर्व':c.target);
+                (
+                  c.target==='__ALL__'
+                    ? 'सर्व'
+                    : c.target
+                );
 
               let h=
                 `<div class="rel-head">${E(title)}</div>`;
@@ -689,7 +1511,10 @@ jobs:
                     ).length
                   ],
                   ['Bills',b.bills.length],
-                  ['Transfer / History',b.transfers.length]
+                  [
+                    'Transfer / History',
+                    b.transfers.length
+                  ]
                 ]
               );
 
@@ -697,51 +1522,69 @@ jobs:
                 'M.B. ची संपूर्ण माहिती',
                 b.mbs,
                 (m,i)=>
-                  [
-                    section(
-                      'M.B. '+mbNo(m),
+                  section(
+                    'M.B. '+mbNo(m),
+                    [
                       [
-                        ['M.B. क्रमांक',mbNo(m)],
-                        ['Size',m.size||'-'],
-                        ['Status',m.status||'-'],
-                        [
-                          'प्राप्त दिनांक',
-                          D(
-                            m.receivedDate||
-                            m.date||
-                            m.createdAt
-                          )
-                        ],
-                        [
-                          'सध्या कुणाकडे',
-                          (()=>{
-                            try{
-                              return (
-                                mbSummaryCurrentHolder(
-                                  mbNo(m)
-                                ).name||'-'
-                              );
-                            }catch(e){
-                              return '-';
-                            }
-                          })()
-                        ]
+                        'M.B. क्रमांक',
+                        mbNo(m)
+                      ],
+                      [
+                        'Size',
+                        m.size||'-'
+                      ],
+                      [
+                        'Status',
+                        m.status||'-'
+                      ],
+                      [
+                        'प्राप्त दिनांक',
+                        D(
+                          m.receivedDate||
+                          m.date||
+                          m.createdAt
+                        )
+                      ],
+                      [
+                        'सध्या कुणाकडे',
+                        (()=>{
+                          try{
+                            return (
+                              mbSummaryCurrentHolder(
+                                mbNo(m)
+                              ).name||'-'
+                            );
+                          }catch(e){
+                            return '-';
+                          }
+                        })()
                       ]
-                    )
-                  ].join('')
+                    ]
+                  )
               );
 
               h+=listSection(
                 'कामांची संपूर्ण माहिती',
                 b.works,
                 (w,i)=>
-                  `<b>${i+1}) ${E(workName(w)||'-')}</b>`+
+                  `<b>${i+1}) ${E(
+                    workName(w)||'-'
+                  )}</b>`+
                   section(
                     'काम',
                     [
-                      ['Work Name',workName(w)],
-                      ['M.B.',w.mb||'-'],
-                      ['JE',jeName(w)||'-'],
+                      [
+                        'Work Name',
+                        workName(w)
+                      ],
+                      [
+                        'M.B.',
+                        w.mb||'-'
+                      ],
+                      [
+                        'JE',
+                        jeName(w)||'-'
+                      ],
                       [
                         'Contractor / Agency',
                         contractor(w)||'-'
@@ -758,25 +1601,37 @@ jobs:
                       b.bills.map(contractor),
                       b.assigns.map(contractor)
                     )
-                ).map(x=>({name:x})),
+                ).map(
+                  x=>({name:x})
+                ),
                 (c0,i)=>{
                   const co=c0.name;
 
                   const ww=
                     b.works.filter(
-                      x=>N(contractor(x))===N(co)
+                      x=>
+                        N(contractor(x))===
+                        N(co)
                     );
 
                   const bb=
                     b.bills.filter(
-                      x=>N(contractor(x))===N(co)
+                      x=>
+                        N(contractor(x))===
+                        N(co)
                     );
 
                   return section(
                     co,
                     [
-                      ['कामे',ww.length],
-                      ['Bills',bb.length],
+                      [
+                        'कामे',
+                        ww.length
+                      ],
+                      [
+                        'Bills',
+                        bb.length
+                      ],
                       [
                         'M.B.',
                         uniq(
@@ -796,10 +1651,20 @@ jobs:
                 b.bills,
                 (x,i)=>
                   section(
-                    (i+1)+') '+(billType(x)||'Bill'),
+                    (i+1)+') '+
+                    (
+                      billType(x)||
+                      'Bill'
+                    ),
                     [
-                      ['Bill प्रकार',billType(x)||'-'],
-                      ['Bill क्रमांक',billNo(x)||'-'],
+                      [
+                        'Bill प्रकार',
+                        billType(x)||'-'
+                      ],
+                      [
+                        'Bill क्रमांक',
+                        billNo(x)||'-'
+                      ],
                       [
                         'Bill दिनांक',
                         D(
@@ -808,14 +1673,26 @@ jobs:
                           x.savedAt
                         )
                       ],
-                      ['M.B.',x.mb||'-'],
-                      ['काम',workName(x)||'-'],
-                      ['JE',jeName(x)||'-'],
+                      [
+                        'M.B.',
+                        x.mb||'-'
+                      ],
+                      [
+                        'काम',
+                        workName(x)||'-'
+                      ],
+                      [
+                        'JE',
+                        jeName(x)||'-'
+                      ],
                       [
                         'Contractor / Agency',
                         contractor(x)||'-'
                       ],
-                      ['रक्कम',amount(x.amount)],
+                      [
+                        'रक्कम',
+                        amount(x.amount)
+                      ],
                       [
                         'Payment Status',
                         x.paymentStatus||'-'
@@ -831,7 +1708,9 @@ jobs:
                   section(
                     (i+1)+
                     ') M.B. '+
-                    (transferNo(x)||'-'),
+                    (
+                      transferNo(x)||'-'
+                    ),
                     [
                       [
                         'M.B.',
@@ -927,9 +1806,9 @@ jobs:
               const c=ctx();
 
               if(
-                !c.type||
-                !c.target||
-                !c.ctype||
+                !c.type ||
+                !c.target ||
+                !c.ctype ||
                 (
                   c.ctype!=='ALL' &&
                   !c.detail
@@ -949,7 +1828,8 @@ jobs:
               if(!pa){
                 if(
                   window.AndroidBridge &&
-                  typeof window.AndroidBridge.print==='function'
+                  typeof window.AndroidBridge.print===
+                    'function'
                 ){
                   window.AndroidBridge.print();
                 }else{
@@ -960,23 +1840,32 @@ jobs:
 
               pa.innerHTML=
                 `<div class="a4-page">
+
                   <div class="a4-header">
+
                     <div class="dept">
                       सार्वजनिक बांधकाम विभाग
                     </div>
+
                     <div class="system">
                       मोजमाप पुस्तिका नियंत्रण प्रणाली
                     </div>
+
                     <div class="report-title">
                       M.B. SUMMARY — LINKED REPORT
                     </div>
+
                   </div>
 
                   <div class="a4-meta">
+
                     <span>
                       <b>निवड :</b>
                       ${E(
-                        (TYPE_LABELS[c.type]||'')+
+                        (
+                          TYPE_LABELS[c.type]||
+                          ''
+                        )+
                         ' → '+
                         (
                           c.target==='__ALL__'
@@ -1004,6 +1893,7 @@ jobs:
                         )
                       )}
                     </span>
+
                   </div>
 
                   ${reportHTML()}
@@ -1011,6 +1901,7 @@ jobs:
                   <div class="a4-footer">
                     Created By : विठ्ठल कोकाटे पाटील
                   </div>
+
                 </div>`;
 
               const old=document.title;
@@ -1022,7 +1913,8 @@ jobs:
                 ()=>{
                   if(
                     window.AndroidBridge &&
-                    typeof window.AndroidBridge.print==='function'
+                    typeof window.AndroidBridge.print===
+                      'function'
                   ){
                     window.AndroidBridge.print();
                   }else{
@@ -1077,9 +1969,9 @@ jobs:
                 );
 
               if(
-                !type||
-                !target||
-                !comp||
+                !type ||
+                !target ||
+                !comp ||
                 !detail
               ){
                 return false;
@@ -1138,7 +2030,7 @@ jobs:
               detail.style.display='none';
 
               if(
-                typeof homeRelRangeValid!=='function'||
+                typeof homeRelRangeValid!=='function' ||
                 homeRelRangeValid()
               ){
                 renderResult();
@@ -1191,7 +2083,10 @@ jobs:
           import re
 
           p=Path('mbms_work/index.html')
-          t=p.read_text(encoding='utf-8')
+
+          t=p.read_text(
+              encoding='utf-8'
+          )
 
           patch=Path(
               '/tmp/mbms_summary_patch.js'
@@ -1227,6 +2122,7 @@ jobs:
       - name: Validate patched HTML JavaScript
         run: |
           set -euo pipefail
+
           python3 <<'PY'
           from pathlib import Path
           import re
@@ -1258,7 +2154,8 @@ jobs:
           print('PATCH SCRIPT OK')
           PY
 
-          node --check /tmp/v128_patch_check.js
+          node --check \
+            /tmp/v128_patch_check.js
 
           grep -q \
             'window.loadHomeRelTargets' \
@@ -1274,10 +2171,6 @@ jobs:
 
           grep -q \
             'window.printHomeRelationshipReport' \
-            mbms_work/index.html
-
-          grep -q \
-            'AndroidBridge.print' \
             mbms_work/index.html
 
       - name: Create Android project
@@ -1325,7 +2218,9 @@ jobs:
 
           cat > mbms_android/build.gradle <<'EOF'
           plugins {
-              id 'com.android.application' version '8.6.1' apply false
+              id 'com.android.application'
+                version '8.6.1'
+                apply false
           }
           EOF
 
@@ -1418,6 +2313,7 @@ jobs:
           import android.provider.MediaStore;
           import android.webkit.*;
           import android.print.PrintAttributes;
+          import android.print.PrintManager;
           import android.graphics.Color;
           import android.view.*;
           import android.widget.Toast;
