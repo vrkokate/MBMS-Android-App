@@ -745,7 +745,7 @@ jobs:
                       mbs.some(
                         m=>N(x?.mb)===N(m)
                       )
-                  ),
+                  ],
 
                   transfers:tr,
 
@@ -1004,7 +1004,7 @@ jobs:
                       nums.some(
                         m=>N(transferNo(x))===N(m)
                       )
-                  ),
+                  ],
 
                   bills,
 
@@ -2096,7 +2096,7 @@ jobs:
 
           tag=(
               '<script id="V128_MBMS_SUMMARY_LINKED_FIX">\n'+
-              patch.replace('          ','')+
+              patch+
               '\n</script>\n'
           )
 
@@ -2192,6 +2192,8 @@ jobs:
             mbms_android/app/src/main/assets/index.html
 
           cat > mbms_android/settings.gradle <<'EOF'
+          import org.gradle.api.initialization.resolve.RepositoriesMode
+
           pluginManagement {
               repositories {
                   google()
@@ -2218,9 +2220,7 @@ jobs:
 
           cat > mbms_android/build.gradle <<'EOF'
           plugins {
-              id 'com.android.application'
-                version '8.6.1'
-                apply false
+              id 'com.android.application' version '8.6.1' apply false
           }
           EOF
 
