@@ -1,590 +1,671 @@
 name: MBMS Android APK Build
-​on:
-workflow_dispatch:
-push:
-branches:
-- main
-​permissions:
-contents: read
-​jobs:
-build:
-name: Build Verified MBMS Android APK
-runs-on: ubuntu-24.04
-​steps:
-- name: Checkout repository
-uses: actions/checkout@v4
-​- name: Setup Java 17
-uses: actions/setup-java@v4
-with:
-distribution: temurin
-java-version: '17'
-​- name: Setup Android SDK
-uses: android-actions/setup-android@v4
-​- name: Install Android SDK Packages
-shell: bash
-run: |
-set -e
-yes | sdkmanager --licenses >/dev/null 2>&1 || true
-sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
-​- name: Setup Gradle 8.7
-uses: gradle/actions/setup-gradle@v4
-with:
-gradle-version: '8.7'
-​- name: Locate and Prepare HTML
-shell: bash
-run: |
-set -e
-mkdir -p mbms_work
-​for z in *.zip; do
-if [ -f "$z" ]; then
-echo "Unpacking zip: $z"
-unzip -q -o "$z" -d extracted_zip || true
-fi
-done
-​TARGET_HTML=$(find . -type f -iname ".html" -not -path "./.git/" -exec ls -S {} + | head -n 1)
-​if [ -z "$TARGET_HTML" ]; then
-echo "ERROR: No HTML file found in repository."
-exit 1
-fi
-​echo "Target HTML detected: $TARGET_HTML"
-cp "$TARGET_HTML" mbms_work/index.html
-test -s mbms_work/index.html
-​- name: Apply Safe Non-Destructive Injections
-shell: bash
-run: |
-set -e
-python3 <<'PY'
-from pathlib import Path
-​html_file = Path("mbms_work/index.html")
-raw_html = html_file.read_text(encoding="utf-8")
-​master_styles = """
-<style id="MBMS_JE_SAFE_STYLES">
-/* १. हेडरमधील वरचे केशरी REPORT बटण सुरक्षितपणे लपवणे (HTML न तोडता) */
-.header button.btn-warning,
-.header .report-btn,
-.top-bar button.report-btn,
-header button.report-btn {
-display: none !important;
-visibility: hidden !important;
-}
-​/* २. A4 प्रिंट लेआउट दुरुस्ती */
-@media print {
-@page {
-size: A4 portrait;
-margin: 8mm 8mm 8mm 8mm !important;
-}
-body {
-font-family: 'Noto Sans Devanagari', 'Mukta', 'Arial', sans-serif !important;
-color: #000 !important;
-background: #fff !important;
-margin: 0 !important;
-padding: 0 !important;
--webkit-print-color-adjust: exact !important;
-print-color-adjust: exact !important;
-}
-.no-print { display: none !important; }
-​.report-header { text-align: center !important; margin: 0 0 6px 0 !important; }
-.report-header h2 { margin: 0 !important; font-size: 16px !important; font-weight: bold !important; }
-.report-header h3 { margin: 2px 0 !important; font-size: 14px !important; }
-.report-header h4 { margin: 2px 0 6px 0 !important; font-size: 13px !important; text-decoration: underline !important; }
-​.report-meta {
-display: flex !important;
-justify-content: space-between !important;
-font-size: 11.5px !important;
-margin-bottom: 5px !important;
-border-bottom: 1.2px solid #000 !important;
-padding-bottom: 3px !important;
-}
-​table.print-table {
-width: 100% !important;
-border-collapse: collapse !important;
-table-layout: fixed !important;
-margin-top: 4px !important;
-}
-table.print-table thead { display: table-header-group !important; }
-table.print-table tr { page-break-inside: avoid !important; }
-table.print-table th, table.print-table td {
-border: 1px solid #000 !important;
-padding: 5px 6px !important;
-font-size: 12px !important;
-line-height: 1.3 !important;
-word-wrap: break-word !important;
-overflow-wrap: break-word !important;
-vertical-align: middle !important;
-}
-table.print-table th {
-background-color: #f0f0f0 !important;
-font-weight: bold !important;
-text-align: center !important;
-}
-​.report-footer {
-position: fixed !important;
-bottom: 0 !important;
-left: 0 !important;
-right: 0 !important;
-text-align: center !important;
-font-size: 10px !important;
-border-top: 1px solid #777 !important;
-padding-top: 2px !important;
-}
-}
-</style>
-"""
-​master_script = """
-<script id="MBMS_JE_SAFE_CONTROLLER">
-(function() {
-// १. वरचे केशरी REPORT बटण सुरक्षितपणे लपवणे
-setInterval(function() {
-document.querySelectorAll('button, a').forEach(function(b) {
-if (b.textContent.trim().toUpperCase() === 'REPORT') {
-var rect = b.getBoundingClientRect();
-if (rect.top > 0 && rect.top < 70) {
-b.style.display = 'none';
-}
-}
-});
-}, 300);
-​// २. स्क्रीनवरील सर्व JE नावे १००% अचूक मिळवणे
-function getJEListDirect() {
-var names = [];
-document.querySelectorAll('tr').forEach(function(tr) {
-var tds = tr.querySelectorAll('td');
-if (tds.length >= 2) {
-var raw = tds[1].textContent.replace(/UPDATE|DELETE/gi, '').trim();
-if (raw && raw !== 'JE नाव' && !raw.includes('Add केलेले नाही') && !raw.includes('उपलब्ध नाही')) {
-if (!names.includes(raw)) names.push(raw);
-}
-}
-});
-​// जर टेबल स्ट्रक्चर सापडले नाही तर Action बटणांच्या पॅरेंटमधून शोधणे
-if (names.length === 0) {
-document.querySelectorAll('button').forEach(function(b) {
-var txt = b.textContent.trim().toUpperCase();
-if (txt === 'DELETE' || txt === 'UPDATE') {
-var tr = b.closest('tr') || b.closest('[class*="row"]');
-if (tr) {
-var cl = tr.cloneNode(true);
-cl.querySelectorAll('button').forEach(function(x){ x.remove(); });
-var cleanTxt = cl.textContent.replace(/^\s*\d+\s*/, '').trim();
-if (cleanTxt && cleanTxt.length > 1 && !names.includes(cleanTxt)) {
-names.push(cleanTxt);
-}
-}
-}
-});
-}
-​// LocalStorage मधील JE शोधणे
-if (names.length === 0) {
-for (var i = 0; i < localStorage.length; i++) {
-var k = localStorage.key(i);
-try {
-var arr = JSON.parse(localStorage.getItem(k));
-if (Array.isArray(arr)) {
-arr.forEach(function(item) {
-var val = typeof item === 'object' ? (item.name || item.jeName || item.je) : item;
-if (typeof val === 'string' && val.trim() && (k.toLowerCase().includes('je') || val.includes('श्री'))) {
-if (!names.includes(val.trim())) names.push(val.trim());
-}
-});
-}
-} catch(e){}
-}
-}
-return names;
-}
-​function syncStorageDelete(name) {
-if (!name) return;
-for (var i = 0; i < localStorage.length; i++) {
-var k = localStorage.key(i);
-try {
-var arr = JSON.parse(localStorage.getItem(k));
-if (Array.isArray(arr)) {
-var res = arr.filter(function(x) {
-var v = typeof x === 'object' ? (x.name || x.jeName || x.je) : x;
-return v !== name;
-});
-if (res.length !== arr.length) {
-localStorage.setItem(k, JSON.stringify(res));
-}
-}
-} catch(e){}
-}
-}
-​function syncStorageEdit(oldN, newN) {
-if (!oldN || !newN) return;
-for (var i = 0; i < localStorage.length; i++) {
-var k = localStorage.key(i);
-try {
-var arr = JSON.parse(localStorage.getItem(k));
-if (Array.isArray(arr)) {
-var updated = false;
-arr.forEach(function(x, idx) {
-if (x === oldN) { arr[idx] = newN; updated = true; }
-else if (typeof x === 'object' && (x.name === oldN || x.jeName === oldN)) {
-if (x.name) x.name = newN;
-if (x.jeName) x.jeName = newN;
-updated = true;
-}
-});
-if (updated) localStorage.setItem(k, JSON.stringify(arr));
-}
-} catch(e){}
-}
-}
-​function renumberRows() {
-var rows = document.querySelectorAll('table tbody tr');
-rows.forEach(function(r, idx) {
-var td = r.querySelector('td');
-if (td) td.textContent = (idx + 1);
-});
-}
-​// ३. इन-प्लेस UPDATE आणि DELETE लिसनर
-var currentEditTr = null;
-var currentOldName = null;
-​document.addEventListener('click', function(e) {
-var btn = e.target.closest('button, a');
-if (!btn) return;
-var action = (btn.textContent || '').trim().toUpperCase();
-​// ---------- DELETE बटण ----------
-if (action === 'DELETE') {
-e.preventDefault();
-e.stopPropagation();
-var tr = btn.closest('tr') || btn.closest('[class*="row"]') || btn.parentElement.parentElement;
-if (!tr) return;
-​var name = '';
-var tds = tr.querySelectorAll('td');
-if (tds.length >= 2) {
-name = tds[1].textContent.replace(/UPDATE|DELETE/gi, '').trim();
-} else {
-var cl = tr.cloneNode(true);
-cl.querySelectorAll('button').forEach(function(b){ b.remove(); });
-name = cl.textContent.replace(/^\s*\d+\s*/, '').trim();
-}
-​tr.remove();
-renumberRows();
-syncStorageDelete(name);
-return;
-}
-​// ---------- UPDATE बटण (यादीतील) ----------
-if (action === 'UPDATE') {
-var isRow = btn.closest('tr') || btn.closest('tbody') || btn.closest('[class*="row"]');
-if (isRow) {
-e.preventDefault();
-e.stopPropagation();
-var trTarget = btn.closest('tr') || btn.closest('[class*="row"]') || btn.parentElement.parentElement;
-if (!trTarget) return;
-​var jeName = '';
-var cells = trTarget.querySelectorAll('td');
-if (cells.length >= 2) {
-jeName = cells[1].textContent.replace(/UPDATE|DELETE/gi, '').trim();
-}
-​var input = document.querySelector('input[placeholder*="Junior Engineer"]') ||
-document.querySelector('#jeName') ||
-document.querySelector('input[type="text"]');
-​var addBtn = Array.from(document.querySelectorAll('button')).find(function(b) {
-var t = b.textContent.trim().toUpperCase();
-return (t === 'ADD' || t === 'UPDATE') && b !== btn;
-});
-​if (input && jeName) {
-input.value = jeName;
-currentEditTr = trTarget;
-currentOldName = jeName;
-​if (addBtn) {
-addBtn.textContent = 'UPDATE';
-addBtn.style.backgroundColor = '#0284c7';
-}
-input.focus();
-input.scrollIntoView({ behavior: 'smooth', block: 'center' });
-}
-return;
-}
-}
-​// ---------- इनपुट समोरील ADD / UPDATE सेव्ह करणे ----------
-if (currentEditTr && (action === 'UPDATE' || action === 'ADD')) {
-var mainInput = document.querySelector('input[placeholder*="Junior Engineer"]') ||
-document.querySelector('#jeName') ||
-document.querySelector('input[type="text"]');
-​if (mainInput && (btn.textContent.trim().toUpperCase() === 'UPDATE' || btn.closest('.card')?.contains(mainInput))) {
-e.preventDefault();
-e.stopPropagation();
-var newVal = mainInput.value.trim();
-if (newVal) {
-var c = currentEditTr.querySelectorAll('td');
-if (c.length >= 2) c[1].textContent = newVal;
-syncStorageEdit(currentOldName, newVal);
-​mainInput.value = '';
-btn.textContent = 'ADD';
-btn.style.backgroundColor = '';
-currentEditTr = null;
-currentOldName = null;
-}
-}
-}
-​// ---------- JE List मधील निळ्या REPORT बटणावर क्लिक ----------
-if (action === 'REPORT') {
-var rect = btn.getBoundingClientRect();
-if (rect.top > 70) {
-e.preventDefault();
-e.stopPropagation();
-printJEA4Report();
-}
-}
-}, true);
-​// ४. JE संपूर्ण A4 अहवाल जनरेटर
-window.printJEA4Report = function() {
-var pa = document.getElementById('printArea');
-if (!pa) {
-pa = document.createElement('div');
-pa.id = 'printArea';
-document.body.appendChild(pa);
-}
-​var list = getJEListDirect();
-​var h = '<div class="report-header">';
-h += '  <h2>सार्वजनिक बांधकाम विभाग</h2>';
-h += '  <h3>मोजमाप पुस्तिका नियंत्रण प्रणाली</h3>';
-h += '  <h4>JE REPORT</h4>';
-h += '</div>';
-h += '<div class="report-meta">';
-h += '  <span><b>अहवाल :</b> सर्व कनिष्ठ अभियंता यादी</span>';
-h += '  <span><b>दिनांक :</b> ' + new Date().toLocaleDateString('en-GB') + '</span>';
-h += '</div>';
-h += '<table class="print-table">';
-h += '  <thead><tr>';
-h += '    <th style="width:12%; text-align:center;">अ.क्र.</th>';
-h += '    <th style="width:88%; text-align:left;">Junior Engineer चे नाव</th>';
-h += '  </tr></thead>';
-h += '  <tbody>';
-​if (list.length === 0) {
-h += '<tr><td colspan="2" style="text-align:center; padding:12px;">कोणतीही JE नोंद उपलब्ध नाही.</td></tr>';
-} else {
-for (var i = 0; i < list.length; i++) {
-h += '<tr>';
-h += '  <td style="text-align:center;">' + (i + 1) + '</td>';
-h += '  <td style="text-align:left;">' + list[i] + '</td>';
-h += '</tr>';
-}
-}
-​h += '  </tbody>';
-h += '</table>';
-h += '<div class="report-footer">© सर्व हक्क राखीव - सार्वजनिक बांधकाम विभाग</div>';
-​pa.innerHTML = h;
-setTimeout(function(){ window.print(); }, 120);
-};
-​window.printJEReport = window.printJEA4Report;
-})();
-</script>
-"""
-​if "<head>" in raw_html.lower():
-h_idx = raw_html.lower().find("<head>") + 6
-raw_html = raw_html[:h_idx] + master_styles + raw_html[h_idx:]
-else:
-raw_html = master_styles + raw_html
-​if "</body>" in raw_html.lower():
-b_idx = raw_html.lower().rfind("</body>")
-raw_html = raw_html[:b_idx] + master_script + raw_html[b_idx:]
-else:
-raw_html += master_script
-​html_file.write_text(raw_html, encoding="utf-8")
-print("SUCCESS: Injected non-destructive styles and controllers.")
-PY
-​- name: Create Android project structure
-shell: bash
-run: |
-set -e
-rm -rf mbms_android release
-mkdir -p 
-mbms_android/app/src/main/assets 
-mbms_android/app/src/main/java/com/mbms/app 
-mbms_android/app/src/main/res/values 
-release
-​cp mbms_work/index.html mbms_android/app/src/main/assets/index.html
-​cat > mbms_android/settings.gradle <<'EOF'
-pluginManagement {
-repositories { google(); mavenCentral(); gradlePluginPortal(); }
-}
-dependencyResolutionManagement {
-repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-repositories { google(); mavenCentral(); }
-}
-rootProject.name = "MBMSAndroid"
-include(":app")
-EOF
-​cat > mbms_android/build.gradle <<'EOF'
-plugins { id 'com.android.application' version '8.6.1' apply false }
-EOF
-​cat > mbms_android/gradle.properties <<'EOF'
-org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
-android.useAndroidX=true
-android.nonTransitiveRClass=true
-EOF
-​cat > mbms_android/app/build.gradle <<'EOF'
-plugins { id 'com.android.application' }
-android {
-namespace 'com.mbms.app'
-compileSdk 35
-defaultConfig {
-applicationId 'com.mbms.app'
-minSdk 26
-targetSdk 35
-versionCode 139
-versionName 'V139'
-}
-buildTypes {
-debug { minifyEnabled false; shrinkResources false }
-release { minifyEnabled false; shrinkResources false }
-}
-compileOptions {
-sourceCompatibility JavaVersion.VERSION_17
-targetCompatibility JavaVersion.VERSION_17
-}
-}
-EOF
-​cat > mbms_android/app/src/main/res/values/strings.xml <<'EOF'
-<resources><string name="app_name">MBMS</string></resources>
-EOF
-​cat > mbms_android/app/src/main/res/values/styles.xml <<'EOF'
-<resources>
-<style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar">
-<item name="android:fontFamily">sans</item>
-<item name="android:colorAccent">#1976D2</item>
-<item name="android:navigationBarColor">#06458E</item>
-</style>
-</resources>
-EOF
-​cat > mbms_android/app/src/main/AndroidManifest.xml <<'EOF'
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
-<uses-permission android:name="android.permission.INTERNET" />
-<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
-<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
-​<application
-android:allowBackup="true"
-android:usesCleartextTraffic="true"
-android:label="@string/app_name"
-android:theme="@style/AppTheme"
-android:hardwareAccelerated="true">
-<activity
-android:name=".MainActivity"
-android:exported="true"
-android:screenOrientation="portrait"
-android:configChanges="orientation|screenSize|keyboardHidden">
-<intent-filter>
-<action android:name="android.intent.action.MAIN" />
-<category android:name="android.intent.category.LAUNCHER" />
-</intent-filter>
-</activity>
-</application>
-</manifest>
-EOF
-​- name: Generate MainActivity.java
-shell: bash
-run: |
-set -e
-cat > mbms_android/app/src/main/java/com/mbms/app/MainActivity.java <<'EOF'
-package com.mbms.app;
-​import android.app.Activity;
-import android.content.Context;
-import android.os.Bundle;
-import android.print.PrintAttributes;
-import android.print.PrintDocumentAdapter;
-import android.print.PrintManager;
-import android.webkit.JavascriptInterface;
-import android.webkit.WebSettings;
-import android.webkit.WebView;
-import android.webkit.WebViewClient;
-import android.widget.Toast;
-​public class MainActivity extends Activity {
-​private WebView webView;
-​@Override
-protected void onCreate(Bundle savedInstanceState) {
-super.onCreate(savedInstanceState);
-​webView = new WebView(this);
-setContentView(webView);
-​WebSettings settings = webView.getSettings();
-settings.setJavaScriptEnabled(true);
-settings.setDomStorageEnabled(true);
-settings.setDatabaseEnabled(true);
-settings.setAllowFileAccess(true);
-settings.setAllowContentAccess(true);
-settings.setTextZoom(100);
-​AndroidBridge bridge = new AndroidBridge();
-webView.addJavascriptInterface(bridge, "MBMSAndroid");
-webView.addJavascriptInterface(bridge, "AndroidBridge");
-​webView.setWebViewClient(new WebViewClient() {
-@Override
-public void onPageFinished(WebView view, String url) {
-super.onPageFinished(view, url);
-webView.evaluateJavascript(
-"window.print=function(){ if(window.MBMSAndroid) window.MBMSAndroid.print(); };",
-null
-);
-}
-});
-​webView.loadUrl("file:///android_asset/index.html");
-}
-​public class AndroidBridge {
-@JavascriptInterface
-public void print() {
-runOnUiThread(new Runnable() {
-@Override
-public void run() {
-try {
-PrintManager manager = (PrintManager) getSystemService(Context.PRINT_SERVICE);
-if (manager != null && webView != null) {
-webView.postDelayed(new Runnable() {
-@Override
-public void run() {
-try {
-PrintDocumentAdapter adapter = webView.createPrintDocumentAdapter("MBMS Report");
-PrintAttributes attributes = new PrintAttributes.Builder()
-.setMediaSize(PrintAttributes.MediaSize.ISO_A4)
-.setMinMargins(PrintAttributes.Margins.NO_MARGINS)
-.build();
-manager.print("MBMS Report", adapter, attributes);
-} catch (Exception e) {
-Toast.makeText(MainActivity.this, "Print अयशस्वी!", Toast.LENGTH_SHORT).show();
-}
-}
-}, 400);
-}
-} catch (Exception e) {
-Toast.makeText(MainActivity.this, "Print सुरू करता आले नाही.", Toast.LENGTH_SHORT).show();
-}
-}
-});
-}
-}
-​@Override
-public void onBackPressed() {
-if (webView != null && webView.canGoBack()) {
-webView.goBack();
-} else {
-super.onBackPressed();
-}
-}
-​@Override
-protected void onDestroy() {
-if (webView != null) {
-webView.stopLoading();
-webView.destroy();
-webView = null;
-}
-super.onDestroy();
-}
-}
-EOF
-​- name: Assemble Final Debug APK
-working-directory: mbms_android
-shell: bash
-run: |
-set -e
-gradle --no-daemon --stacktrace clean :app:assembleDebug
-​APK="app/build/outputs/apk/debug/app-debug.apk"
-test -s "$APK"
-cp "$APK" "../release/MBMS-V139-SAFE-FINAL.apk"
-ls -lh "../release/MBMS-V139-SAFE-FINAL.apk"
-​- name: Upload Final APK Artifact
-uses: actions/upload-artifact@v4
-with:
-name: MBMS-V139-SAFE-FINAL-APK
-path: release/MBMS-V139-SAFE-FINAL.apk
-if-no-files-found: error
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Verified MBMS Android APK
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK Packages
+        shell: bash
+        run: |
+          set -e
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Setup Gradle 8.7
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Locate and Prepare HTML
+        shell: bash
+        run: |
+          set -e
+          mkdir -p mbms_work
+
+          for z in *.zip; do
+            if [ -f "$z" ]; then
+              echo "Unpacking zip: $z"
+              unzip -q -o "$z" -d extracted_zip || true
+            fi
+          done
+
+          TARGET_HTML=$(find . -type f -iname "*.html" -not -path "./.git/*" -exec ls -S {} + | head -n 1)
+
+          if [ -z "$TARGET_HTML" ]; then
+            echo "ERROR: No HTML file found in repository."
+            exit 1
+          fi
+
+          echo "Target HTML detected: $TARGET_HTML"
+          cp "$TARGET_HTML" mbms_work/index.html
+          test -s mbms_work/index.html
+
+      - name: Apply Deep Root Fixes in HTML
+        shell: bash
+        run: |
+          set -e
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          html_file = Path("mbms_work/index.html")
+          raw_html = html_file.read_text(encoding="utf-8")
+
+          # १. मूळ HTML मधून वरचे केशरी REPORT बटण कायमचे काढून टाकणे
+          if "Add JE" in raw_html:
+              parts = raw_html.split("Add JE", 1)
+              parts[0] = re.sub(r'<button[^>]*>[\s\S]*?REPORT[\s\S]*?</button>', '', parts[0], flags=re.I)
+              raw_html = "Add JE".join(parts)
+          elif "Junior Engineer" in raw_html:
+              parts = raw_html.split("Junior Engineer", 1)
+              parts[0] = re.sub(r'<button[^>]*>[\s\S]*?REPORT[\s\S]*?</button>', '', parts[0], flags=re.I)
+              raw_html = "Junior Engineer".join(parts)
+
+          master_styles = """
+          <style id="MBMS_HARDENED_CSS">
+          @media print {
+            @page {
+              size: A4 portrait;
+              margin: 8mm 8mm 8mm 8mm !important;
+            }
+            body {
+              font-family: 'Noto Sans Devanagari', 'Mukta', 'Arial', sans-serif !important;
+              color: #000 !important;
+              background: #fff !important;
+              margin: 0 !important;
+              padding: 0 !important;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
+            .no-print { display: none !important; }
+
+            .report-header { text-align: center !important; margin: 0 0 6px 0 !important; }
+            .report-header h2 { margin: 0 !important; font-size: 16px !important; font-weight: bold !important; }
+            .report-header h3 { margin: 2px 0 !important; font-size: 14px !important; }
+            .report-header h4 { margin: 2px 0 6px 0 !important; font-size: 13px !important; text-decoration: underline !important; }
+
+            .report-meta {
+              display: flex !important;
+              justify-content: space-between !important;
+              font-size: 11.5px !important;
+              margin-bottom: 5px !important;
+              border-bottom: 1.2px solid #000 !important;
+              padding-bottom: 3px !important;
+            }
+
+            table.print-table {
+              width: 100% !important;
+              border-collapse: collapse !important;
+              table-layout: fixed !important;
+              margin-top: 4px !important;
+            }
+            table.print-table thead { display: table-header-group !important; }
+            table.print-table tr { page-break-inside: avoid !important; }
+            table.print-table th, table.print-table td {
+              border: 1px solid #000 !important;
+              padding: 5px 6px !important;
+              font-size: 12px !important;
+              line-height: 1.3 !important;
+              word-wrap: break-word !important;
+              overflow-wrap: break-word !important;
+              vertical-align: middle !important;
+            }
+            table.print-table th {
+              background-color: #f0f0f0 !important;
+              font-weight: bold !important;
+              text-align: center !important;
+            }
+
+            .report-footer {
+              position: fixed !important;
+              bottom: 0 !important;
+              left: 0 !important;
+              right: 0 !important;
+              text-align: center !important;
+              font-size: 10px !important;
+              border-top: 1px solid #777 !important;
+              padding-top: 2px !important;
+            }
+          }
+          </style>
+          """
+
+          master_script = """
+          <script id="MBMS_JE_DIRECT_CONTROLLER">
+          (function() {
+            // वरचे केशरी REPORT बटण कायमचे नष्ट करणे
+            setInterval(function() {
+              document.querySelectorAll('button, a').forEach(function(b) {
+                if (b.textContent.trim().toUpperCase() === 'REPORT') {
+                  var rect = b.getBoundingClientRect();
+                  if (rect.top < 85) {
+                    b.style.display = 'none';
+                    b.remove();
+                  }
+                }
+              });
+            }, 200);
+
+            // १. स्क्रीनवरून किंवा स्टोरेजमधून सर्व JE नावे मिळवणे
+            function extractAllJENames() {
+              var names = [];
+              document.querySelectorAll('tr').forEach(function(tr) {
+                var cells = tr.querySelectorAll('td');
+                if (cells.length >= 2) {
+                  var name = cells[1].textContent.trim();
+                  name = name.replace(/UPDATE|DELETE/gi, '').trim();
+                  if (name && name !== 'JE नाव' && !name.includes('Add केलेले नाही') && !name.includes('उपलब्ध नाही')) {
+                    names.push(name);
+                  }
+                }
+              });
+
+              if (names.length === 0) {
+                document.querySelectorAll('[class*="row"]').forEach(function(row) {
+                  if (row.textContent.includes('UPDATE') && row.textContent.includes('DELETE')) {
+                    var clone = row.cloneNode(true);
+                    clone.querySelectorAll('button, a').forEach(function(b){ b.remove(); });
+                    var text = clone.textContent.replace(/^\\s*\\d+\\s*/, '').trim();
+                    if (text && text.length > 1) names.push(text);
+                  }
+                });
+              }
+
+              if (names.length === 0) {
+                for (var i = 0; i < localStorage.length; i++) {
+                  var k = localStorage.key(i);
+                  try {
+                    var arr = JSON.parse(localStorage.getItem(k));
+                    if (Array.isArray(arr)) {
+                      arr.forEach(function(item) {
+                        var val = typeof item === 'object' ? (item.name || item.jeName || item.je) : item;
+                        if (typeof val === 'string' && val.trim() && (k.toLowerCase().includes('je') || val.includes('श्री'))) {
+                          if (!names.includes(val.trim())) names.push(val.trim());
+                        }
+                      });
+                    }
+                  } catch(e){}
+                }
+              }
+              return names;
+            }
+
+            function updateStorageOnDelete(name) {
+              if (!name) return;
+              for (var i = 0; i < localStorage.length; i++) {
+                var k = localStorage.key(i);
+                try {
+                  var arr = JSON.parse(localStorage.getItem(k));
+                  if (Array.isArray(arr)) {
+                    var filtered = arr.filter(function(x) {
+                      var val = typeof x === 'object' ? (x.name || x.jeName || x.je) : x;
+                      return val !== name;
+                    });
+                    if (filtered.length !== arr.length) {
+                      localStorage.setItem(k, JSON.stringify(filtered));
+                    }
+                  }
+                } catch(e){}
+              }
+            }
+
+            function updateStorageOnEdit(oldName, newName) {
+              if (!oldName || !newName) return;
+              for (var i = 0; i < localStorage.length; i++) {
+                var k = localStorage.key(i);
+                try {
+                  var arr = JSON.parse(localStorage.getItem(k));
+                  if (Array.isArray(arr)) {
+                    var changed = false;
+                    arr.forEach(function(x, idx) {
+                      if (typeof x === 'string' && x === oldName) {
+                        arr[idx] = newName;
+                        changed = true;
+                      } else if (typeof x === 'object' && (x.name === oldName || x.jeName === oldName)) {
+                        if (x.name) x.name = newName;
+                        if (x.jeName) x.jeName = newName;
+                        changed = true;
+                      }
+                    });
+                    if (changed) {
+                      localStorage.setItem(k, JSON.stringify(arr));
+                    }
+                  }
+                } catch(e){}
+              }
+            }
+
+            function renumberRows() {
+              document.querySelectorAll('table tbody tr').forEach(function(r, idx) {
+                var c = r.querySelectorAll('td');
+                if (c.length > 0) c[0].textContent = (idx + 1);
+              });
+            }
+
+            // २. UPDATE आणि DELETE बटणांचे थेट नियंत्रण
+            window.activeEditingRow = null;
+            window.activeOldName = null;
+            window.activeInput = null;
+            window.activeAddBtn = null;
+
+            window.addEventListener('click', function(e) {
+              var el = e.target.closest('button, a, input[type="button"]') || e.target;
+              var action = (el.value || el.textContent || '').trim().toUpperCase();
+
+              // ---------- DELETE बटण ----------
+              if (action === 'DELETE') {
+                e.preventDefault();
+                e.stopPropagation();
+                var tr = el.closest('tr') || el.closest('[class*="row"]') || el.parentElement.parentElement;
+                if (!tr) return;
+
+                var jeName = '';
+                var cells = tr.querySelectorAll('td');
+                if (cells.length >= 2) {
+                  jeName = cells[1].textContent.trim();
+                } else {
+                  var cl = tr.cloneNode(true);
+                  cl.querySelectorAll('button, a').forEach(function(b){ b.remove(); });
+                  jeName = cl.textContent.replace(/^\\s*\\d+\\s*/, '').trim();
+                }
+
+                tr.remove();
+                renumberRows();
+                updateStorageOnDelete(jeName);
+                return;
+              }
+
+              // ---------- UPDATE बटण (यादीतील) ----------
+              if (action === 'UPDATE') {
+                var isRowBtn = el.closest('tr') || el.closest('tbody') || el.closest('[class*="row"]');
+                if (isRowBtn) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  var tr = el.closest('tr') || el.closest('[class*="row"]') || el.parentElement.parentElement;
+                  if (!tr) return;
+
+                  var jeName = '';
+                  var cells = tr.querySelectorAll('td');
+                  if (cells.length >= 2) {
+                    jeName = cells[1].textContent.trim();
+                  }
+
+                  var jeInput = document.querySelector('input[placeholder*="Junior Engineer"]') ||
+                                document.querySelector('input[placeholder*="नाव"]') ||
+                                document.querySelector('#jeName') ||
+                                document.querySelector('input[type="text"]');
+
+                  var addBtn = Array.from(document.querySelectorAll('button, a, input[type="button"]')).find(function(b) {
+                    var t = (b.value || b.textContent || '').trim().toUpperCase();
+                    return (t === 'ADD' || t === 'UPDATE') && b !== el;
+                  });
+
+                  if (jeInput && jeName) {
+                    jeInput.value = jeName;
+                    window.activeEditingRow = tr;
+                    window.activeOldName = jeName;
+                    window.activeInput = jeInput;
+                    window.activeAddBtn = addBtn;
+
+                    if (addBtn) {
+                      addBtn.textContent = 'UPDATE';
+                      addBtn.style.backgroundColor = '#0284c7';
+                      addBtn.style.color = '#ffffff';
+                    }
+                    jeInput.focus();
+                    jeInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  }
+                  return;
+                }
+              }
+
+              // ---------- इनपुट समोरील ADD / UPDATE सेव्ह करणे ----------
+              if (window.activeEditingRow && (action === 'UPDATE' || action === 'ADD')) {
+                if (el === window.activeAddBtn || el.closest('.card')?.contains(window.activeInput)) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  var val = window.activeInput.value.trim();
+                  if (val && window.activeEditingRow) {
+                    var cells = window.activeEditingRow.querySelectorAll('td');
+                    if (cells.length >= 2) {
+                      cells[1].textContent = val;
+                    }
+                    updateStorageOnEdit(window.activeOldName, val);
+                    window.activeInput.value = '';
+                    if (window.activeAddBtn) {
+                      window.activeAddBtn.textContent = 'ADD';
+                      window.activeAddBtn.style.backgroundColor = '';
+                    }
+                    window.activeEditingRow = null;
+                    window.activeOldName = null;
+                  }
+                }
+              }
+
+              // ---------- निळ्या REPORT बटणावर क्लिक (JE REPORT) ----------
+              if (action === 'REPORT') {
+                var rect = el.getBoundingClientRect();
+                if (rect.top > 85) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  printJEA4Report();
+                }
+              }
+            }, true);
+
+            // ३. JE संपूर्ण A4 अहवाल जनरेटर
+            window.printJEA4Report = function() {
+              var pa = document.getElementById('printArea');
+              if (!pa) {
+                pa = document.createElement('div');
+                pa.id = 'printArea';
+                document.body.appendChild(pa);
+              }
+
+              var list = extractAllJENames();
+
+              var h = '<div class="report-header">';
+              h += '  <h2>सार्वजनिक बांधकाम विभाग</h2>';
+              h += '  <h3>मोजमाप पुस्तिका नियंत्रण प्रणाली</h3>';
+              h += '  <h4>JE REPORT</h4>';
+              h += '</div>';
+              h += '<div class="report-meta">';
+              h += '  <span><b>अहवाल :</b> सर्व कनिष्ठ अभियंता यादी</span>';
+              h += '  <span><b>दिनांक :</b> ' + new Date().toLocaleDateString('en-GB') + '</span>';
+              h += '</div>';
+              h += '<table class="print-table">';
+              h += '  <thead><tr>';
+              h += '    <th style="width:12%; text-align:center;">अ.क्र.</th>';
+              h += '    <th style="width:88%; text-align:left;">Junior Engineer चे नाव</th>';
+              h += '  </tr></thead>';
+              h += '  <tbody>';
+
+              if (list.length === 0) {
+                h += '<tr><td colspan="2" style="text-align:center; padding:12px;">कोणतीही JE नोंद उपलब्ध नाही.</td></tr>';
+              } else {
+                for (var i = 0; i < list.length; i++) {
+                  h += '<tr>';
+                  h += '  <td style="text-align:center;">' + (i + 1) + '</td>';
+                  h += '  <td style="text-align:left;">' + list[i] + '</td>';
+                  h += '</tr>';
+                }
+              }
+
+              h += '  </tbody>';
+              h += '</table>';
+              h += '<div class="report-footer">© सर्व हक्क राखीव - सार्वजनिक बांधकाम विभाग</div>';
+
+              pa.innerHTML = h;
+              setTimeout(function(){ window.print(); }, 120);
+            };
+
+            window.printJEReport = window.printJEA4Report;
+          })();
+          </script>
+          """
+
+          if "<head>" in raw_html.lower():
+              h_idx = raw_html.lower().find("<head>") + 6
+              raw_html = raw_html[:h_idx] + master_styles + raw_html[h_idx:]
+          else:
+              raw_html = master_styles + raw_html
+
+          if "</body>" in raw_html.lower():
+              b_idx = raw_html.lower().rfind("</body>")
+              raw_html = raw_html[:b_idx] + master_script + raw_html[b_idx:]
+          else:
+              raw_html += master_script
+
+          html_file.write_text(raw_html, encoding="utf-8")
+          print("SUCCESS: Full JE Engine Patched.")
+          PY
+
+      - name: Create Android project structure
+        shell: bash
+        run: |
+          set -e
+          rm -rf mbms_android release
+          mkdir -p \
+            mbms_android/app/src/main/assets \
+            mbms_android/app/src/main/java/com/mbms/app \
+            mbms_android/app/src/main/res/values \
+            release
+
+          cp mbms_work/index.html mbms_android/app/src/main/assets/index.html
+
+          cat > mbms_android/settings.gradle <<'EOF'
+          pluginManagement {
+              repositories { google(); mavenCentral(); gradlePluginPortal(); }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories { google(); mavenCentral(); }
+          }
+          rootProject.name = "MBMSAndroid"
+          include(":app")
+          EOF
+
+          cat > mbms_android/build.gradle <<'EOF'
+          plugins { id 'com.android.application' version '8.6.1' apply false }
+          EOF
+
+          cat > mbms_android/gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          android.nonTransitiveRClass=true
+          EOF
+
+          cat > mbms_android/app/build.gradle <<'EOF'
+          plugins { id 'com.android.application' }
+          android {
+              namespace 'com.mbms.app'
+              compileSdk 35
+              defaultConfig {
+                  applicationId 'com.mbms.app'
+                  minSdk 26
+                  targetSdk 35
+                  versionCode 138
+                  versionName 'V138'
+              }
+              buildTypes {
+                  debug { minifyEnabled false; shrinkResources false }
+                  release { minifyEnabled false; shrinkResources false }
+              }
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+          }
+          EOF
+
+          cat > mbms_android/app/src/main/res/values/strings.xml <<'EOF'
+          <resources><string name="app_name">MBMS</string></resources>
+          EOF
+
+          cat > mbms_android/app/src/main/res/values/styles.xml <<'EOF'
+          <resources>
+              <style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar">
+                  <item name="android:fontFamily">sans</item>
+                  <item name="android:colorAccent">#1976D2</item>
+                  <item name="android:navigationBarColor">#06458E</item>
+              </style>
+          </resources>
+          EOF
+
+          cat > mbms_android/app/src/main/AndroidManifest.xml <<'EOF'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
+              <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+
+              <application
+                  android:allowBackup="true"
+                  android:usesCleartextTraffic="true"
+                  android:label="@string/app_name"
+                  android:theme="@style/AppTheme"
+                  android:hardwareAccelerated="true">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:screenOrientation="portrait"
+                      android:configChanges="orientation|screenSize|keyboardHidden">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+
+      - name: Generate MainActivity.java
+        shell: bash
+        run: |
+          set -e
+          cat > mbms_android/app/src/main/java/com/mbms/app/MainActivity.java <<'EOF'
+          package com.mbms.app;
+
+          import android.app.Activity;
+          import android.content.Context;
+          import android.os.Bundle;
+          import android.print.PrintAttributes;
+          import android.print.PrintDocumentAdapter;
+          import android.print.PrintManager;
+          import android.webkit.JavascriptInterface;
+          import android.webkit.WebSettings;
+          import android.webkit.WebView;
+          import android.webkit.WebViewClient;
+          import android.widget.Toast;
+
+          public class MainActivity extends Activity {
+
+              private WebView webView;
+
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+
+                  webView = new WebView(this);
+                  setContentView(webView);
+
+                  WebSettings settings = webView.getSettings();
+                  settings.setJavaScriptEnabled(true);
+                  settings.setDomStorageEnabled(true);
+                  settings.setDatabaseEnabled(true);
+                  settings.setAllowFileAccess(true);
+                  settings.setAllowContentAccess(true);
+                  settings.setTextZoom(100);
+
+                  AndroidBridge bridge = new AndroidBridge();
+                  webView.addJavascriptInterface(bridge, "MBMSAndroid");
+                  webView.addJavascriptInterface(bridge, "AndroidBridge");
+
+                  webView.setWebViewClient(new WebViewClient() {
+                      @Override
+                      public void onPageFinished(WebView view, String url) {
+                          super.onPageFinished(view, url);
+                          webView.evaluateJavascript(
+                              "window.print=function(){ if(window.MBMSAndroid) window.MBMSAndroid.print(); };",
+                              null
+                          );
+                      }
+                  });
+
+                  webView.loadUrl("file:///android_asset/index.html");
+              }
+
+              public class AndroidBridge {
+                  @JavascriptInterface
+                  public void print() {
+                      runOnUiThread(new Runnable() {
+                          @Override
+                          public void run() {
+                              try {
+                                  PrintManager manager = (PrintManager) getSystemService(Context.PRINT_SERVICE);
+                                  if (manager != null && webView != null) {
+                                      webView.postDelayed(new Runnable() {
+                                          @Override
+                                          public void run() {
+                                              try {
+                                                  PrintDocumentAdapter adapter = webView.createPrintDocumentAdapter("MBMS Report");
+                                                  PrintAttributes attributes = new PrintAttributes.Builder()
+                                                          .setMediaSize(PrintAttributes.MediaSize.ISO_A4)
+                                                          .setMinMargins(PrintAttributes.Margins.NO_MARGINS)
+                                                          .build();
+                                                  manager.print("MBMS Report", adapter, attributes);
+                                              } catch (Exception e) {
+                                                  Toast.makeText(MainActivity.this, "Print अयशस्वी!", Toast.LENGTH_SHORT).show();
+                                              }
+                                          }
+                                      }, 400);
+                                  }
+                              } catch (Exception e) {
+                                  Toast.makeText(MainActivity.this, "Print सुरू करता आले नाही.", Toast.LENGTH_SHORT).show();
+                              }
+                          }
+                      });
+                  }
+              }
+
+              @Override
+              public void onBackPressed() {
+                  if (webView != null && webView.canGoBack()) {
+                      webView.goBack();
+                  } else {
+                      super.onBackPressed();
+                  }
+              }
+
+              @Override
+              protected void onDestroy() {
+                  if (webView != null) {
+                      webView.stopLoading();
+                      webView.destroy();
+                      webView = null;
+                  }
+                  super.onDestroy();
+              }
+          }
+          EOF
+
+      - name: Assemble Final Debug APK
+        working-directory: mbms_android
+        shell: bash
+        run: |
+          set -e
+          gradle --no-daemon --stacktrace clean :app:assembleDebug
+
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          cp "$APK" "../release/MBMS-V138-JE-PERFECT.apk"
+          ls -lh "../release/MBMS-V138-JE-PERFECT.apk"
+
+      - name: Upload Final APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MBMS-V138-JE-PERFECT-APK
+          path: release/MBMS-V138-JE-PERFECT.apk
+          if-no-files-found: error
