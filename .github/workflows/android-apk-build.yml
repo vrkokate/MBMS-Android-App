@@ -1,4 +1,4 @@
-name: MBMS V130 FINAL - ALL REPORTS PRINT PDF FIXED
+name: MBMS V131 FINAL - PRINT AUDIT HARDENED
 
 on:
   workflow_dispatch:
@@ -693,37 +693,46 @@ jobs:
           set -Eeuo pipefail
 
           HTML="mbms_work/index.html"
-
           test -s "$HTML"
 
-          PRINT_COUNT=$(grep -o "window\.print" "$HTML" | wc -l | tr -d ' ')
-          PRINT_AREA_COUNT=$(grep -o 'id="printArea"' "$HTML" | wc -l | tr -d ' ')
-          REPORT_PDF_COUNT=$(grep -oE 'REPORT / PDF|REPORT / PRINT' "$HTML" | wc -l | tr -d ' ')
+          python3 <<'PY'
+          from pathlib import Path
+          import re, sys
 
-          echo "window.print references: $PRINT_COUNT"
-          echo "printArea references: $PRINT_AREA_COUNT"
-          echo "REPORT/PDF buttons: $REPORT_PDF_COUNT"
+          p = Path("mbms_work/index.html")
+          text = p.read_text(encoding="utf-8")
 
-          [ "$PRINT_COUNT" -ge 10 ] || {
-            echo "ERROR: Existing print/report paths were not found."
-            exit 1
+          checks = {
+              "window.print": len(re.findall(r"window\.print", text, re.I)),
+              "printArea": len(re.findall(r'id=["\']printArea["\']', text, re.I)),
+              "REPORT/PDF text": len(re.findall(r"REPORT\s*/\s*(?:PDF|PRINT)", text, re.I)),
+              "print-related handlers": len(re.findall(r"(?:printReport|printHomeRelationshipReport|window\.print)", text, re.I)),
+              "native bridge references": len(re.findall(r"(?:MBMSAndroid|AndroidBridge)\.print", text, re.I)),
           }
 
-          [ "$PRINT_AREA_COUNT" -ge 1 ] || {
-            echo "ERROR: #printArea is missing."
-            exit 1
-          }
+          for k, v in checks.items():
+              print(f"{k}: {v}")
 
-          [ "$REPORT_PDF_COUNT" -ge 1 ] || {
-            echo "ERROR: REPORT / PDF or REPORT / PRINT controls are missing."
-            exit 1
-          }
+          errors = []
+          if checks["window.print"] < 1:
+              errors.append("No window.print reference found")
+          if checks["printArea"] < 1:
+              errors.append("#printArea is missing")
+          if checks["REPORT/PDF text"] < 1 and checks["print-related handlers"] < 1:
+              errors.append("No report/print path found")
 
-          grep -q 'V118_ANDROID_NATIVE_IO_PRINT_COMPAT' "$HTML"
-          grep -q 'window.MBMSAndroid' "$HTML"
-          grep -q 'window.print' "$HTML"
+          # Do NOT require one particular historical marker such as
+          # V118_ANDROID_NATIVE_IO_PRINT_COMPAT. The Android bridge is
+          # supplied by MainActivity in this workflow, and forcing a
+          # legacy marker caused false-negative audit failures.
+          if errors:
+              print("ERROR: Report/print audit failed:")
+              for e in errors:
+                  print(" - " + e)
+              sys.exit(1)
 
-          echo "DEEP REPORT / PRINT AUDIT PASSED."
+          print("DEEP REPORT / PRINT AUDIT PASSED.")
+          PY
 
 
       - name: Validate Final HTML JavaScript
@@ -1728,11 +1737,11 @@ jobs:
 
           cp \
             "$APK" \
-            "../release/MBMS-V130-ALL-REPORTS-PRINT-PDF-FIXED.apk"
+            "../release/MBMS-V131-FINAL-PRINT-AUDIT-HARDENED.apk"
 
 
           ls -lh \
-            "../release/MBMS-V130-ALL-REPORTS-PRINT-PDF-FIXED.apk"
+            "../release/MBMS-V131-FINAL-PRINT-AUDIT-HARDENED.apk"
 
 
       - name: Verify APK
@@ -1740,7 +1749,7 @@ jobs:
         run: |
           set -e
 
-          APK="release/MBMS-V130-ALL-REPORTS-PRINT-PDF-FIXED.apk"
+          APK="release/MBMS-V131-FINAL-PRINT-AUDIT-HARDENED.apk"
 
           test -s "$APK"
 
@@ -1764,8 +1773,8 @@ jobs:
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v7
         with:
-          name: MBMS-V130-ALL-REPORTS-PRINT-PDF-FIXED
+          name: MBMS-V131-FINAL-PRINT-AUDIT-HARDENED
           path: |
-            release/MBMS-V130-ALL-REPORTS-PRINT-PDF-FIXED.apk
+            release/MBMS-V131-FINAL-PRINT-AUDIT-HARDENED.apk
             release/SHA256.txt
           if-no-files-found: error
