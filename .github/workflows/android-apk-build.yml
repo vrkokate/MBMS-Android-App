@@ -48,7 +48,7 @@ jobs:
           cp "$TARGET_HTML" mbms_work/index.html
           test -s mbms_work/index.html
 
-      - name: Inject Final 5-Tab Architecture, Date Format and Report Engine
+      - name: Restore Original Look and Apply Only Internal Logic
         shell: bash
         run: |
           set -e
@@ -59,64 +59,21 @@ jobs:
           html_file = Path("mbms_work/index.html")
           raw_html = html_file.read_text(encoding="utf-8")
 
-          # १. हेडरमधील केशरी REPORT बटण थेट काढणे
+          # १. मूळ लूक बदलणारा आधीचा कोणताही टॅब कोड काढून टाकणे
+          raw_html = re.sub(r'<!-- ==================== MBMS FINAL UNIFIED SYSTEM ==================== -->[\s\S]*?<!-- ==================== END ==================== -->', '', raw_html)
+
+          # २. वरचे केशरी REPORT बटण काढून टाकणे
           raw_html = re.sub(r'<button[^>]*class="[^"]*btn-warning[^"]*"[^>]*>[\s\S]*?REPORT[\s\S]*?</button>', '', raw_html, flags=re.I)
           raw_html = re.sub(r'<button[^>]*style="[^"]*background[^"]*(?:#ff9800|orange|rgb\(255,\s*152,\s*0\))[^"]*"[^>]*>[\s\S]*?REPORT[\s\S]*?</button>', '', raw_html, flags=re.I)
 
           patch_code = """
-          <!-- ==================== MBMS FINAL UNIFIED SYSTEM ==================== -->
-          <style id="MBMS_FINAL_STYLES">
-          /* इतर उप-पानांवरील अनावश्यक रिपोर्ट बटणे लपवणे */
+          <!-- ==================== ORIGINAL LOOK PRESERVED ENGINE ==================== -->
+          <style id="MBMS_ORIGINAL_LOOK_FIX">
+          /* हेडरमधील अनावश्यक केशरी REPORT बटण लपवणे */
           header button:contains("REPORT"),
           .navbar button:contains("REPORT"),
-          .card button:contains("REPORT"),
-          button[class*="report"]:not(#mainDashboardReportBtn):not(.btn-report-main) {
+          div[class*="header"] button:contains("REPORT") {
             display: none !important;
-          }
-
-          /* ५ टॅबची नेव्हिगेशन पट्टी */
-          #mbmsTopTabBar {
-            display: flex !important;
-            background-color: #06458e !important;
-            overflow-x: auto !important;
-            white-space: nowrap !important;
-            position: sticky !important;
-            top: 0 !important;
-            z-index: 9999 !important;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2) !important;
-          }
-          .mbms-nav-tab-btn {
-            flex: 1 !important;
-            min-width: 70px !important;
-            padding: 12px 6px !important;
-            background: transparent !important;
-            border: none !important;
-            color: #d1e2f7 !important;
-            font-size: 13px !important;
-            font-weight: bold !important;
-            text-align: center !important;
-            cursor: pointer !important;
-            border-bottom: 3px solid transparent !important;
-          }
-          .mbms-nav-tab-btn.active {
-            background-color: #043166 !important;
-            color: #ffffff !important;
-            border-bottom: 3px solid #ffca28 !important;
-          }
-          .tab-content-container {
-            display: none;
-            padding: 15px;
-          }
-          .tab-content-container.active {
-            display: block;
-          }
-          .placeholder-box {
-            background: #fff;
-            border-radius: 12px;
-            padding: 40px 20px;
-            text-align: center;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-            margin-top: 15px;
           }
 
           @media print {
@@ -132,70 +89,9 @@ jobs:
 
           <div id="printArea" style="display: none;"></div>
 
-          <script id="MBMS_FINAL_LOGIC">
+          <script id="MBMS_ORIGINAL_CONTROLLER">
           (function() {
-            // १. मुख्य ५ टॅबची रचना तयार करणे
-            function buildFiveTabs() {
-              if (document.getElementById('mbmsTopTabBar')) return;
-
-              var bar = document.createElement('div');
-              bar.id = 'mbmsTopTabBar';
-              bar.innerHTML = '<button class="mbms-nav-tab-btn" onclick="window.switchMbmsTab(event, \\'tabEst\\')">एस्टॅब्लिशमेंट</button>' +
-                              '<button class="mbms-nav-tab-btn" onclick="window.switchMbmsTab(event, \\'tabPay\\')">Pay</button>' +
-                              '<button class="mbms-nav-tab-btn active" onclick="window.switchMbmsTab(event, \\'tabMBMain\\')">MB</button>' +
-                              '<button class="mbms-nav-tab-btn" onclick="window.switchMbmsTab(event, \\'tabFour\\')">टॅब ४</button>' +
-                              '<button class="mbms-nav-tab-btn" onclick="window.switchMbmsTab(event, \\'tabFive\\')">टॅब ५</button>';
-
-              var bodyChildren = Array.from(document.body.children);
-              var mbWrapper = document.createElement('div');
-              mbWrapper.id = 'tabMBMain';
-              mbWrapper.className = 'tab-content-container active';
-
-              bodyChildren.forEach(function(child) {
-                if (child.tagName !== 'SCRIPT' && child.tagName !== 'STYLE' && child.id !== 'printArea') {
-                  mbWrapper.appendChild(child);
-                }
-              });
-
-              var tabEst = document.createElement('div');
-              tabEst.id = 'tabEst';
-              tabEst.className = 'tab-content-container';
-              tabEst.innerHTML = '<div class="placeholder-box"><h3>एस्टॅब्लिशमेंट (आस्थापना विभाग)</h3><p style="margin-top:8px;color:#666;">येथे आस्थापना विभागाचे कामकाज सुरक्षितपणे जोडता येईल.</p></div>';
-
-              var tabPay = document.createElement('div');
-              tabPay.id = 'tabPay';
-              tabPay.className = 'tab-content-container';
-              tabPay.innerHTML = '<div class="placeholder-box"><h3>Pay (वेतन व देयके विभाग)</h3><p style="margin-top:8px;color:#666;">येथे वेतन व देयके संबंधित कामकाज जोडता येईल.</p></div>';
-
-              var tabFour = document.createElement('div');
-              tabFour.id = 'tabFour';
-              tabFour.className = 'tab-content-container';
-              tabFour.innerHTML = '<div class="placeholder-box"><h3>टॅब ४</h3><p style="margin-top:8px;color:#666;">येथे भविष्यातील नवीन विभाग जोडता येईल.</p></div>';
-
-              var tabFive = document.createElement('div');
-              tabFive.id = 'tabFive';
-              tabFive.className = 'tab-content-container';
-              tabFive.innerHTML = '<div class="placeholder-box"><h3>टॅब ५</h3><p style="margin-top:8px;color:#666;">येथे इतर कार्यप्रणाली जोडता येईल.</p></div>';
-
-              document.body.insertBefore(bar, document.body.firstChild);
-              document.body.appendChild(mbWrapper);
-              document.body.appendChild(tabEst);
-              document.body.appendChild(tabPay);
-              document.body.appendChild(tabFour);
-              document.body.appendChild(tabFive);
-            }
-
-            window.switchMbmsTab = function(evt, tabId) {
-              document.querySelectorAll('.tab-content-container').forEach(function(c){ c.classList.remove('active'); });
-              document.querySelectorAll('.mbms-nav-tab-btn').forEach(function(b){ b.classList.remove('active'); });
-              var el = document.getElementById(tabId);
-              if (el) el.classList.add('active');
-              if (evt && evt.currentTarget) evt.currentTarget.classList.add('active');
-            };
-
-            setTimeout(buildFiveTabs, 100);
-
-            // २. दिनांक dd-mm-yyyy करणे आणि अनावश्यक बटणे काढणे
+            // १. M.B. List मधील दिनांक dd-mm-yyyy करणे
             setInterval(function() {
               document.querySelectorAll('table td, [class*="row"] div').forEach(function(td) {
                 var t = td.textContent.trim();
@@ -205,302 +101,115 @@ jobs:
                 }
               });
 
+              // वरचे रिपोर्ट बटण काढणे
               document.querySelectorAll('button, a').forEach(function(b) {
                 var txt = (b.textContent || b.value || '').trim().toUpperCase();
-                if (txt === 'REPORT') {
-                  if (b.getBoundingClientRect().top < 85 || (!b.classList.contains('btn-report-main') && !b.textContent.includes('PRINT'))) {
-                    b.style.setProperty('display', 'none', 'important');
-                    b.remove();
-                  }
+                if (txt === 'REPORT' && b.getBoundingClientRect().top < 85) {
+                  b.remove();
                 }
               });
             }, 250);
 
-            function getStorageData(key) {
-              try { return JSON.parse(localStorage.getItem(key)) || []; } catch(e) { return []; }
-            }
-
-            // ३. मुख्य डॅशबोर्डवर अचूक ४ मुख्य घटक व उपघटक भरणे
-            function syncMainReportDropdowns() {
-              var selects = Array.from(document.querySelectorAll('#tabMBMain select'));
+            // २. M.B. निवडल्यानंतर उपघटकात 'सर्व M.B., लहान M.B., मोठी M.B.' ठेवणे
+            function syncOriginalDropdowns() {
+              var selects = Array.from(document.querySelectorAll('select'));
               if (selects.length >= 2) {
-                var mainSel = selects[0];
-                var subSel = selects[1];
+                var mainSelect = selects.find(function(s) {
+                  return (s.options[s.selectedIndex]?.text || s.value || '').trim().toUpperCase().includes('M.B');
+                });
 
-                var expectedMain = ['M.B.', 'JE', 'कामाचे नाव', 'कॉन्ट्रॅक्टर चे नाव'];
-                var currentOpts = Array.from(mainSel.options).map(function(o){ return o.text.trim(); });
+                if (mainSelect) {
+                  var subSelect = selects.find(function(s) {
+                    return s !== mainSelect && ((s.options[0]?.text || '').includes('M.B') || (s.options[0]?.text || '').includes('सर्व'));
+                  });
 
-                if (JSON.stringify(currentOpts) !== JSON.stringify(expectedMain)) {
-                  var curVal = mainSel.value;
-                  mainSel.innerHTML = '';
-                  expectedMain.forEach(function(opt) {
-                    var o = document.createElement('option');
-                    o.value = opt;
-                    o.text = opt;
-                    mainSel.appendChild(o);
-                  });
-                  if (expectedMain.includes(curVal)) mainSel.value = curVal;
-                }
-
-                var activeMain = mainSel.value;
-                var subOptions = [];
-
-                if (activeMain === 'M.B.') {
-                  subOptions = ['सर्व M.B.', 'लहान M.B.', 'मोठी M.B.'];
-                  var mbList = getStorageData('mb_records');
-                  mbList.forEach(function(m){
-                    var no = m.mbNumber || m.mbNo;
-                    if (no && !subOptions.includes(no)) subOptions.push(no);
-                  });
-                } else if (activeMain === 'JE') {
-                  subOptions = ['सर्व JE'];
-                  var jes = getStorageData('je_records');
-                  jes.forEach(function(j){
-                    var n = typeof j === 'object' ? (j.name || j.jeName) : j;
-                    if (n && !subOptions.includes(n)) subOptions.push(n);
-                  });
-                } else if (activeMain === 'कामाचे नाव') {
-                  subOptions = ['सर्व कामे'];
-                  var works = getStorageData('work_records');
-                  works.forEach(function(w){
-                    var wn = w.workName || w.work;
-                    if (wn && !subOptions.includes(wn)) subOptions.push(wn);
-                  });
-                } else if (activeMain === 'कॉन्ट्रॅक्टर चे नाव') {
-                  subOptions = ['सर्व कॉन्ट्रॅक्टर'];
-                  var works2 = getStorageData('work_records');
-                  works2.forEach(function(w){
-                    var c = w.contractor || w.agency;
-                    if (c && !subOptions.includes(c)) subOptions.push(c);
-                  });
-                }
-
-                var currentSubOpts = Array.from(subSel.options).map(function(o){ return o.text.trim(); });
-                if (JSON.stringify(currentSubOpts) !== JSON.stringify(subOptions)) {
-                  var curSub = subSel.value;
-                  subSel.innerHTML = '';
-                  subOptions.forEach(function(opt) {
-                    var o = document.createElement('option');
-                    o.value = opt;
-                    o.text = opt;
-                    subSel.appendChild(o);
-                  });
-                  if (subOptions.includes(curSub)) subSel.value = curSub;
+                  if (subSelect) {
+                    var currentTexts = Array.from(subSelect.options).map(function(o){ return o.text.trim(); });
+                    if (!currentTexts.includes('लहान M.B.') || !currentTexts.includes('मोठी M.B.')) {
+                      var cur = subSelect.value;
+                      subSelect.innerHTML = '';
+                      subSelect.add(new Option('सर्व M.B.', 'सर्व M.B.'));
+                      subSelect.add(new Option('लहान M.B.', 'लहान M.B.'));
+                      subSelect.add(new Option('मोठी M.B.', 'मोठी M.B.'));
+                      if (cur === 'लहान M.B.' || cur === 'मोठी M.B.') subSelect.value = cur;
+                    }
+                  }
                 }
               }
             }
-            setInterval(syncMainReportDropdowns, 300);
+            setInterval(syncOriginalDropdowns, 300);
 
-            // ४. अहवाल जनरेशन फंक्शन (केवळ मुख्य REPORT / PRINT बटणावरून)
-            function triggerA4Print(h) {
-              var pa = document.getElementById('printArea');
-              if (!pa) {
-                pa = document.createElement('div');
-                pa.id = 'printArea';
-                document.body.appendChild(pa);
-              }
-              pa.innerHTML = h;
-              pa.style.display = 'block';
-              setTimeout(function() {
-                window.print();
-                setTimeout(function() { pa.style.display = 'none'; }, 500);
-              }, 150);
-            }
-
+            // ३. अहवाल जनरेशन
             document.addEventListener('click', function(e) {
               var btn = e.target.closest('button, a');
               if (!btn) return;
               var t = (btn.textContent || btn.value || '').trim().toUpperCase();
 
               if (t.includes('REPORT') || t.includes('PRINT')) {
-                var selects = Array.from(document.querySelectorAll('#tabMBMain select'));
-                if (selects.length >= 2) {
+                var pa = document.getElementById('printArea');
+                if (pa) {
+                  var selectedFilter = 'सर्व M.B.';
+                  document.querySelectorAll('select').forEach(function(s) {
+                    var v = (s.options[s.selectedIndex]?.text || '').trim();
+                    if (v === 'लहान M.B.' || v === 'मोठी M.B.' || v === 'सर्व M.B.') {
+                      selectedFilter = v;
+                    }
+                  });
+
+                  var mbList = [];
+                  try { mbList = JSON.parse(localStorage.getItem('mb_records')) || []; } catch(err){}
+
+                  var filtered = mbList.filter(function(item) {
+                    var s = (item.size || item.mbSize || item.type || '').trim().toLowerCase();
+                    if (selectedFilter === 'लहान M.B.') return s.includes('लहान') || s.includes('small');
+                    if (selectedFilter === 'मोठी M.B.') return s.includes('मोठी') || s.includes('large');
+                    return true;
+                  });
+
                   e.preventDefault();
                   e.stopPropagation();
 
-                  var mainVal = selects[0].value;
-                  var subVal = selects[1].value;
-                  var today = new Date().toLocaleDateString('en-GB');
+                  var h = '<div style="text-align: center; margin-bottom: 8px;">';
+                  h += '  <h2 style="margin: 0; font-size: 17px; font-weight: bold;">सार्वजनिक बांधकाम विभाग</h2>';
+                  h += '  <h3 style="margin: 3px 0 6px 0; font-size: 14px; text-decoration: underline;">मोजमाप पुस्तिका अहवाल</h3>';
+                  h += '</div>';
+                  h += '<div style="display: flex; justify-content: space-between; font-size: 11.5px; margin-bottom: 4px;">';
+                  h += '  <span><b>निवड:</b> ' + selectedFilter + '</span>';
+                  h += '  <span><b>दिनांक:</b> ' + new Date().toLocaleDateString('en-GB') + '</span>';
+                  h += '</div>';
+                  h += '<table class="print-table"><thead><tr>';
+                  h += '  <th style="width: 1%; white-space: nowrap; text-align: center;">अ.क्र.</th>';
+                  h += '  <th style="width: 1%; white-space: nowrap; text-align: center;">M.B. क्रमांक</th>';
+                  h += '  <th style="width: 1%; white-space: nowrap; text-align: center;">M.B. ची साईज</th>';
+                  h += '  <th style="text-align: left;">सध्या कोणाकडे आहे (JE चे नाव)</th>';
+                  h += '</tr></thead><tbody>';
 
-                  var works = getStorageData('work_records');
-                  var mbs = getStorageData('mb_records');
-
-                  // M.B. अहवाल
-                  if (mainVal === 'M.B.') {
-                    var filteredMB = mbs.filter(function(m) {
-                      var sz = (m.size || m.mbSize || 'लहान').trim();
-                      var no = (m.mbNumber || m.mbNo || '').trim();
-                      if (subVal === 'लहान M.B.') return sz.includes('लहान');
-                      if (subVal === 'मोठी M.B.') return sz.includes('मोठी');
-                      if (subVal !== 'सर्व M.B.') return no === subVal;
-                      return true;
-                    });
-
-                    var h = '<div style="text-align: center; margin-bottom: 8px;">';
-                    h += '  <h2 style="margin: 0; font-size: 17px; font-weight: bold;">सार्वजनिक बांधकाम विभाग</h2>';
-                    h += '  <h3 style="margin: 3px 0 6px 0; font-size: 14px; text-decoration: underline;">मोजमाप पुस्तिका अहवाल</h3>';
-                    h += '</div>';
-                    h += '<div style="display: flex; justify-content: space-between; font-size: 11.5px; margin-bottom: 4px;">';
-                    h += '  <span><b>तपशील:</b> ' + subVal + '</span><span><b>दिनांक:</b> ' + today + '</span>';
-                    h += '</div><table class="print-table"><thead><tr>';
-                    h += '  <th style="width:1%; white-space:nowrap;">अ.क्र.</th>';
-                    h += '  <th style="width:1%; white-space:nowrap;">M.B. क्रमांक</th>';
-                    h += '  <th style="width:1%; white-space:nowrap;">M.B. साईज</th>';
-                    h += '  <th style="text-align:left;">सध्या कोणाकडे आहे (JE)</th>';
-                    h += '  <th style="text-align:left;">कामाचे नाव</th>';
-                    h += '  <th style="width:1%; white-space:nowrap;">प्राप्त दिनांक</th>';
-                    h += '</tr></thead><tbody>';
-
-                    if (filteredMB.length === 0) {
-                      h += '<tr><td colspan="6" style="text-align:center; padding:10px;">नोंद उपलब्ध नाही.</td></tr>';
-                    } else {
-                      for (var i = 0; i < filteredMB.length; i++) {
-                        var item = filteredMB[i];
-                        var rawDate = item.date || item.receiveDate || '-';
-                        var dm = rawDate.match(/^(\\d{4})[-/](\\d{2})[-/](\\d{2})$/);
-                        var formattedDate = dm ? (dm[3] + '-' + dm[2] + '-' + dm[1]) : rawDate;
-
-                        h += '<tr>';
-                        h += '  <td style="text-align:center;">' + (i + 1) + '</td>';
-                        h += '  <td style="text-align:center;">' + (item.mbNumber || item.mbNo || '-') + '</td>';
-                        h += '  <td style="text-align:center;">' + (item.size || item.mbSize || 'लहान') + '</td>';
-                        h += '  <td>' + (item.assignedTo || item.jeName || 'स्टॉकमध्ये उपलब्ध') + '</td>';
-                        h += '  <td>' + (item.workName || item.work || '-') + '</td>';
-                        h += '  <td style="text-align:center;">' + formattedDate + '</td>';
-                        h += '</tr>';
-                      }
+                  if (filtered.length === 0) {
+                    h += '<tr><td colspan="4" style="text-align: center; padding: 10px;">नोंद उपलब्ध नाही.</td></tr>';
+                  } else {
+                    for (var i = 0; i < filtered.length; i++) {
+                      var r = filtered[i];
+                      h += '<tr>';
+                      h += '  <td style="text-align: center;">' + (i + 1) + '</td>';
+                      h += '  <td style="text-align: center;">' + (r.mbNumber || r.mbNo || "-") + '</td>';
+                      h += '  <td style="text-align: center;">' + (r.size || r.mbSize || "लहान") + '</td>';
+                      h += '  <td style="text-align: left;">' + (r.assignedTo || r.jeName || "स्टॉकमध्ये उपलब्ध") + '</td>';
+                      h += '</tr>';
                     }
-                    h += '</tbody></table>';
-                    triggerA4Print(h);
                   }
+                  h += '</tbody></table>';
 
-                  // JE अहवाल
-                  else if (mainVal === 'JE') {
-                    var filteredJE = works.filter(function(w) {
-                      if (subVal === 'सर्व JE') return true;
-                      return (w.jeName || w.assignedTo || '').trim().toLowerCase() === subVal.trim().toLowerCase();
-                    });
-
-                    var h = '<div style="text-align:center; margin-bottom:8px;">';
-                    h += '  <h2 style="margin:0; font-size:17px; font-weight:bold;">सार्वजनिक बांधकाम विभाग</h2>';
-                    h += '  <h3 style="margin:3px 0 6px 0; font-size:14px; text-decoration:underline;">कनिष्ठ अभियंता अहवाल</h3>';
-                    h += '</div>';
-                    h += '<div style="display:flex; justify-content:space-between; font-size:11.5px; margin-bottom:4px;">';
-                    h += '  <span><b>कनिष्ठ अभियंता:</b> ' + subVal + '</span><span><b>दिनांक:</b> ' + today + '</span>';
-                    h += '</div><table class="print-table"><thead><tr>';
-                    h += '  <th style="width:1%; white-space:nowrap;">अ.क्र.</th>';
-                    h += '  <th>कनिष्ठ अभियंता चे नाव</th>';
-                    h += '  <th style="width:1%; white-space:nowrap;">M.B. क्रमांक</th>';
-                    h += '  <th style="width:1%; white-space:nowrap;">M.B. साईज</th>';
-                    h += '  <th>कामाचे नाव</th>';
-                    h += '  <th>कॉन्ट्रॅक्टर चे नाव</th>';
-                    h += '</tr></thead><tbody>';
-
-                    if (filteredJE.length === 0) {
-                      h += '<tr><td colspan="6" style="text-align:center; padding:10px;">नोंद उपलब्ध नाही.</td></tr>';
-                    } else {
-                      for (var i = 0; i < filteredJE.length; i++) {
-                        var w = filteredJE[i];
-                        h += '<tr>';
-                        h += '  <td style="text-align:center;">' + (i + 1) + '</td>';
-                        h += '  <td>' + (w.jeName || w.assignedTo || '-') + '</td>';
-                        h += '  <td style="text-align:center;">' + (w.mbNumber || w.mbNo || '-') + '</td>';
-                        h += '  <td style="text-align:center;">' + (w.size || w.mbSize || 'लहान') + '</td>';
-                        h += '  <td>' + (w.workName || w.work || '-') + '</td>';
-                        h += '  <td>' + (w.contractor || w.agency || '-') + '</td>';
-                        h += '</tr>';
-                      }
-                    }
-                    h += '</tbody></table>';
-                    triggerA4Print(h);
-                  }
-
-                  // कामाचे नाव अहवाल
-                  else if (mainVal === 'कामाचे नाव') {
-                    var filteredWorks = works.filter(function(w) {
-                      if (subVal === 'सर्व कामे') return true;
-                      return (w.workName || w.work || '').trim().toLowerCase() === subVal.trim().toLowerCase();
-                    });
-
-                    var h = '<div style="text-align:center; margin-bottom:8px;">';
-                    h += '  <h2 style="margin:0; font-size:17px; font-weight:bold;">सार्वजनिक बांधकाम विभाग</h2>';
-                    h += '  <h3 style="margin:3px 0 6px 0; font-size:14px; text-decoration:underline;">कामाचा सविस्तर अहवाल</h3>';
-                    h += '</div>';
-                    h += '<div style="display:flex; justify-content:space-between; font-size:11.5px; margin-bottom:4px;">';
-                    h += '  <span><b>काम:</b> ' + subVal + '</span><span><b>दिनांक:</b> ' + today + '</span>';
-                    h += '</div><table class="print-table"><thead><tr>';
-                    h += '  <th style="width:1%; white-space:nowrap;">अ.क्र.</th>';
-                    h += '  <th>कामाचे नाव</th>';
-                    h += '  <th style="width:1%; white-space:nowrap;">M.B. क्रमांक</th>';
-                    h += '  <th style="width:1%; white-space:nowrap;">M.B. साईज</th>';
-                    h += '  <th>कनिष्ठ अभियंता (JE)</th>';
-                    h += '  <th>कंत्राटदार / एजन्सी</th>';
-                    h += '</tr></thead><tbody>';
-
-                    if (filteredWorks.length === 0) {
-                      h += '<tr><td colspan="6" style="text-align:center; padding:10px;">नोंद उपलब्ध नाही.</td></tr>';
-                    } else {
-                      for (var i = 0; i < filteredWorks.length; i++) {
-                        var w = filteredWorks[i];
-                        h += '<tr>';
-                        h += '  <td style="text-align:center;">' + (i + 1) + '</td>';
-                        h += '  <td>' + (w.workName || w.work || '-') + '</td>';
-                        h += '  <td style="text-align:center;">' + (w.mbNumber || w.mbNo || '-') + '</td>';
-                        h += '  <td style="text-align:center;">' + (w.size || w.mbSize || 'लहान') + '</td>';
-                        h += '  <td>' + (w.jeName || w.assignedTo || '-') + '</td>';
-                        h += '  <td>' + (w.contractor || w.agency || '-') + '</td>';
-                        h += '</tr>';
-                      }
-                    }
-                    h += '</tbody></table>';
-                    triggerA4Print(h);
-                  }
-
-                  // कॉन्ट्रॅक्टर चे नाव अहवाल
-                  else if (mainVal === 'कॉन्ट्रॅक्टर चे नाव') {
-                    var filteredContractors = works.filter(function(w) {
-                      if (subVal === 'सर्व कॉन्ट्रॅक्टर') return true;
-                      return (w.contractor || w.agency || '').trim().toLowerCase() === subVal.trim().toLowerCase();
-                    });
-
-                    var h = '<div style="text-align:center; margin-bottom:8px;">';
-                    h += '  <h2 style="margin:0; font-size:17px; font-weight:bold;">सार्वजनिक बांधकाम विभाग</h2>';
-                    h += '  <h3 style="margin:3px 0 6px 0; font-size:14px; text-decoration:underline;">कंत्राटदार कार्य अहवाल</h3>';
-                    h += '</div>';
-                    h += '<div style="display:flex; justify-content:space-between; font-size:11.5px; margin-bottom:4px;">';
-                    h += '  <span><b>कंत्राटदार:</b> ' + subVal + '</span><span><b>दिनांक:</b> ' + today + '</span>';
-                    h += '</div><table class="print-table"><thead><tr>';
-                    h += '  <th style="width:1%; white-space:nowrap;">अ.क्र.</th>';
-                    h += '  <th>कॉन्ट्रॅक्टर / एजन्सीचे नाव</th>';
-                    h += '  <th>कामाचे नाव</th>';
-                    h += '  <th>कनिष्ठ अभियंता (JE)</th>';
-                    h += '  <th style="width:1%; white-space:nowrap;">M.B. क्रमांक</th>';
-                    h += '  <th style="width:1%; white-space:nowrap;">M.B. साईज</th>';
-                    h += '</tr></thead><tbody>';
-
-                    if (filteredContractors.length === 0) {
-                      h += '<tr><td colspan="6" style="text-align:center; padding:10px;">नोंद उपलब्ध नाही.</td></tr>';
-                    } else {
-                      for (var i = 0; i < filteredContractors.length; i++) {
-                        var w = filteredContractors[i];
-                        h += '<tr>';
-                        h += '  <td style="text-align:center;">' + (i + 1) + '</td>';
-                        h += '  <td>' + (w.contractor || w.agency || '-') + '</td>';
-                        h += '  <td>' + (w.workName || w.work || '-') + '</td>';
-                        h += '  <td>' + (w.jeName || w.assignedTo || '-') + '</td>';
-                        h += '  <td style="text-align:center;">' + (w.mbNumber || w.mbNo || '-') + '</td>';
-                        h += '  <td style="text-align:center;">' + (w.size || w.mbSize || 'लहान') + '</td>';
-                        h += '</tr>';
-                      }
-                    }
-                    h += '</tbody></table>';
-                    triggerA4Print(h);
-                  }
+                  pa.innerHTML = h;
+                  pa.style.display = 'block';
+                  setTimeout(function() {
+                    window.print();
+                    setTimeout(function() { pa.style.display = 'none'; }, 500);
+                  }, 150);
                 }
               }
             }, true);
 
-            // ५. बॅकअप व रिस्टोअर इव्हेंट्स
+            // ४. बॅकअप व रिस्टोअर
             document.addEventListener('click', function(e) {
               var btn = e.target.closest('button, a');
               if (!btn) return;
@@ -540,7 +249,7 @@ jobs:
                 alert('डेटा १००% यशस्वीपणे पूर्ववत (Restore) झाला आहे!');
                 location.reload();
               } catch(err) {
-                alert('त्रुटी: अवैध फाईल!');
+                alert('त्रुटी: फाईल वाचता आली नाही!');
               }
             };
           })();
@@ -554,7 +263,7 @@ jobs:
               raw_html += patch_code
 
           html_file.write_text(raw_html, encoding="utf-8")
-          print("SUCCESS: Unified Architecture Applied.")
+          print("SUCCESS: Original Look Restored.")
           PY
 
       - name: Create Android project structure
@@ -601,8 +310,8 @@ jobs:
                   applicationId 'com.mbms.app'
                   minSdk 24
                   targetSdk 35
-                  versionCode 152
-                  versionName 'V152'
+                  versionCode 155
+                  versionName 'V155'
               }
               buildTypes {
                   debug {
@@ -764,10 +473,10 @@ jobs:
                               if (fos != null) {
                                   fos.write(jsonString.getBytes(StandardCharsets.UTF_8));
                                   fos.close();
-                                  Toast.makeText(MainActivity.this, "बॅकअप Downloads फोल्डरमध्ये सेव्ह झाला!", Toast.LENGTH_LONG).show();
+                                  Toast.makeText(MainActivity.this, "बॅकअप Downloads मध्ये सेव्ह झाला!", Toast.LENGTH_LONG).show();
                               }
                           } catch (Exception e) {
-                              Toast.makeText(MainActivity.this, "बॅकअप अयशस्वी: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                              Toast.makeText(MainActivity.this, "बॅकअप त्रुटी: " + e.getMessage(), Toast.LENGTH_SHORT).show();
                           }
                       });
                   }
@@ -779,9 +488,9 @@ jobs:
                               Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
                               intent.setType("*/*");
                               intent.addCategory(Intent.CATEGORY_OPENABLE);
-                              startActivityForResult(Intent.createChooser(intent, "बॅकअप JSON फाईल निवडा"), PICK_BACKUP_FILE_REQ);
+                              startActivityForResult(Intent.createChooser(intent, "बॅकअप JSON निवडा"), PICK_BACKUP_FILE_REQ);
                           } catch (Exception e) {
-                              Toast.makeText(MainActivity.this, "फाईल पिकर उघडता आले नाही.", Toast.LENGTH_SHORT).show();
+                              Toast.makeText(MainActivity.this, "पिकर उघडता आले नाही.", Toast.LENGTH_SHORT).show();
                           }
                       });
                   }
@@ -876,12 +585,12 @@ jobs:
 
           APK="app/build/outputs/apk/debug/app-debug.apk"
           test -s "$APK"
-          cp "$APK" "../release/MBMS-FINAL-STABLE.apk"
-          ls -lh "../release/MBMS-FINAL-STABLE.apk"
+          cp "$APK" "../release/MBMS-ORIGINAL-LOOK-V155.apk"
+          ls -lh "../release/MBMS-ORIGINAL-LOOK-V155.apk"
 
       - name: Upload Final APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MBMS-FINAL-STABLE-APK
-          path: release/MBMS-FINAL-STABLE.apk
+          name: MBMS-ORIGINAL-LOOK-V155-APK
+          path: release/MBMS-ORIGINAL-LOOK-V155.apk
           if-no-files-found: error
