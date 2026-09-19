@@ -48,34 +48,19 @@ jobs:
           cp "$TARGET_HTML" mbms_work/index.html
           test -s mbms_work/index.html
 
-      - name: Inject Complete Fixes (Remove Header Report & Bridge Backup/Restore)
+      - name: Inject Exactly Requested 2 Fixes (MB Dynamic Filter & DD-MM-YYYY Date)
         shell: bash
         run: |
           set -e
           python3 <<'PY'
           from pathlib import Path
-          import re
 
           html_file = Path("mbms_work/index.html")
           raw_html = html_file.read_text(encoding="utf-8")
 
           patch_code = """
-          <!-- ==================== MBMS ENGINE FIXES ==================== -->
-          <style id="MBMS_CSS_HARDENED_FIX">
-          /* हेडरमधील वरचे केशरी REPORT बटण कायमचे नष्ट करणे */
-          .navbar button:contains("REPORT"),
-          header button:contains("REPORT"),
-          div[class*="header"] button:contains("REPORT") {
-            display: none !important;
-          }
-          button[style*="background-color: rgb(255, 152, 0)"],
-          button[style*="background-color: #ff9800"],
-          button[style*="background: rgb(255, 152, 0)"],
-          button[style*="background: #ff9800"],
-          button[style*="background-color: orange"] {
-            display: none !important;
-          }
-
+          <!-- ==================== EXACT 2 FIXES ENGINE ==================== -->
+          <style id="MBMS_EXACT_STYLES">
           @media print {
             @page { size: A4 portrait; margin: 8mm !important; }
             body { background: #fff !important; color: #000 !important; }
@@ -87,94 +72,124 @@ jobs:
           }
           </style>
 
-          <script id="MBMS_BACKUP_AND_BUTTON_ENGINE">
+          <div id="printArea" style="display: none;"></div>
+
+          <script id="MBMS_EXACT_CONTROLLER">
           (function() {
-            // १. हेडरमधील वरचे केशरी REPORT बटण कायमचे काढणे
-            setInterval(function() {
-              document.querySelectorAll('button, a').forEach(function(el) {
-                var txt = (el.textContent || el.value || '').trim().toUpperCase();
-                if (txt === 'REPORT') {
-                  var r = el.getBoundingClientRect();
-                  var s = window.getComputedStyle(el);
-                  if (r.top < 85 || s.backgroundColor.indexOf('255, 152') !== -1 || s.backgroundColor.indexOf('255, 165') !== -1) {
-                    el.style.setProperty('display', 'none', 'important');
-                    el.remove();
-                  }
+            // १. बदल क्र. २: M.B. List मधील दिनांक dd-mm-yyyy फॉरमॅटमध्ये करणे
+            function fixTableDateFormat() {
+              document.querySelectorAll('table tr td, [class*="table"] tr td').forEach(function(td) {
+                var txt = td.textContent.trim();
+                // yyyy-mm-dd तपासणे (उदा. 2026-09-19)
+                var dateMatch = txt.match(/^(\\d{4})[-/](\\d{2})[-/](\\d{2})$/);
+                if (dateMatch) {
+                  td.textContent = dateMatch[3] + '-' + dateMatch[2] + '-' + dateMatch[1];
                 }
               });
-            }, 100);
+            }
+            setInterval(fixTableDateFormat, 300);
 
-            // २. BACKUP SAVE आणि BACKUP RESTORE बटणांना Android Native सोबत जोडणे
+            // २. बदल क्र. १: M.B. निवडल्यानंतर खाली नवीन ऑप्शन तयार करणे (सर्व, लहान, मोठी)
+            function initMBDropdownFix() {
+              var selects = Array.from(document.querySelectorAll('select'));
+              var mbSelect = selects.find(function(s) {
+                return (s.options[s.selectedIndex]?.text || s.value || '').trim().toUpperCase() === 'M.B.';
+              });
+
+              if (mbSelect && !document.getElementById('injectedMBTypeContainer')) {
+                var container = document.createElement('div');
+                container.id = 'injectedMBTypeContainer';
+                container.style.cssText = 'margin-top: 10px; margin-bottom: 10px; width: 100%;';
+                
+                var newSelect = document.createElement('select');
+                newSelect.id = 'injectedMBTypeSelect';
+                newSelect.className = mbSelect.className;
+                newSelect.style.cssText = 'width: 100%; height: 40px; border-radius: 8px; border: 1px solid #cfd8dc; padding: 0 10px; font-size: 13px; background: #fff;';
+                
+                newSelect.innerHTML = '<option value="सर्व M.B.">सर्व M.B.</option>' +
+                                      '<option value="लहान M.B.">लहान M.B.</option>' +
+                                      '<option value="मोठी M.B.">मोठी M.B.</option>';
+                
+                container.appendChild(newSelect);
+                mbSelect.parentElement.insertAdjacentElement('afterend', container);
+
+                // M.B. बदलल्यावर दिसणे/लपवणे
+                mbSelect.addEventListener('change', function() {
+                  var v = (this.options[this.selectedIndex]?.text || this.value || '').trim().toUpperCase();
+                  container.style.display = (v === 'M.B.') ? 'block' : 'none';
+                });
+              }
+            }
+            setInterval(initMBDropdownFix, 400);
+
+            // ३. अहवाल जनरेशन (नवीन पर्यायानुसार)
             document.addEventListener('click', function(e) {
               var btn = e.target.closest('button, a');
               if (!btn) return;
               var t = (btn.textContent || btn.value || '').trim().toUpperCase();
 
-              // ---------- BACKUP SAVE ----------
-              if (t.includes('BACKUP SAVE') || t === 'BACKUP') {
-                e.preventDefault();
-                e.stopPropagation();
-                var allData = {};
-                for (var i = 0; i < localStorage.length; i++) {
-                  var k = localStorage.key(i);
-                  allData[k] = localStorage.getItem(k);
-                }
-                var jsonStr = JSON.stringify(allData, null, 2);
+              if (t.includes('REPORT') || t.includes('PRINT')) {
+                var dynamicSelect = document.getElementById('injectedMBTypeSelect');
+                var filterType = dynamicSelect ? dynamicSelect.value : 'सर्व M.B.';
 
-                if (window.MBMSAndroid && window.MBMSAndroid.saveBackupToDownloads) {
-                  window.MBMSAndroid.saveBackupToDownloads(jsonStr);
-                } else {
-                  // वेब ब्राउझरसाठी फॉलबॅक
-                  var blob = new Blob([jsonStr], { type: 'application/json' });
-                  var a = document.createElement('a');
-                  a.href = URL.createObjectURL(blob);
-                  a.download = 'MBMS_Backup_' + new Date().toISOString().slice(0,10) + '.json';
-                  document.body.appendChild(a);
-                  a.click();
-                  a.remove();
-                  alert('बॅकअप डाऊनलोड झाला!');
-                }
-                return;
-              }
+                // जर M.B. चे रिपोर्ट बटण असेल तर त्यानुसार फिल्टर करणे
+                var mbList = [];
+                try {
+                  mbList = JSON.parse(localStorage.getItem('mb_records')) || [];
+                } catch(err) { mbList = []; }
 
-              // ---------- BACKUP RESTORE ----------
-              if (t.includes('BACKUP RESTORE') || t === 'RESTORE') {
-                e.preventDefault();
-                e.stopPropagation();
-                if (window.MBMSAndroid && window.MBMSAndroid.openBackupPicker) {
-                  window.MBMSAndroid.openBackupPicker();
-                } else {
-                  var fi = document.createElement('input');
-                  fi.type = 'file';
-                  fi.accept = '.json';
-                  fi.onchange = function(evt) {
-                    var file = evt.target.files[0];
-                    if (!file) return;
-                    var reader = new FileReader();
-                    reader.onload = function(re) {
-                      window.applyRestoredData(re.target.result);
-                    };
-                    reader.readAsText(file);
-                  };
-                  fi.click();
+                var filtered = mbList.filter(function(item) {
+                  var s = (item.size || item.mbSize || item.type || '').trim().toLowerCase();
+                  if (filterType === 'लहान M.B.') return s.includes('लहान') || s.includes('small');
+                  if (filterType === 'मोठी M.B.') return s.includes('मोठी') || s.includes('large');
+                  return true;
+                });
+
+                var pa = document.getElementById('printArea');
+                if (pa) {
+                  e.preventDefault();
+                  e.stopPropagation();
+
+                  var h = '<div style="text-align: center; margin-bottom: 8px;">';
+                  h += '  <h2 style="margin: 0; font-size: 17px; font-weight: bold;">सार्वजनिक बांधकाम विभाग</h2>';
+                  h += '  <h3 style="margin: 3px 0 6px 0; font-size: 14px; text-decoration: underline;">मोजमाप पुस्तिका अहवाल</h3>';
+                  h += '</div>';
+                  h += '<div style="display: flex; justify-content: space-between; font-size: 11.5px; margin-bottom: 4px;">';
+                  h += '  <span><b>निवड:</b> ' + filterType + '</span>';
+                  h += '  <span><b>दिनांक:</b> ' + new Date().toLocaleDateString('en-GB') + '</span>';
+                  h += '</div>';
+                  h += '<table class="print-table">';
+                  h += '  <thead><tr>';
+                  h += '    <th style="width: 1%; white-space: nowrap; text-align: center;">अ.क्र.</th>';
+                  h += '    <th style="width: 1%; white-space: nowrap; text-align: center;">M.B. क्रमांक</th>';
+                  h += '    <th style="width: 1%; white-space: nowrap; text-align: center;">M.B. साईज</th>';
+                  h += '    <th style="text-align: left;">सध्या कोणाकडे आहे (JE चे नाव)</th>';
+                  h += '  </tr></thead><tbody>';
+
+                  if (filtered.length === 0) {
+                    h += '<tr><td colspan="4" style="text-align: center; padding: 10px;">नोंद उपलब्ध नाही.</td></tr>';
+                  } else {
+                    for (var i = 0; i < filtered.length; i++) {
+                      var r = filtered[i];
+                      h += '<tr>';
+                      h += '  <td style="text-align: center;">' + (i + 1) + '</td>';
+                      h += '  <td style="text-align: center;">' + (r.mbNumber || r.mbNo || "-") + '</td>';
+                      h += '  <td style="text-align: center;">' + (r.size || r.mbSize || "लहान") + '</td>';
+                      h += '  <td style="text-align: left;">' + (r.assignedTo || r.jeName || "स्टॉकमध्ये उपलब्ध") + '</td>';
+                      h += '</tr>';
+                    }
+                  }
+                  h += '</tbody></table>';
+
+                  pa.innerHTML = h;
+                  pa.style.display = 'block';
+                  setTimeout(function() {
+                    window.print();
+                    setTimeout(function() { pa.style.display = 'none'; }, 500);
+                  }, 150);
                 }
-                return;
               }
             }, true);
-
-            // ३. रिस्टोअर डेटा LocalStorage मध्ये भरणे
-            window.applyRestoredData = function(jsonStr) {
-              try {
-                var obj = JSON.parse(jsonStr);
-                for (var key in obj) {
-                  localStorage.setItem(key, obj[key]);
-                }
-                alert('डेटा १००% यशस्वीपणे Restore झाला आहे!');
-                location.reload();
-              } catch(err) {
-                alert('त्रुटी: अवैध बॅकअप फाईल!');
-              }
-            };
           })();
           </script>
           """
@@ -186,7 +201,7 @@ jobs:
               raw_html += patch_code
 
           html_file.write_text(raw_html, encoding="utf-8")
-          print("SUCCESS: Header Report Removed & Backup/Restore Bridge Injected.")
+          print("SUCCESS: 2 Fixes Injected.")
           PY
 
       - name: Create Android project structure
@@ -233,8 +248,8 @@ jobs:
                   applicationId 'com.mbms.app'
                   minSdk 26
                   targetSdk 35
-                  versionCode 143
-                  versionName 'V143'
+                  versionCode 144
+                  versionName 'V144'
               }
               buildTypes {
                   debug { minifyEnabled false; shrinkResources false }
@@ -287,7 +302,7 @@ jobs:
           </manifest>
           EOF
 
-      - name: Generate MainActivity.java with Native Storage File Access
+      - name: Generate MainActivity.java with Working Backup and Restore
         shell: bash
         run: |
           set -e
@@ -307,7 +322,6 @@ jobs:
           import android.print.PrintManager;
           import android.provider.MediaStore;
           import android.webkit.JavascriptInterface;
-          import android.webkit.ValueCallback;
           import android.webkit.WebChromeClient;
           import android.webkit.WebSettings;
           import android.webkit.WebView;
@@ -365,7 +379,6 @@ jobs:
 
               public class AndroidBridge {
 
-                  // १. JSON बॅकअप Downloads फोल्डरमध्ये सेव्ह करणे
                   @JavascriptInterface
                   public void saveBackupToDownloads(String jsonString) {
                       runOnUiThread(() -> {
@@ -392,12 +405,11 @@ jobs:
                                   Toast.makeText(MainActivity.this, "बॅकअप Downloads फोल्डरमध्ये सेव्ह झाला: " + fileName, Toast.LENGTH_LONG).show();
                               }
                           } catch (Exception e) {
-                              Toast.makeText(MainActivity.this, "बॅकअप सेव्ह करता आला नाही: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                              Toast.makeText(MainActivity.this, "बॅकअप अयशस्वी: " + e.getMessage(), Toast.LENGTH_SHORT).show();
                           }
                       });
                   }
 
-                  // २. फाईल पिकर उघडून बॅकअप फाईल निवडणे
                   @JavascriptInterface
                   public void openBackupPicker() {
                       runOnUiThread(() -> {
@@ -412,7 +424,6 @@ jobs:
                       });
                   }
 
-                  // ३. प्रिंट अहवाल
                   @JavascriptInterface
                   public void print() {
                       runOnUiThread(() -> {
@@ -433,13 +444,12 @@ jobs:
                                   }, 350);
                               }
                           } catch (Exception e) {
-                              Toast.makeText(MainActivity.this, "Print सुरू करता आले नाही.", Toast.LENGTH_SHORT).show();
+                              Toast.makeText(MainActivity.this, "Print अयशस्वी.", Toast.LENGTH_SHORT).show();
                           }
                       });
                   }
               }
 
-              // रिस्टोअर फाईल निवडल्यानंतरचा रिझल्ट
               @Override
               protected void onActivityResult(int requestCode, int resultCode, Intent data) {
                   super.onActivityResult(requestCode, resultCode, data);
@@ -472,19 +482,8 @@ jobs:
 
               @Override
               public void onBackPressed() {
-                  if (webView != null) {
-                      webView.evaluateJavascript(
-                          "(function(){ return (window.handleAndroidBack && window.handleAndroidBack()); })();",
-                          value -> {
-                              if (!"true".equals(value)) {
-                                  if (webView.canGoBack()) {
-                                      webView.goBack();
-                                  } else {
-                                      super.onBackPressed();
-                                  }
-                              }
-                          }
-                      );
+                  if (webView != null && webView.canGoBack()) {
+                      webView.goBack();
                   } else {
                       super.onBackPressed();
                   }
@@ -516,12 +515,12 @@ jobs:
 
           APK="app/build/outputs/apk/debug/app-debug.apk"
           test -s "$APK"
-          cp "$APK" "../release/MBMS-V143-FINAL-FIXED.apk"
-          ls -lh "../release/MBMS-V143-FINAL-FIXED.apk"
+          cp "$APK" "../release/MBMS-V144-EXACT-2-FIXES.apk"
+          ls -lh "../release/MBMS-V144-EXACT-2-FIXES.apk"
 
       - name: Upload Final APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MBMS-V143-FINAL-FIXED-APK
-          path: release/MBMS-V143-FINAL-FIXED.apk
+          name: MBMS-V144-EXACT-2-FIXES-APK
+          path: release/MBMS-V144-EXACT-2-FIXES.apk
           if-no-files-found: error
