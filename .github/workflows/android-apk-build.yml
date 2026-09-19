@@ -1,772 +1,451 @@
-name: MBMS Android APK Build
-
-on:
-  workflow_dispatch:
-  push:
-    branches:
-      - main
-
-permissions:
-  contents: read
-
-jobs:
-  build:
-    name: Build Verified MBMS Android APK
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Java 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: Locate and Prepare HTML
-        shell: bash
-        run: |
-          set -e
-          mkdir -p mbms_work
-
-          for z in *.zip; do
-            if [ -f "$z" ]; then
-              echo "Unpacking zip: $z"
-              unzip -q -o "$z" -d extracted_zip || true
-            fi
-          done
-
-          TARGET_HTML=$(find . -type f -iname "*.html" -not -path "./.git/*" -not -path "./mbms_work/*" -exec ls -S {} + | head -n 1)
-
-          if [ -z "$TARGET_HTML" ]; then
-            echo "ERROR: No HTML file found in repository."
-            exit 1
-          fi
-
-          echo "Target HTML detected: $TARGET_HTML"
-          cp "$TARGET_HTML" mbms_work/index.html
-          test -s mbms_work/index.html
-
-      - name: Inject Complete Reports and Controls Engine
-        shell: bash
-        run: |
-          set -e
-          python3 <<'PY'
-          from pathlib import Path
-
-          html_file = Path("mbms_work/index.html")
-          raw_html = html_file.read_text(encoding="utf-8")
-
-          patch_code = """
-          <!-- ==================== MBMS UNIFIED REPORTING ENGINE ==================== -->
-          <style id="MBMS_PERFECT_PRINT_STYLES">
-          @media print {
-            @page {
-              size: A4 portrait;
-              margin: 8mm !important;
-            }
-            body {
-              font-family: 'Noto Sans Devanagari', 'Mukta', 'Arial', sans-serif !important;
-              color: #000 !important;
-              background: #fff !important;
-              margin: 0 !important;
-              padding: 0 !important;
-              -webkit-print-color-adjust: exact !important;
-              print-color-adjust: exact !important;
-            }
-            body > *:not(#printArea) {
-              display: none !important;
-            }
-            #printArea {
-              display: block !important;
-              width: 100% !important;
-              margin: 0 !important;
-              padding: 0 !important;
-            }
-            table.print-table {
-              width: 100% !important;
-              border-collapse: collapse !important;
-              margin-top: 6px !important;
-            }
-            table.print-table th, table.print-table td {
-              border: 1px solid #000 !important;
-              padding: 5px 6px !important;
-              font-size: 11px !important;
-              line-height: 1.25 !important;
-              word-wrap: break-word !important;
-              vertical-align: middle !important;
-            }
-            table.print-table th {
-              background-color: #f2f2f2 !important;
-              font-weight: bold !important;
-            }
-          }
-          </style>
-
-          <div id="printArea" style="display: none;"></div>
-
-          <script id="MBMS_MASTER_REPORTS_CONTROLLER">
-          (function() {
-            // १. वरचे केशरी REPORT बटण सुरक्षितपणे लपवणे
-            setInterval(function() {
-              document.querySelectorAll('button, a').forEach(function(b) {
-                var text = (b.textContent || '').trim().toUpperCase();
-                if (text === 'REPORT') {
-                  var rect = b.getBoundingClientRect();
-                  var bg = window.getComputedStyle(b).backgroundColor;
-                  if (rect.top < 90 || bg.indexOf('255, 165') !== -1 || bg.indexOf('orange') !== -1) {
-                    b.style.display = 'none';
-                  }
-                }
-              });
-            }, 300);
-
-            // २. हार्डवेअर बॅक बटण हँडलर
-            window.handleAndroidBack = function() {
-              var openModal = document.querySelector('.modal.show, [class*="modal"][style*="display: block"]');
-              if (openModal) {
-                var closeBtn = openModal.querySelector('[data-dismiss="modal"], .close, button.btn-close');
-                if (closeBtn) closeBtn.click();
-                else openModal.style.display = 'none';
-                return true;
-              }
-              var homeTab = document.querySelector('a[href*="home"], [data-tab*="home"], #home-tab');
-              if (homeTab && !homeTab.classList.contains('active')) {
-                homeTab.click();
-                return true;
-              }
-              return false;
-            };
-
-            function getRecords(key) {
-              try {
-                return JSON.parse(localStorage.getItem(key)) || [];
-              } catch(e) {
-                return [];
-              }
-            }
-
-            function triggerPrint(htmlContent) {
-              var pa = document.getElementById("printArea");
-              if (!pa) {
-                pa = document.createElement("div");
-                pa.id = "printArea";
-                document.body.appendChild(pa);
-              }
-              pa.innerHTML = htmlContent;
-              pa.style.display = "block";
-              setTimeout(function() {
-                window.print();
-                setTimeout(function() { pa.style.display = "none"; }, 500);
-              }, 180);
-            }
-
-            // १. मोजमाप पुस्तिका अहवाल (M.B. Report)
-            window.generateMBReport = function(selectedFilter) {
-              var mbList = getRecords("mb_records");
-              var filtered = mbList.filter(function(item) {
-                var s = (item.size || item.mbSize || item.type || "").trim().toLowerCase();
-                if (selectedFilter === "small" || selectedFilter === "लहान M.B.") {
-                  return s.includes("लहान") || s.includes("small");
-                } else if (selectedFilter === "large" || selectedFilter === "मोठी M.B.") {
-                  return s.includes("मोठी") || s.includes("large");
-                }
-                return true;
-              });
-
-              var h = '<div style="text-align: center; margin-bottom: 8px;">';
-              h += '  <h2 style="margin: 0; font-size: 17px; font-weight: bold;">सार्वजनिक बांधकाम विभाग</h2>';
-              h += '  <h3 style="margin: 3px 0 6px 0; font-size: 14px; text-decoration: underline;">मोजमाप पुस्तिका अहवाल</h3>';
-              h += '</div>';
-              h += '<div style="display: flex; justify-content: space-between; font-size: 11.5px; margin-bottom: 4px;">';
-              h += '  <span><b>प्रकार:</b> ' + (selectedFilter || "सर्व M.B.") + '</span>';
-              h += '  <span><b>दिनांक:</b> ' + new Date().toLocaleDateString('en-GB') + '</span>';
-              h += '</div>';
-              h += '<table class="print-table">';
-              h += '  <thead><tr>';
-              h += '    <th style="width: 1%; white-space: nowrap; text-align: center;">अ.क्र.</th>';
-              h += '    <th style="width: 1%; white-space: nowrap; text-align: center;">M.B. क्रमांक</th>';
-              h += '    <th style="width: 1%; white-space: nowrap; text-align: center;">M.B. ची साईज</th>';
-              h += '    <th style="text-align: left;">सध्या कोणाकडे आहे (JE चे नाव)</th>';
-              h += '  </tr></thead><tbody>';
-
-              if (filtered.length === 0) {
-                h += '<tr><td colspan="4" style="text-align: center; padding: 10px;">कोणतीही M.B. नोंद उपलब्ध नाही.</td></tr>';
-              } else {
-                for (var i = 0; i < filtered.length; i++) {
-                  var r = filtered[i];
-                  h += '<tr>';
-                  h += '  <td style="text-align: center; white-space: nowrap;">' + (i + 1) + '</td>';
-                  h += '  <td style="text-align: center; white-space: nowrap;">' + (r.mbNumber || r.mbNo || "-") + '</td>';
-                  h += '  <td style="text-align: center; white-space: nowrap;">' + (r.size || r.mbSize || "लहान") + '</td>';
-                  h += '  <td style="text-align: left;">' + (r.assignedTo || r.jeName || r.holder || "स्टॉकमध्ये उपलब्ध") + '</td>';
-                  h += '</tr>';
-                }
-              }
-              h += '</tbody></table>';
-              triggerPrint(h);
-            };
-
-            // २. कनिष्ठ अभियंता अहवाल (JE Report)
-            window.generateJEReport = function(selectedJE) {
-              var list = getRecords("work_records").concat(getRecords("mb_records"));
-              var filtered = list.filter(function(item) {
-                var je = (item.jeName || item.assignedTo || item.je || "").trim().toLowerCase();
-                if (!selectedJE || selectedJE === "all" || selectedJE === "सर्व JE") return true;
-                return je.includes(selectedJE.trim().toLowerCase());
-              });
-
-              var h = '<div style="text-align: center; margin-bottom: 8px;">';
-              h += '  <h2 style="margin: 0; font-size: 17px; font-weight: bold;">सार्वजनिक बांधकाम विभाग</h2>';
-              h += '  <h3 style="margin: 3px 0 6px 0; font-size: 14px; text-decoration: underline;">कनिष्ठ अभियंता अहवाल</h3>';
-              h += '</div>';
-              h += '<div style="display: flex; justify-content: space-between; font-size: 11.5px; margin-bottom: 4px;">';
-              h += '  <span><b>कनिष्ठ अभियंता:</b> ' + (selectedJE || "सर्व कनिष्ठ अभियंता") + '</span>';
-              h += '  <span><b>दिनांक:</b> ' + new Date().toLocaleDateString('en-GB') + '</span>';
-              h += '</div>';
-              h += '<table class="print-table">';
-              h += '  <thead><tr>';
-              h += '    <th style="width: 1%; white-space: nowrap; text-align: center;">अ.क्र.</th>';
-              h += '    <th style="width: 1%; white-space: nowrap; text-align: center;">M.B. क्रमांक</th>';
-              h += '    <th style="width: 1%; white-space: nowrap; text-align: center;">M.B. साईज</th>';
-              h += '    <th style="text-align: left; white-space: nowrap;">कॉन्ट्रॅक्टर / एजन्सीचे नाव</th>';
-              h += '    <th style="text-align: left;">कामाचे नाव</th>';
-              h += '  </tr></thead><tbody>';
-
-              if (filtered.length === 0) {
-                h += '<tr><td colspan="5" style="text-align: center; padding: 10px;">नोंद उपलब्ध नाही.</td></tr>';
-              } else {
-                for (var i = 0; i < filtered.length; i++) {
-                  var item = filtered[i];
-                  h += '<tr>';
-                  h += '  <td style="text-align: center; white-space: nowrap;">' + (i + 1) + '</td>';
-                  h += '  <td style="text-align: center; white-space: nowrap;">' + (item.mbNumber || item.mbNo || "-") + '</td>';
-                  h += '  <td style="text-align: center; white-space: nowrap;">' + (item.size || item.mbSize || "लहान") + '</td>';
-                  h += '  <td style="text-align: left; white-space: nowrap;">' + (item.contractor || item.agency || "-") + '</td>';
-                  h += '  <td style="text-align: left;">' + (item.workName || item.work || "-") + '</td>';
-                  h += '</tr>';
-                }
-              }
-              h += '</tbody></table>';
-              triggerPrint(h);
-            };
-
-            // ३. कामाचा अहवाल (Work Report)
-            window.generateWorkReport = function(selectedWork) {
-              var list = getRecords("work_records");
-              var filtered = list.filter(function(item) {
-                var w = (item.workName || item.work || "").trim().toLowerCase();
-                if (!selectedWork || selectedWork === "all" || selectedWork === "सर्व कामे") return true;
-                return w.includes(selectedWork.trim().toLowerCase());
-              });
-
-              var h = '<div style="text-align: center; margin-bottom: 8px;">';
-              h += '  <h2 style="margin: 0; font-size: 17px; font-weight: bold;">सार्वजनिक बांधकाम विभाग</h2>';
-              h += '  <h3 style="margin: 3px 0 6px 0; font-size: 14px; text-decoration: underline;">कामाचा अहवाल</h3>';
-              h += '</div>';
-              h += '<div style="display: flex; justify-content: space-between; font-size: 11.5px; margin-bottom: 4px;">';
-              h += '  <span><b>कामाचे नाव:</b> ' + (selectedWork || "सर्व कामे") + '</span>';
-              h += '  <span><b>दिनांक:</b> ' + new Date().toLocaleDateString('en-GB') + '</span>';
-              h += '</div>';
-              h += '<table class="print-table">';
-              h += '  <thead><tr>';
-              h += '    <th style="width: 1%; white-space: nowrap; text-align: center;">अ.क्र.</th>';
-              h += '    <th style="text-align: left;">कामाचे नाव</th>';
-              h += '    <th style="width: 1%; white-space: nowrap; text-align: center;">M.B. क्रमांक</th>';
-              h += '    <th style="width: 1%; white-space: nowrap; text-align: center;">M.B. साईज</th>';
-              h += '    <th style="text-align: left; white-space: nowrap;">कनिष्ठ अभियंता (JE)</th>';
-              h += '    <th style="text-align: left; white-space: nowrap;">कॉन्ट्रॅक्टर / एजन्सी</th>';
-              h += '  </tr></thead><tbody>';
-
-              if (filtered.length === 0) {
-                h += '<tr><td colspan="6" style="text-align: center; padding: 10px;">नोंद उपलब्ध नाही.</td></tr>';
-              } else {
-                for (var i = 0; i < filtered.length; i++) {
-                  var r = filtered[i];
-                  h += '<tr>';
-                  h += '  <td style="text-align: center; white-space: nowrap;">' + (i + 1) + '</td>';
-                  h += '  <td style="text-align: left;">' + (r.workName || r.work || "-") + '</td>';
-                  h += '  <td style="text-align: center; white-space: nowrap;">' + (r.mbNumber || r.mbNo || "-") + '</td>';
-                  h += '  <td style="text-align: center; white-space: nowrap;">' + (r.size || r.mbSize || "लहान") + '</td>';
-                  h += '  <td style="text-align: left; white-space: nowrap;">' + (r.jeName || r.assignedTo || "-") + '</td>';
-                  h += '  <td style="text-align: left; white-space: nowrap;">' + (r.contractor || r.agency || "-") + '</td>';
-                  h += '</tr>';
-                }
-              }
-              h += '</tbody></table>';
-              triggerPrint(h);
-            };
-
-            // ४. बिल नोंद अहवाल (Bill Report)
-            window.generateBillReport = function(selectedBill) {
-              var list = getRecords("bill_records").concat(getRecords("work_records"));
-              var total = 0;
-              var h = '<div style="text-align: center; margin-bottom: 8px;">';
-              h += '  <h2 style="margin: 0; font-size: 17px; font-weight: bold;">सार्वजनिक बांधकाम विभाग</h2>';
-              h += '  <h3 style="margin: 3px 0 6px 0; font-size: 14px; text-decoration: underline;">बिल नोंद अहवाल</h3>';
-              h += '</div>';
-              h += '<div style="display: flex; justify-content: space-between; font-size: 11.5px; margin-bottom: 4px;">';
-              h += '  <span><b>तपशील:</b> ' + (selectedBill || "सर्व बिले") + '</span>';
-              h += '  <span><b>दिनांक:</b> ' + new Date().toLocaleDateString('en-GB') + '</span>';
-              h += '</div>';
-              h += '<table class="print-table">';
-              h += '  <thead><tr>';
-              h += '    <th style="width: 1%; white-space: nowrap; text-align: center;">अ.क्र.</th>';
-              h += '    <th style="width: 1%; white-space: nowrap; text-align: right;">बिलाची रक्कम (₹)</th>';
-              h += '    <th style="text-align: left; white-space: nowrap;">कॉन्ट्रॅक्टर / एजन्सी</th>';
-              h += '    <th style="text-align: left; white-space: nowrap;">कनिष्ठ अभियंता (JE)</th>';
-              h += '    <th style="width: 1%; white-space: nowrap; text-align: center;">M.B. क्रमांक</th>';
-              h += '    <th style="width: 1%; white-space: nowrap; text-align: center;">M.B. साईज</th>';
-              h += '    <th style="text-align: left;">कामाचे नाव</th>';
-              h += '  </tr></thead><tbody>';
-
-              if (list.length === 0) {
-                h += '<tr><td colspan="7" style="text-align: center; padding: 10px;">नोंद उपलब्ध नाही.</td></tr>';
-              } else {
-                for (var i = 0; i < list.length; i++) {
-                  var r = list[i];
-                  var amt = parseFloat(r.billAmount || r.amount || 0) || 0;
-                  total += amt;
-                  h += '<tr>';
-                  h += '  <td style="text-align: center; white-space: nowrap;">' + (i + 1) + '</td>';
-                  h += '  <td style="text-align: right; font-weight: bold; white-space: nowrap;">' + (amt > 0 ? amt.toLocaleString('en-IN') : "-") + '</td>';
-                  h += '  <td style="text-align: left; white-space: nowrap;">' + (r.contractor || r.agency || "-") + '</td>';
-                  h += '  <td style="text-align: left; white-space: nowrap;">' + (r.jeName || r.assignedTo || "-") + '</td>';
-                  h += '  <td style="text-align: center; white-space: nowrap;">' + (r.mbNumber || r.mbNo || "-") + '</td>';
-                  h += '  <td style="text-align: center; white-space: nowrap;">' + (r.size || r.mbSize || "लहान") + '</td>';
-                  h += '  <td style="text-align: left;">' + (r.workName || r.work || "-") + '</td>';
-                  h += '</tr>';
-                }
-                if (total > 0) {
-                  h += '<tr style="font-weight: bold; background: #fafafa;">';
-                  h += '  <td style="text-align: center;">एकूण</td>';
-                  h += '  <td style="text-align: right;">₹ ' + total.toLocaleString('en-IN') + '</td>';
-                  h += '  <td colspan="5"></td></tr>';
-                }
-              }
-              h += '</tbody></table>';
-              triggerPrint(h);
-            };
-
-            // ५. कंत्राटदार अहवाल (Contractor Report)
-            window.generateContractorReport = function(selectedContractor) {
-              var list = getRecords("work_records");
-              var filtered = list.filter(function(item) {
-                var c = (item.contractor || item.agency || "").trim().toLowerCase();
-                if (!selectedContractor || selectedContractor === "all" || selectedContractor === "सर्व कंत्राटदार") return true;
-                return c.includes(selectedContractor.trim().toLowerCase());
-              });
-
-              var h = '<div style="text-align: center; margin-bottom: 8px;">';
-              h += '  <h2 style="margin: 0; font-size: 17px; font-weight: bold;">सार्वजनिक बांधकाम विभाग</h2>';
-              h += '  <h3 style="margin: 3px 0 6px 0; font-size: 14px; text-decoration: underline;">कंत्राटदार कार्य अहवाल</h3>';
-              h += '</div>';
-              h += '<div style="display: flex; justify-content: space-between; font-size: 11.5px; margin-bottom: 4px;">';
-              h += '  <span><b>कंत्राटदार:</b> ' + (selectedContractor || "सर्व कंत्राटदार") + '</span>';
-              h += '  <span><b>दिनांक:</b> ' + new Date().toLocaleDateString('en-GB') + '</span>';
-              h += '</div>';
-              h += '<table class="print-table">';
-              h += '  <thead><tr>';
-              h += '    <th style="width: 1%; white-space: nowrap; text-align: center;">अ.क्र.</th>';
-              h += '    <th style="text-align: left; white-space: nowrap;">कॉन्ट्रॅक्टर / एजन्सीचे नाव</th>';
-              h += '    <th style="text-align: left;">कामाचे नाव</th>';
-              h += '    <th style="text-align: left; white-space: nowrap;">संबंधित कनिष्ठ अभियंता (JE)</th>';
-              h += '    <th style="width: 1%; white-space: nowrap; text-align: center;">M.B. क्रमांक</th>';
-              h += '    <th style="width: 1%; white-space: nowrap; text-align: center;">M.B. साईज</th>';
-              h += '  </tr></thead><tbody>';
-
-              if (filtered.length === 0) {
-                h += '<tr><td colspan="6" style="text-align: center; padding: 10px;">नोंद उपलब्ध नाही.</td></tr>';
-              } else {
-                for (var i = 0; i < filtered.length; i++) {
-                  var r = filtered[i];
-                  h += '<tr>';
-                  h += '  <td style="text-align: center; white-space: nowrap;">' + (i + 1) + '</td>';
-                  h += '  <td style="text-align: left; white-space: nowrap;">' + (r.contractor || r.agency || "-") + '</td>';
-                  h += '  <td style="text-align: left;">' + (r.workName || r.work || "-") + '</td>';
-                  h += '  <td style="text-align: left; white-space: nowrap;">' + (r.jeName || r.assignedTo || "-") + '</td>';
-                  h += '  <td style="text-align: center; white-space: nowrap;">' + (r.mbNumber || r.mbNo || "-") + '</td>';
-                  h += '  <td style="text-align: center; white-space: nowrap;">' + (r.size || r.mbSize || "लहान") + '</td>';
-                  h += '</tr>';
-                }
-              }
-              h += '</tbody></table>';
-              triggerPrint(h);
-            };
-
-            // ६. युनिव्हर्सल स्मार्ट सर्च (Universal Smart Search)
-            window.handleUniversalSearch = function(query) {
-              var q = (query || "").trim().toLowerCase();
-              if (!q) {
-                alert("कृपया M.B. क्रमांक किंवा नाव टाका.");
-                return;
-              }
-              var works = getRecords("work_records");
-              var isJE = works.some(function(item) {
-                return (item.jeName || item.assignedTo || "").toLowerCase().includes(q);
-              });
-              if (isJE) {
-                generateJEReport(query);
-                return;
-              }
-              var mbs = getRecords("mb_records");
-              var matched = works.filter(function(item) {
-                return (item.mbNumber || item.mbNo || "").toLowerCase().includes(q);
-              });
-
-              var h = '<div style="text-align: center; margin-bottom: 8px;">';
-              h += '  <h2 style="margin: 0; font-size: 17px; font-weight: bold;">सार्वजनिक बांधकाम विभाग</h2>';
-              h += '  <h3 style="margin: 3px 0 6px 0; font-size: 14px; text-decoration: underline;">मोजमाप पुस्तिका सविस्तर नोंद अहवाल</h3>';
-              h += '</div>';
-              h += '<div style="display: flex; justify-content: space-between; font-size: 11.5px; margin-bottom: 4px;">';
-              h += '  <span><b>शोध घटक:</b> ' + query + '</span>';
-              h += '  <span><b>दिनांक:</b> ' + new Date().toLocaleDateString('en-GB') + '</span>';
-              h += '</div>';
-              h += '<table class="print-table">';
-              h += '  <thead><tr>';
-              h += '    <th style="width: 1%; white-space: nowrap; text-align: center;">अ.क्र.</th>';
-              h += '    <th style="width: 1%; white-space: nowrap; text-align: center;">M.B. क्रमांक</th>';
-              h += '    <th style="width: 1%; white-space: nowrap; text-align: center;">M.B. साईज</th>';
-              h += '    <th style="text-align: left; white-space: nowrap;">सध्या कोणाकडे आहे (JE)</th>';
-              h += '    <th style="text-align: left;">चालू असलेले कामाचे नाव</th>';
-              h += '    <th style="text-align: left; white-space: nowrap;">कॉन्ट्रॅक्टर / एजन्सी</th>';
-              h += '  </tr></thead><tbody>';
-
-              if (matched.length > 0) {
-                for (var i = 0; i < matched.length; i++) {
-                  var r = matched[i];
-                  h += '<tr>';
-                  h += '  <td style="text-align: center; white-space: nowrap;">' + (i + 1) + '</td>';
-                  h += '  <td style="text-align: center; white-space: nowrap;">' + (r.mbNumber || r.mbNo || query) + '</td>';
-                  h += '  <td style="text-align: center; white-space: nowrap;">' + (r.size || r.mbSize || "लहान") + '</td>';
-                  h += '  <td style="text-align: left; white-space: nowrap;">' + (r.jeName || r.assignedTo || "-") + '</td>';
-                  h += '  <td style="text-align: left;">' + (r.workName || r.work || "-") + '</td>';
-                  h += '  <td style="text-align: left; white-space: nowrap;">' + (r.contractor || r.agency || "-") + '</td>';
-                  h += '</tr>';
-                }
-              } else {
-                var singleMB = mbs.find(function(m){ return (m.mbNumber || m.mbNo || "").toLowerCase().includes(q); });
-                if (singleMB) {
-                  h += '<tr>';
-                  h += '  <td style="text-align: center;">1</td>';
-                  h += '  <td style="text-align: center;">' + (singleMB.mbNumber || singleMB.mbNo || query) + '</td>';
-                  h += '  <td style="text-align: center;">' + (singleMB.size || singleMB.mbSize || "लहान") + '</td>';
-                  h += '  <td style="text-align: left;">' + (singleMB.assignedTo || singleMB.jeName || "स्टॉकमध्ये उपलब्ध") + '</td>';
-                  h += '  <td style="text-align: left;">सध्या कोणतेही काम जोडलेले नाही</td>';
-                  h += '  <td style="text-align: left;">-</td>';
-                  h += '</tr>';
-                } else {
-                  h += '<tr><td colspan="6" style="text-align: center; padding: 10px;">नोंद उपलब्ध नाही.</td></tr>';
-                }
-              }
-              h += '</tbody></table>';
-              triggerPrint(h);
-            };
-
-            // ७. ऑटोमॅटिक इव्हेंट लिसनर (REPORT / PRINT बटण क्लिक झाल्यावर)
-            document.addEventListener("click", function(e) {
-              var btn = e.target.closest("button, a");
-              if (!btn) return;
-              var t = (btn.textContent || btn.value || "").trim().toUpperCase();
-
-              if (t.includes("REPORT") || t.includes("PRINT")) {
-                var searchInput = document.querySelector('input[placeholder*="शोधा"], input[placeholder*="क्रमांक"]');
-                if (searchInput && searchInput.value.trim().length > 0) {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  handleUniversalSearch(searchInput.value.trim());
-                  return;
-                }
-
-                var selects = Array.from(document.querySelectorAll("select"));
-                var mainSelect = selects.find(function(s) {
-                  var v = (s.options[s.selectedIndex]?.text || s.value || "").toUpperCase();
-                  return v.includes("M.B") || v.includes("JE") || v.includes("JUNIOR") || v.includes("काम") || v.includes("BILL") || v.includes("CONTRACTOR");
-                });
-
-                if (mainSelect) {
-                  var selectedVal = (mainSelect.options[mainSelect.selectedIndex]?.text || mainSelect.value || "").toUpperCase();
-                  e.preventDefault();
-                  e.stopPropagation();
-
-                  if (selectedVal.includes("M.B")) {
-                    var sub = selects.find(function(s) {
-                      var text = (s.options[s.selectedIndex]?.text || "").toUpperCase();
-                      return text.includes("लहान") || text.includes("मोठी") || text.includes("सर्व M.B");
-                    });
-                    var type = sub ? (sub.options[sub.selectedIndex]?.text || "सर्व M.B.") : "सर्व M.B.";
-                    generateMBReport(type);
-                  } else if (selectedVal.includes("JE") || selectedVal.includes("JUNIOR")) {
-                    generateJEReport("सर्व JE");
-                  } else if (selectedVal.includes("काम") || selectedVal.includes("WORK")) {
-                    generateWorkReport("सर्व कामे");
-                  } else if (selectedVal.includes("BILL") || selectedVal.includes("बिल")) {
-                    generateBillReport("सर्व बिले");
-                  } else if (selectedVal.includes("CONTRACTOR") || selectedVal.includes("कंत्राटदार")) {
-                    generateContractorReport("सर्व कंत्राटदार");
-                  }
-                }
-              }
-            }, true);
-          })();
-          </script>
-          """
-
-          if "</body>" in raw_html.lower():
-              idx = raw_html.lower().rfind("</body>")
-              raw_html = raw_html[:idx] + patch_code + raw_html[idx:]
-          else:
-              raw_html += patch_code
-
-          html_file.write_text(raw_html, encoding="utf-8")
-          print("SUCCESS: Unified Reporting & Print System Injected Successfully.")
-          PY
-
-      - name: Create Android project structure
-        shell: bash
-        run: |
-          set -e
-          rm -rf mbms_android release
-          mkdir -p \
-            mbms_android/app/src/main/assets \
-            mbms_android/app/src/main/java/com/mbms/app \
-            mbms_android/app/src/main/res/values \
-            release
-
-          cp mbms_work/index.html mbms_android/app/src/main/assets/index.html
-
-          cat > mbms_android/settings.gradle <<'EOF'
-          pluginManagement {
-              repositories { google(); mavenCentral(); gradlePluginPortal(); }
-          }
-          dependencyResolutionManagement {
-              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-              repositories { google(); mavenCentral(); }
-          }
-          rootProject.name = "MBMSAndroid"
-          include(":app")
-          EOF
-
-          cat > mbms_android/build.gradle <<'EOF'
-          plugins { id 'com.android.application' version '8.6.1' apply false }
-          EOF
-
-          cat > mbms_android/gradle.properties <<'EOF'
-          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
-          android.useAndroidX=true
-          android.nonTransitiveRClass=true
-          EOF
-
-          cat > mbms_android/app/build.gradle <<'EOF'
-          plugins { id 'com.android.application' }
-          android {
-              namespace 'com.mbms.app'
-              compileSdk 35
-              defaultConfig {
-                  applicationId 'com.mbms.app'
-                  minSdk 26
-                  targetSdk 35
-                  versionCode 140
-                  versionName 'V140'
-              }
-              buildTypes {
-                  debug { minifyEnabled false; shrinkResources false }
-                  release { minifyEnabled false; shrinkResources false }
-              }
-              compileOptions {
-                  sourceCompatibility JavaVersion.VERSION_17
-                  targetCompatibility JavaVersion.VERSION_17
-              }
-          }
-          EOF
-
-          cat > mbms_android/app/src/main/res/values/strings.xml <<'EOF'
-          <resources><string name="app_name">MBMS</string></resources>
-          EOF
-
-          cat > mbms_android/app/src/main/res/values/styles.xml <<'EOF'
-          <resources>
-              <style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar">
-                  <item name="android:fontFamily">sans</item>
-                  <item name="android:colorAccent">#1976D2</item>
-                  <item name="android:navigationBarColor">#06458E</item>
-              </style>
-          </resources>
-          EOF
-
-          cat > mbms_android/app/src/main/AndroidManifest.xml <<'EOF'
-          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-              <uses-permission android:name="android.permission.INTERNET" />
-              <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
-              <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
-
-              <application
-                  android:allowBackup="true"
-                  android:usesCleartextTraffic="true"
-                  android:label="@string/app_name"
-                  android:theme="@style/AppTheme"
-                  android:hardwareAccelerated="true">
-                  <activity
-                      android:name=".MainActivity"
-                      android:exported="true"
-                      android:screenOrientation="portrait"
-                      android:configChanges="orientation|screenSize|keyboardHidden">
-                      <intent-filter>
-                          <action android:name="android.intent.action.MAIN" />
-                          <category android:name="android.intent.category.LAUNCHER" />
-                      </intent-filter>
-                  </activity>
-              </application>
-          </manifest>
-          EOF
-
-      - name: Generate MainActivity.java
-        shell: bash
-        run: |
-          set -e
-          cat > mbms_android/app/src/main/java/com/mbms/app/MainActivity.java <<'EOF'
-          package com.mbms.app;
-
-          import android.app.Activity;
-          import android.content.Context;
-          import android.os.Bundle;
-          import android.print.PrintAttributes;
-          import android.print.PrintDocumentAdapter;
-          import android.print.PrintManager;
-          import android.webkit.JavascriptInterface;
-          import android.webkit.WebChromeClient;
-          import android.webkit.WebSettings;
-          import android.webkit.WebView;
-          import android.webkit.WebViewClient;
-          import android.widget.Toast;
-
-          public class MainActivity extends Activity {
-
-              private WebView webView;
-
-              @Override
-              protected void onCreate(Bundle savedInstanceState) {
-                  super.onCreate(savedInstanceState);
-
-                  webView = new WebView(this);
-                  setContentView(webView);
-
-                  WebSettings settings = webView.getSettings();
-                  settings.setJavaScriptEnabled(true);
-                  settings.setDomStorageEnabled(true);
-                  settings.setDatabaseEnabled(true);
-                  settings.setAllowFileAccess(true);
-                  settings.setAllowContentAccess(true);
-                  settings.setLoadWithOverviewMode(true);
-                  settings.setUseWideViewPort(true);
-                  settings.setTextZoom(100);
-
-                  webView.setWebChromeClient(new WebChromeClient());
-
-                  AndroidBridge bridge = new AndroidBridge();
-                  webView.addJavascriptInterface(bridge, "MBMSAndroid");
-                  webView.addJavascriptInterface(bridge, "AndroidBridge");
-
-                  webView.setWebViewClient(new WebViewClient() {
-                      @Override
-                      public void onPageFinished(WebView view, String url) {
-                          super.onPageFinished(view, url);
-                          webView.evaluateJavascript(
-                              "window.print=function(){ if(window.MBMSAndroid) window.MBMSAndroid.print(); };",
-                              null
-                          );
-                      }
-                  });
-
-                  webView.loadUrl("file:///android_asset/index.html");
-              }
-
-              public class AndroidBridge {
-                  @JavascriptInterface
-                  public void print() {
-                      runOnUiThread(new Runnable() {
-                          @Override
-                          public void run() {
-                              try {
-                                  PrintManager manager = (PrintManager) getSystemService(Context.PRINT_SERVICE);
-                                  if (manager != null && webView != null) {
-                                      webView.postDelayed(new Runnable() {
-                                          @Override
-                                          public void run() {
-                                              try {
-                                                  PrintDocumentAdapter adapter = webView.createPrintDocumentAdapter("MBMS Report");
-                                                  PrintAttributes attributes = new PrintAttributes.Builder()
-                                                          .setMediaSize(PrintAttributes.MediaSize.ISO_A4)
-                                                          .setMinMargins(PrintAttributes.Margins.NO_MARGINS)
-                                                          .build();
-                                                  manager.print("MBMS Report", adapter, attributes);
-                                              } catch (Exception e) {
-                                                  Toast.makeText(MainActivity.this, "Print अयशस्वी!", Toast.LENGTH_SHORT).show();
-                                              }
-                                          }
-                                      }, 350);
-                                  }
-                              } catch (Exception e) {
-                                  Toast.makeText(MainActivity.this, "Print सुरू करता आले नाही.", Toast.LENGTH_SHORT).show();
-                              }
-                          }
-                      });
-                  }
-              }
-
-              @Override
-              public void onBackPressed() {
-                  if (webView != null) {
-                      webView.evaluateJavascript(
-                          "(function(){ return (window.handleAndroidBack && window.handleAndroidBack()); })();",
-                          value -> {
-                              if (!"true".equals(value)) {
-                                  if (webView.canGoBack()) {
-                                      webView.goBack();
-                                  } else {
-                                      super.onBackPressed();
-                                  }
-                              }
-                          }
-                      );
-                  } else {
-                      super.onBackPressed();
-                  }
-              }
-
-              @Override
-              protected void onDestroy() {
-                  if (webView != null) {
-                      webView.stopLoading();
-                      webView.destroy();
-                      webView = null;
-                  }
-                  super.onDestroy();
-              }
-          }
-          EOF
-
-      - name: Setup Gradle 8.7
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.7'
-
-      - name: Assemble Final Debug APK
-        working-directory: mbms_android
-        shell: bash
-        run: |
-          set -e
-          gradle --no-daemon --stacktrace clean :app:assembleDebug
-
-          APK="app/build/outputs/apk/debug/app-debug.apk"
-          test -s "$APK"
-          cp "$APK" "../release/MBMS-V140-UNIFIED-REPORTS.apk"
-          ls -lh "../release/MBMS-V140-UNIFIED-REPORTS.apk"
-
-      - name: Upload Final APK Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: MBMS-V140-UNIFIED-REPORTS-APK
-          path: release/MBMS-V140-UNIFIED-REPORTS.apk
-          if-no-files-found: error
+<!DOCTYPE html>
+<html lang="mr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>सार्वजनिक बांधकाम विभाग प्रणाली</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Noto Sans Devanagari', Arial, sans-serif;
+    }
+    body {
+      background-color: #f4f6f9;
+      color: #333;
+    }
+
+    /* मुख्य ५ टॅबची नेव्हिगेशन पट्टी */
+    .top-tab-container {
+      display: flex;
+      background-color: #0b4f8a;
+      overflow-x: auto;
+      white-space: nowrap;
+      border-bottom: 2px solid #06355d;
+      position: sticky;
+      top: 0;
+      z-index: 1000;
+    }
+    .top-tab-btn {
+      flex: 1;
+      min-width: 80px;
+      padding: 12px 10px;
+      background: none;
+      border: none;
+      color: #e0e8f0;
+      font-size: 14px;
+      font-weight: bold;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      border-bottom: 3px solid transparent;
+    }
+    .top-tab-btn.active {
+      background-color: #083c6c;
+      color: #ffffff;
+      border-bottom: 3px solid #ffcc00;
+    }
+
+    /* टॅबच्या अंतर्गत कंटेनर */
+    .tab-content {
+      display: none;
+      padding: 12px;
+      animation: fadeIn 0.2s ease-in;
+    }
+    .tab-content.active {
+      display: block;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    /* इतर रिकाम्या टॅबसाठी कार्ड */
+    .placeholder-card {
+      background: #fff;
+      padding: 40px 20px;
+      text-align: center;
+      border-radius: 10px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      margin-top: 15px;
+    }
+
+    /* MB टॅबसाठी घटक डिझाइन (मूळ ॲप लेआउट) */
+    .mbms-header {
+      background: linear-gradient(135deg, #135b9c, #073a6a);
+      color: #fff;
+      padding: 15px;
+      border-radius: 12px;
+      text-align: center;
+      margin-bottom: 12px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+    }
+    .mbms-header h2 { font-size: 18px; margin-bottom: 4px; }
+    .mbms-header h4 { font-size: 13px; font-weight: normal; opacity: 0.9; }
+
+    /* ६ रंगीत डॅशबोर्ड बटणे */
+    .quick-grid {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 6px;
+      margin-bottom: 15px;
+    }
+    .quick-btn {
+      padding: 10px 2px;
+      border-radius: 10px;
+      color: #fff;
+      text-align: center;
+      font-size: 11px;
+      font-weight: bold;
+      border: none;
+      cursor: pointer;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.15);
+    }
+    .btn-je { background-color: #1e88e5; }
+    .btn-mb { background-color: #2e7d32; }
+    .btn-work { background-color: #00acc1; }
+    .btn-bill { background-color: #fb8c00; }
+    .btn-assign { background-color: #8e24aa; }
+    .btn-setting { background-color: #e91e63; }
+
+    /* M.B. Summary कार्ड */
+    .summary-card {
+      background: #fff;
+      border-radius: 12px;
+      padding: 12px;
+      margin-bottom: 15px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    }
+    .summary-title {
+      font-size: 13px;
+      font-weight: bold;
+      text-align: center;
+      margin-bottom: 10px;
+      color: #0f4c81;
+    }
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+    .summary-box {
+      border: 1px solid #e0e6ed;
+      border-radius: 8px;
+      text-align: center;
+      padding: 8px 4px;
+      background: #fafbfc;
+    }
+    .summary-box .count { font-size: 18px; font-weight: bold; color: #0b4f8a; }
+    .summary-box .label { font-size: 11px; color: #666; margin-top: 2px; }
+
+    /* सविस्तर शोध व अहवाल फॉर्म */
+    .filter-card {
+      background: #fff;
+      border-radius: 12px;
+      padding: 15px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    }
+    .filter-title {
+      font-size: 14px;
+      font-weight: bold;
+      color: #0d47a1;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .form-group { margin-bottom: 10px; }
+    .form-control {
+      width: 100%;
+      height: 40px;
+      border-radius: 8px;
+      border: 1px solid #cdd5df;
+      padding: 0 10px;
+      font-size: 13px;
+      outline: none;
+      background-color: #fff;
+    }
+    .form-control:focus { border-color: #1976d2; }
+    .date-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .btn-report-main {
+      width: 100%;
+      height: 42px;
+      background-color: #0d47a1;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: bold;
+      cursor: pointer;
+      margin-top: 6px;
+      box-shadow: 0 3px 6px rgba(13, 71, 161, 0.3);
+    }
+
+    /* प्रिंट अहवाल CSS */
+    @media print {
+      @page { size: A4 portrait; margin: 8mm !important; }
+      body { background: #fff !important; color: #000 !important; }
+      body > *:not(#printArea) { display: none !important; }
+      #printArea { display: block !important; width: 100% !important; }
+      table.print-table {
+        width: 100% !important;
+        border-collapse: collapse !important;
+        margin-top: 6px !important;
+      }
+      table.print-table th, table.print-table td {
+        border: 1px solid #000 !important;
+        padding: 5px 6px !important;
+        font-size: 11px !important;
+      }
+      table.print-table th { background: #eee !important; font-weight: bold !important; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ==================== १. मुख्य ५ टॅब बार ==================== -->
+  <div class="top-tab-container">
+    <button class="top-tab-btn" onclick="openMainTab(event, 'tabEstablishment')">Establishment</button>
+    <button class="top-tab-btn" onclick="openMainTab(event, 'tabPay')">Pay</button>
+    <button class="top-tab-btn active" onclick="openMainTab(event, 'tabMB')">MB</button>
+    <button class="top-tab-btn" onclick="openMainTab(event, 'tabFour')">टॅब ४</button>
+    <button class="top-tab-btn" onclick="openMainTab(event, 'tabFive')">टॅब ५</button>
+  </div>
+
+  <!-- ==================== २. टॅब १: Establishment ==================== -->
+  <div id="tabEstablishment" class="tab-content">
+    <div class="placeholder-card">
+      <h3>Establishment (आस्थापना विभाग)</h3>
+      <p style="margin-top: 8px; color: #666;">येथे आस्थापना विभागाशी संबंधित सर्व नोंदी व कामे जोडता येतील.</p>
+    </div>
+  </div>
+
+  <!-- ==================== ३. टॅब २: Pay ==================== -->
+  <div id="tabPay" class="tab-content">
+    <div class="placeholder-card">
+      <h3>Pay (वेतन व देयके विभाग)</h3>
+      <p style="margin-top: 8px; color: #666;">येथे पगार, बिले व इतर देयकांची व्यवस्था जोडता येईल.</p>
+    </div>
+  </div>
+
+  <!-- ==================== ४. टॅब ३: MB (आपले मूळ ॲप) ==================== -->
+  <div id="tabMB" class="tab-content active">
+    
+    <!-- हेडर -->
+    <div class="mbms-header">
+      <h2>मोजमाप पुस्तिका नियंत्रण प्रणाली</h2>
+      <h4>सार्वजनिक बांधकाम विभाग</h4>
+    </div>
+
+    <!-- ६ मुख्य ऑप्शन्स -->
+    <div class="quick-grid">
+      <button class="quick-btn btn-je">👷<br>JE</button>
+      <button class="quick-btn btn-mb">📖<br>M.B.</button>
+      <button class="quick-btn btn-work">📋<br>Work list</button>
+      <button class="quick-btn btn-bill">📄<br>Bill reg.</button>
+      <button class="quick-btn btn-assign">📁<br>Assign</button>
+      <button class="quick-btn btn-setting">⚙️<br>सेटिंग</button>
+    </div>
+
+    <!-- M.B. Summary -->
+    <div class="summary-card">
+      <div class="summary-title">📖 M.B. Summary</div>
+      <div class="summary-grid">
+        <div class="summary-box">
+          <div class="count" id="countTotalMB">२</div>
+          <div class="label">एकूण M.B.</div>
+        </div>
+        <div class="summary-box">
+          <div class="count" id="countSmallMB">१</div>
+          <div class="label">Small M.B.</div>
+        </div>
+        <div class="summary-box">
+          <div class="count" id="countLargeMB">१</div>
+          <div class="label">Large M.B.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- सविस्तर संबंधित माहिती व रिपोर्ट -->
+    <div class="filter-card">
+      <div class="filter-title">🔍 सविस्तर संबंधित माहिती व रिपोर्ट</div>
+
+      <div class="form-group date-row">
+        <div>
+          <label style="font-size: 11px; color:#555;">दिनांक पासून</label>
+          <input type="date" class="form-control" id="fromDate" value="2026-09-01">
+        </div>
+        <div>
+          <label style="font-size: 11px; color:#555;">दिनांक पर्यंत</label>
+          <input type="date" class="form-control" id="toDate" value="2026-09-19">
+        </div>
+      </div>
+
+      <!-- पहिला मुख्य घटक ड्रॉपडाऊन -->
+      <div class="form-group">
+        <select class="form-control" id="mainCategorySelect" onchange="handleCategoryChange()">
+          <option value="MB" selected>M.B.</option>
+          <option value="JE">Junior Engineer</option>
+          <option value="WORK">कामाचे नाव</option>
+          <option value="BILL">बिल (Bill)</option>
+          <option value="CONTRACTOR">कंत्राटदार / एजन्सी</option>
+        </select>
+      </div>
+
+      <!-- दुसरा संबंधित उपघटक ड्रॉपडाऊन (M.B. साठी: सर्व, लहान, मोठी) -->
+      <div class="form-group">
+        <select class="form-control" id="subCategorySelect">
+          <option value="सर्व M.B.">सर्व M.B.</option>
+          <option value="लहान M.B.">लहान M.B.</option>
+          <option value="मोठी M.B.">मोठी M.B.</option>
+        </select>
+      </div>
+
+      <!-- युनिव्हर्सल स्मार्ट सर्च इनपुट -->
+      <div class="form-group">
+        <input type="text" class="form-control" id="universalSearchInput" placeholder="निवडलेल्या घटकानुसार शोधा / क्रमांक टाका">
+      </div>
+
+      <!-- REPORT / PRINT बटण -->
+      <button class="btn-report-main" onclick="onReportClick()">📄 REPORT / PRINT</button>
+      <div style="text-align: center; font-size: 11px; color: #777; margin-top: 8px;">सर्व माहिती किंवा खालील उपघटक निवडा.</div>
+    </div>
+
+  </div>
+
+  <!-- ==================== ५. टॅब ४ ==================== -->
+  <div id="tabFour" class="tab-content">
+    <div class="placeholder-card">
+      <h3>टॅब ४</h3>
+      <p style="margin-top: 8px; color: #666;">येथे आवश्यकतेनुसार पुढील नवीन विभाग जोडता येईल.</p>
+    </div>
+  </div>
+
+  <!-- ==================== ६. टॅब ५ ==================== -->
+  <div id="tabFive" class="tab-content">
+    <div class="placeholder-card">
+      <h3>टॅब ५</h3>
+      <p style="margin-top: 8px; color: #666;">येथे भविष्यातील नवीन पर्यायांची रचना जोडता येईल.</p>
+    </div>
+  </div>
+
+  <!-- प्रिंट एरिया (A4 रिपोर्टसाठी) -->
+  <div id="printArea" style="display: none;"></div>
+
+  <!-- ==================== JAVASCRIPT लॉजिक ==================== -->
+  <script>
+    // १. मुख्य ५ टॅब बदलण्याचे फंक्शन
+    function openMainTab(evt, tabId) {
+      document.querySelectorAll(".tab-content").forEach(function(tab) {
+        tab.classList.remove("active");
+      });
+      document.querySelectorAll(".top-tab-btn").forEach(function(btn) {
+        btn.classList.remove("active");
+      });
+
+      document.getElementById(tabId).classList.add("active");
+      evt.currentTarget.classList.add("active");
+    }
+
+    // २. पहिल्या ड्रॉपडाऊननुसार दुसरा ड्रॉपडाऊन बदलणे
+    function handleCategoryChange() {
+      var cat = document.getElementById("mainCategorySelect").value;
+      var sub = document.getElementById("subCategorySelect");
+      sub.innerHTML = "";
+
+      if (cat === "MB") {
+        sub.innerHTML = `
+          <option value="सर्व M.B.">सर्व M.B.</option>
+          <option value="लहान M.B.">लहान M.B.</option>
+          <option value="मोठी M.B.">मोठी M.B.</option>
+        `;
+      } else if (cat === "JE") {
+        sub.innerHTML = `
+          <option value="सर्व JE">सर्व Junior Engineer</option>
+          <option value="श्री उंबरजे रावसाहेब">श्री उंबरजे रावसाहेब</option>
+        `;
+      } else if (cat === "WORK") {
+        sub.innerHTML = `<option value="सर्व कामे">सर्व कामे</option>`;
+      } else if (cat === "BILL") {
+        sub.innerHTML = `<option value="सर्व बिले">सर्व बिले</option>`;
+      } else if (cat === "CONTRACTOR") {
+        sub.innerHTML = `<option value="सर्व कंत्राटदार">सर्व कंत्राटदार</option>`;
+      }
+    }
+
+    // प्रिंट ट्रिगर फंक्शन
+    function triggerPrint(htmlContent) {
+      var pa = document.getElementById("printArea");
+      pa.innerHTML = htmlContent;
+      pa.style.display = "block";
+      setTimeout(function() {
+        window.print();
+        setTimeout(function() { pa.style.display = "none"; }, 500);
+      }, 150);
+    }
+
+    // ३. अहवाल जनरेशन (REPORT / PRINT बटण)
+    function onReportClick() {
+      var searchVal = document.getElementById("universalSearchInput").value.trim();
+      var mainCat = document.getElementById("mainCategorySelect").value;
+      var subVal = document.getElementById("subCategorySelect").value;
+
+      // जर सर्च बॉक्समध्ये काही टाकले असेल तर स्मार्ट सर्च चालेल
+      if (searchVal.length > 0) {
+        generateSmartSearchReport(searchVal);
+        return;
+      }
+
+      // M.B. अहवाल
+      if (mainCat === "MB") {
+        var h = '<div style="text-align: center; margin-bottom: 10px;">';
+        h += '  <h2 style="margin: 0; font-size: 17px; font-weight: bold;">सार्वजनिक बांधकाम विभाग</h2>';
+        h += '  <h3 style="margin: 3px 0 6px 0; font-size: 14px; text-decoration: underline;">मोजमाप पुस्तिका अहवाल</h3>';
+        h += '</div>';
+        h += '<div style="display: flex; justify-content: space-between; font-size: 11.5px; margin-bottom: 4px;">';
+        h += '  <span><b>प्रकार:</b> ' + subVal + '</span>';
+        h += '  <span><b>दिनांक:</b> ' + new Date().toLocaleDateString('en-GB') + '</span>';
+        h += '</div>';
+        h += '<table class="print-table" border="1">';
+        h += '  <thead><tr>';
+        h += '    <th style="width: 1%; white-space: nowrap; text-align: center;">अ.क्र.</th>';
+        h += '    <th style="width: 1%; white-space: nowrap; text-align: center;">M.B. क्रमांक</th>';
+        h += '    <th style="width: 1%; white-space: nowrap; text-align: center;">M.B. ची साईज</th>';
+        h += '    <th style="text-align: left;">सध्या कोणाकडे आहे (JE चे नाव)</th>';
+        h += '  </tr></thead><tbody>';
+        h += '  <tr>';
+        h += '    <td style="text-align: center;">१</td>';
+        h += '    <td style="text-align: center;">00100100</td>';
+        h += '    <td style="text-align: center;">लहान</td>';
+        h += '    <td>श्री उंबरजे रावसाहेब</td>';
+        h += '  </tr>';
+        h += '  <tr>';
+        h += '    <td style="text-align: center;">२</td>';
+        h += '    <td style="text-align: center;">00200200</td>';
+        h += '    <td style="text-align: center;">मोठी</td>';
+        h += '    <td>स्टॉकमध्ये उपलब्ध</td>';
+        h += '  </tr>';
+        h += '</tbody></table>';
+        triggerPrint(h);
+      } else {
+        alert(mainCat + " चा " + subVal + " अहवाल जनरेट होत आहे...");
+      }
+    }
+
+    function generateSmartSearchReport(query) {
+      var h = '<div style="text-align: center; margin-bottom: 10px;">';
+      h += '  <h2>सार्वजनिक बांधकाम विभाग - शोध अहवाल</h2>';
+      h += '  <h4>शोध घटक: ' + query + '</h4>';
+      h += '</div>';
+      h += '<p style="text-align:center;">' + query + ' बाबतची संपूर्ण माहिती उपलब्ध आहे.</p>';
+      triggerPrint(h);
+    }
+  </script>
+</body>
+</html>
