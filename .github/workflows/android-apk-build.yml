@@ -24,24 +24,6 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Configure Android SDK & Accept Licenses
-        shell: bash
-        run: |
-          set -e
-          export ANDROID_HOME="/usr/local/lib/android/sdk"
-          export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
-          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
-          echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> $GITHUB_PATH
-          echo "$ANDROID_HOME/platform-tools" >> $GITHUB_PATH
-          
-          yes | sdkmanager --licenses >/dev/null 2>&1 || true
-          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
-
-      - name: Setup Gradle 8.7
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.7'
-
       - name: Locate and Prepare HTML
         shell: bash
         run: |
@@ -55,7 +37,7 @@ jobs:
             fi
           done
 
-          TARGET_HTML=$(find . -type f -iname "*.html" -not -path "./.git/*" -exec ls -S {} + | head -n 1)
+          TARGET_HTML=$(find . -type f -iname "*.html" -not -path "./.git/*" -not -path "./mbms_work/*" -exec ls -S {} + | head -n 1)
 
           if [ -z "$TARGET_HTML" ]; then
             echo "ERROR: No HTML file found in repository."
@@ -66,7 +48,7 @@ jobs:
           cp "$TARGET_HTML" mbms_work/index.html
           test -s mbms_work/index.html
 
-      - name: Apply Deep Root Fixes in HTML
+      - name: Apply Safe Non-Destructive Patches in HTML
         shell: bash
         run: |
           set -e
@@ -77,22 +59,12 @@ jobs:
           html_file = Path("mbms_work/index.html")
           raw_html = html_file.read_text(encoding="utf-8")
 
-          # १. मूळ HTML मधून वरचे केशरी REPORT बटण कायमचे काढून टाकणे
-          if "Add JE" in raw_html:
-              parts = raw_html.split("Add JE", 1)
-              parts[0] = re.sub(r'<button[^>]*>[\s\S]*?REPORT[\s\S]*?</button>', '', parts[0], flags=re.I)
-              raw_html = "Add JE".join(parts)
-          elif "Junior Engineer" in raw_html:
-              parts = raw_html.split("Junior Engineer", 1)
-              parts[0] = re.sub(r'<button[^>]*>[\s\S]*?REPORT[\s\S]*?</button>', '', parts[0], flags=re.I)
-              raw_html = "Junior Engineer".join(parts)
-
-          master_styles = """
-          <style id="MBMS_HARDENED_CSS">
+          patch_code = """
+          <style id="MBMS_PRINT_AND_LAYOUT_FIX">
           @media print {
             @page {
               size: A4 portrait;
-              margin: 8mm 8mm 8mm 8mm !important;
+              margin: 8mm !important;
             }
             body {
               font-family: 'Noto Sans Devanagari', 'Mukta', 'Arial', sans-serif !important;
@@ -103,347 +75,87 @@ jobs:
               -webkit-print-color-adjust: exact !important;
               print-color-adjust: exact !important;
             }
-            .no-print { display: none !important; }
-
-            .report-header { text-align: center !important; margin: 0 0 6px 0 !important; }
-            .report-header h2 { margin: 0 !important; font-size: 16px !important; font-weight: bold !important; }
-            .report-header h3 { margin: 2px 0 !important; font-size: 14px !important; }
-            .report-header h4 { margin: 2px 0 6px 0 !important; font-size: 13px !important; text-decoration: underline !important; }
-
-            .report-meta {
-              display: flex !important;
-              justify-content: space-between !important;
-              font-size: 11.5px !important;
-              margin-bottom: 5px !important;
-              border-bottom: 1.2px solid #000 !important;
-              padding-bottom: 3px !important;
+            .no-print, nav, header, .nav-tabs, button:not(.print-include) { 
+              display: none !important; 
             }
-
             table.print-table {
               width: 100% !important;
               border-collapse: collapse !important;
               table-layout: fixed !important;
-              margin-top: 4px !important;
             }
-            table.print-table thead { display: table-header-group !important; }
-            table.print-table tr { page-break-inside: avoid !important; }
             table.print-table th, table.print-table td {
               border: 1px solid #000 !important;
-              padding: 5px 6px !important;
-              font-size: 12px !important;
-              line-height: 1.3 !important;
+              padding: 4px 6px !important;
+              font-size: 11px !important;
+              line-height: 1.2 !important;
               word-wrap: break-word !important;
-              overflow-wrap: break-word !important;
-              vertical-align: middle !important;
             }
             table.print-table th {
-              background-color: #f0f0f0 !important;
+              background-color: #f2f2f2 !important;
               font-weight: bold !important;
-              text-align: center !important;
-            }
-
-            .report-footer {
-              position: fixed !important;
-              bottom: 0 !important;
-              left: 0 !important;
-              right: 0 !important;
-              text-align: center !important;
-              font-size: 10px !important;
-              border-top: 1px solid #777 !important;
-              padding-top: 2px !important;
             }
           }
           </style>
-          """
 
-          master_script = """
-          <script id="MBMS_JE_DIRECT_CONTROLLER">
-          (function() {
-            // वरचे केशरी REPORT बटण कायमचे नष्ट करणे
+          <script id="MBMS_SAFE_RUNTIME_CONTROLLER">
+          window.addEventListener('DOMContentLoaded', function() {
+            // १. वरचे केशरी REPORT बटण सुरक्षितपणे लपवणे (HTML न तोडता)
             setInterval(function() {
               document.querySelectorAll('button, a').forEach(function(b) {
-                if (b.textContent.trim().toUpperCase() === 'REPORT') {
+                var text = (b.textContent || '').trim().toUpperCase();
+                if (text === 'REPORT') {
                   var rect = b.getBoundingClientRect();
-                  if (rect.top < 85) {
+                  var bg = window.getComputedStyle(b).backgroundColor;
+                  if (rect.top < 90 || bg.indexOf('255, 165') !== -1 || bg.indexOf('orange') !== -1) {
                     b.style.display = 'none';
-                    b.remove();
                   }
                 }
               });
-            }, 200);
+            }, 300);
 
-            // १. स्क्रीनवरून किंवा स्टोरेजमधून सर्व JE नावे मिळवणे
-            function extractAllJENames() {
-              var names = [];
-              document.querySelectorAll('tr').forEach(function(tr) {
-                var cells = tr.querySelectorAll('td');
-                if (cells.length >= 2) {
-                  var name = cells[1].textContent.trim();
-                  name = name.replace(/UPDATE|DELETE/gi, '').trim();
-                  if (name && name !== 'JE नाव' && !name.includes('Add केलेले नाही') && !name.includes('उपलब्ध नाही')) {
-                    names.push(name);
-                  }
-                }
-              });
-
-              if (names.length === 0) {
-                document.querySelectorAll('[class*="row"]').forEach(function(row) {
-                  if (row.textContent.includes('UPDATE') && row.textContent.includes('DELETE')) {
-                    var clone = row.cloneNode(true);
-                    clone.querySelectorAll('button, a').forEach(function(b){ b.remove(); });
-                    var text = clone.textContent.replace(/^\\s*\\d+\\s*/, '').trim();
-                    if (text && text.length > 1) names.push(text);
-                  }
-                });
+            // २. हार्डवेअर बॅक बटण हँडलिंग (AndroidBridge साठी)
+            window.handleAndroidBack = function() {
+              var openModal = document.querySelector('.modal.show, [class*="modal"][style*="display: block"]');
+              if (openModal) {
+                var closeBtn = openModal.querySelector('[data-dismiss="modal"], .close, button.btn-close');
+                if (closeBtn) closeBtn.click();
+                else openModal.style.display = 'none';
+                return true;
               }
-
-              if (names.length === 0) {
-                for (var i = 0; i < localStorage.length; i++) {
-                  var k = localStorage.key(i);
-                  try {
-                    var arr = JSON.parse(localStorage.getItem(k));
-                    if (Array.isArray(arr)) {
-                      arr.forEach(function(item) {
-                        var val = typeof item === 'object' ? (item.name || item.jeName || item.je) : item;
-                        if (typeof val === 'string' && val.trim() && (k.toLowerCase().includes('je') || val.includes('श्री'))) {
-                          if (!names.includes(val.trim())) names.push(val.trim());
-                        }
-                      });
-                    }
-                  } catch(e){}
-                }
+              var homeTab = document.querySelector('a[href*="home"], [data-tab*="home"], #home-tab');
+              if (homeTab && !homeTab.classList.contains('active')) {
+                homeTab.click();
+                return true;
               }
-              return names;
-            }
+              return false;
+            };
 
-            function updateStorageOnDelete(name) {
-              if (!name) return;
-              for (var i = 0; i < localStorage.length; i++) {
-                var k = localStorage.key(i);
-                try {
-                  var arr = JSON.parse(localStorage.getItem(k));
-                  if (Array.isArray(arr)) {
-                    var filtered = arr.filter(function(x) {
-                      var val = typeof x === 'object' ? (x.name || x.jeName || x.je) : x;
-                      return val !== name;
-                    });
-                    if (filtered.length !== arr.length) {
-                      localStorage.setItem(k, JSON.stringify(filtered));
-                    }
-                  }
-                } catch(e){}
-              }
-            }
+            // ३. इन-प्लेस JE UPDATE आणि DELETE लॉजिक
+            document.addEventListener('click', function(e) {
+              var btn = e.target.closest('button, a');
+              if (!btn) return;
+              var action = (btn.textContent || btn.value || '').trim().toUpperCase();
 
-            function updateStorageOnEdit(oldName, newName) {
-              if (!oldName || !newName) return;
-              for (var i = 0; i < localStorage.length; i++) {
-                var k = localStorage.key(i);
-                try {
-                  var arr = JSON.parse(localStorage.getItem(k));
-                  if (Array.isArray(arr)) {
-                    var changed = false;
-                    arr.forEach(function(x, idx) {
-                      if (typeof x === 'string' && x === oldName) {
-                        arr[idx] = newName;
-                        changed = true;
-                      } else if (typeof x === 'object' && (x.name === oldName || x.jeName === oldName)) {
-                        if (x.name) x.name = newName;
-                        if (x.jeName) x.jeName = newName;
-                        changed = true;
-                      }
-                    });
-                    if (changed) {
-                      localStorage.setItem(k, JSON.stringify(arr));
-                    }
-                  }
-                } catch(e){}
-              }
-            }
-
-            function renumberRows() {
-              document.querySelectorAll('table tbody tr').forEach(function(r, idx) {
-                var c = r.querySelectorAll('td');
-                if (c.length > 0) c[0].textContent = (idx + 1);
-              });
-            }
-
-            // २. UPDATE आणि DELETE बटणांचे थेट नियंत्रण
-            window.activeEditingRow = null;
-            window.activeOldName = null;
-            window.activeInput = null;
-            window.activeAddBtn = null;
-
-            window.addEventListener('click', function(e) {
-              var el = e.target.closest('button, a, input[type="button"]') || e.target;
-              var action = (el.value || el.textContent || '').trim().toUpperCase();
-
-              // ---------- DELETE बटण ----------
               if (action === 'DELETE') {
-                e.preventDefault();
-                e.stopPropagation();
-                var tr = el.closest('tr') || el.closest('[class*="row"]') || el.parentElement.parentElement;
-                if (!tr) return;
-
-                var jeName = '';
-                var cells = tr.querySelectorAll('td');
-                if (cells.length >= 2) {
-                  jeName = cells[1].textContent.trim();
-                } else {
-                  var cl = tr.cloneNode(true);
-                  cl.querySelectorAll('button, a').forEach(function(b){ b.remove(); });
-                  jeName = cl.textContent.replace(/^\\s*\\d+\\s*/, '').trim();
-                }
-
-                tr.remove();
-                renumberRows();
-                updateStorageOnDelete(jeName);
-                return;
-              }
-
-              // ---------- UPDATE बटण (यादीतील) ----------
-              if (action === 'UPDATE') {
-                var isRowBtn = el.closest('tr') || el.closest('tbody') || el.closest('[class*="row"]');
-                if (isRowBtn) {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  var tr = el.closest('tr') || el.closest('[class*="row"]') || el.parentElement.parentElement;
-                  if (!tr) return;
-
-                  var jeName = '';
-                  var cells = tr.querySelectorAll('td');
-                  if (cells.length >= 2) {
-                    jeName = cells[1].textContent.trim();
-                  }
-
-                  var jeInput = document.querySelector('input[placeholder*="Junior Engineer"]') ||
-                                document.querySelector('input[placeholder*="नाव"]') ||
-                                document.querySelector('#jeName') ||
-                                document.querySelector('input[type="text"]');
-
-                  var addBtn = Array.from(document.querySelectorAll('button, a, input[type="button"]')).find(function(b) {
-                    var t = (b.value || b.textContent || '').trim().toUpperCase();
-                    return (t === 'ADD' || t === 'UPDATE') && b !== el;
-                  });
-
-                  if (jeInput && jeName) {
-                    jeInput.value = jeName;
-                    window.activeEditingRow = tr;
-                    window.activeOldName = jeName;
-                    window.activeInput = jeInput;
-                    window.activeAddBtn = addBtn;
-
-                    if (addBtn) {
-                      addBtn.textContent = 'UPDATE';
-                      addBtn.style.backgroundColor = '#0284c7';
-                      addBtn.style.color = '#ffffff';
-                    }
-                    jeInput.focus();
-                    jeInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                  }
-                  return;
-                }
-              }
-
-              // ---------- इनपुट समोरील ADD / UPDATE सेव्ह करणे ----------
-              if (window.activeEditingRow && (action === 'UPDATE' || action === 'ADD')) {
-                if (el === window.activeAddBtn || el.closest('.card')?.contains(window.activeInput)) {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  var val = window.activeInput.value.trim();
-                  if (val && window.activeEditingRow) {
-                    var cells = window.activeEditingRow.querySelectorAll('td');
-                    if (cells.length >= 2) {
-                      cells[1].textContent = val;
-                    }
-                    updateStorageOnEdit(window.activeOldName, val);
-                    window.activeInput.value = '';
-                    if (window.activeAddBtn) {
-                      window.activeAddBtn.textContent = 'ADD';
-                      window.activeAddBtn.style.backgroundColor = '';
-                    }
-                    window.activeEditingRow = null;
-                    window.activeOldName = null;
-                  }
-                }
-              }
-
-              // ---------- निळ्या REPORT बटणावर क्लिक (JE REPORT) ----------
-              if (action === 'REPORT') {
-                var rect = el.getBoundingClientRect();
-                if (rect.top > 85) {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  printJEA4Report();
+                var row = btn.closest('tr');
+                if (row && confirm('खात्री आहे? ही नोंद कायमची हटवायची आहे का?')) {
+                  row.remove();
                 }
               }
             }, true);
-
-            // ३. JE संपूर्ण A4 अहवाल जनरेटर
-            window.printJEA4Report = function() {
-              var pa = document.getElementById('printArea');
-              if (!pa) {
-                pa = document.createElement('div');
-                pa.id = 'printArea';
-                document.body.appendChild(pa);
-              }
-
-              var list = extractAllJENames();
-
-              var h = '<div class="report-header">';
-              h += '  <h2>सार्वजनिक बांधकाम विभाग</h2>';
-              h += '  <h3>मोजमाप पुस्तिका नियंत्रण प्रणाली</h3>';
-              h += '  <h4>JE REPORT</h4>';
-              h += '</div>';
-              h += '<div class="report-meta">';
-              h += '  <span><b>अहवाल :</b> सर्व कनिष्ठ अभियंता यादी</span>';
-              h += '  <span><b>दिनांक :</b> ' + new Date().toLocaleDateString('en-GB') + '</span>';
-              h += '</div>';
-              h += '<table class="print-table">';
-              h += '  <thead><tr>';
-              h += '    <th style="width:12%; text-align:center;">अ.क्र.</th>';
-              h += '    <th style="width:88%; text-align:left;">Junior Engineer चे नाव</th>';
-              h += '  </tr></thead>';
-              h += '  <tbody>';
-
-              if (list.length === 0) {
-                h += '<tr><td colspan="2" style="text-align:center; padding:12px;">कोणतीही JE नोंद उपलब्ध नाही.</td></tr>';
-              } else {
-                for (var i = 0; i < list.length; i++) {
-                  h += '<tr>';
-                  h += '  <td style="text-align:center;">' + (i + 1) + '</td>';
-                  h += '  <td style="text-align:left;">' + list[i] + '</td>';
-                  h += '</tr>';
-                }
-              }
-
-              h += '  </tbody>';
-              h += '</table>';
-              h += '<div class="report-footer">© सर्व हक्क राखीव - सार्वजनिक बांधकाम विभाग</div>';
-
-              pa.innerHTML = h;
-              setTimeout(function(){ window.print(); }, 120);
-            };
-
-            window.printJEReport = window.printJEA4Report;
-          })();
+          });
           </script>
           """
 
-          if "<head>" in raw_html.lower():
-              h_idx = raw_html.lower().find("<head>") + 6
-              raw_html = raw_html[:h_idx] + master_styles + raw_html[h_idx:]
-          else:
-              raw_html = master_styles + raw_html
-
+          # मूळ कोड न कापता फक्त शेवटी सुरक्षित जोडणे
           if "</body>" in raw_html.lower():
-              b_idx = raw_html.lower().rfind("</body>")
-              raw_html = raw_html[:b_idx] + master_script + raw_html[b_idx:]
+              idx = raw_html.lower().rfind("</body>")
+              raw_html = raw_html[:idx] + patch_code + raw_html[idx:]
           else:
-              raw_html += master_script
+              raw_html += patch_code
 
           html_file.write_text(raw_html, encoding="utf-8")
-          print("SUCCESS: Full JE Engine Patched.")
+          print("SUCCESS: Non-destructive patch applied cleanly.")
           PY
 
       - name: Create Android project structure
@@ -490,8 +202,8 @@ jobs:
                   applicationId 'com.mbms.app'
                   minSdk 26
                   targetSdk 35
-                  versionCode 138
-                  versionName 'V138'
+                  versionCode 139
+                  versionName 'V139'
               }
               buildTypes {
                   debug { minifyEnabled false; shrinkResources false }
@@ -558,6 +270,7 @@ jobs:
           import android.print.PrintDocumentAdapter;
           import android.print.PrintManager;
           import android.webkit.JavascriptInterface;
+          import android.webkit.WebChromeClient;
           import android.webkit.WebSettings;
           import android.webkit.WebView;
           import android.webkit.WebViewClient;
@@ -580,7 +293,11 @@ jobs:
                   settings.setDatabaseEnabled(true);
                   settings.setAllowFileAccess(true);
                   settings.setAllowContentAccess(true);
+                  settings.setLoadWithOverviewMode(true);
+                  settings.setUseWideViewPort(true);
                   settings.setTextZoom(100);
+
+                  webView.setWebChromeClient(new WebChromeClient());
 
                   AndroidBridge bridge = new AndroidBridge();
                   webView.addJavascriptInterface(bridge, "MBMSAndroid");
@@ -635,8 +352,19 @@ jobs:
 
               @Override
               public void onBackPressed() {
-                  if (webView != null && webView.canGoBack()) {
-                      webView.goBack();
+                  if (webView != null) {
+                      webView.evaluateJavascript(
+                          "(function(){ return (window.handleAndroidBack && window.handleAndroidBack()); })();",
+                          value -> {
+                              if (!"true".equals(value)) {
+                                  if (webView.canGoBack()) {
+                                      webView.goBack();
+                                  } else {
+                                      super.onBackPressed();
+                                  }
+                              }
+                          }
+                      );
                   } else {
                       super.onBackPressed();
                   }
@@ -654,6 +382,11 @@ jobs:
           }
           EOF
 
+      - name: Setup Gradle 8.7
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
       - name: Assemble Final Debug APK
         working-directory: mbms_android
         shell: bash
@@ -663,12 +396,12 @@ jobs:
 
           APK="app/build/outputs/apk/debug/app-debug.apk"
           test -s "$APK"
-          cp "$APK" "../release/MBMS-V138-JE-PERFECT.apk"
-          ls -lh "../release/MBMS-V138-JE-PERFECT.apk"
+          cp "$APK" "../release/MBMS-V139-FULL-DASHBOARD.apk"
+          ls -lh "../release/MBMS-V139-FULL-DASHBOARD.apk"
 
       - name: Upload Final APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MBMS-V138-JE-PERFECT-APK
-          path: release/MBMS-V138-JE-PERFECT.apk
+          name: MBMS-V139-FULL-DASHBOARD-APK
+          path: release/MBMS-V139-FULL-DASHBOARD.apk
           if-no-files-found: error
