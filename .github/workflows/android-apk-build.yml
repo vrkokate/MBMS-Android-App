@@ -12,117 +12,112 @@
       font-family: 'Noto Sans Devanagari', Arial, sans-serif;
     }
     body {
-      background-color: #f4f6f9;
+      background-color: #eef2f6;
       color: #333;
     }
 
-    /* मुख्य ५ टॅबची नेव्हिगेशन पट्टी */
-    .top-tab-container {
+    /* १. मुख्य ५ टॅबची नेव्हिगेशन पट्टी (एकाच ओळीत ५ टॅब) */
+    .master-tab-bar {
       display: flex;
-      background-color: #0b4f8a;
+      background-color: #06458e;
       overflow-x: auto;
       white-space: nowrap;
-      border-bottom: 2px solid #06355d;
       position: sticky;
       top: 0;
       z-index: 1000;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.15);
     }
-    .top-tab-btn {
+    .master-tab-btn {
       flex: 1;
-      min-width: 80px;
-      padding: 12px 10px;
-      background: none;
+      min-width: 70px;
+      padding: 12px 6px;
+      background: transparent;
       border: none;
-      color: #e0e8f0;
-      font-size: 14px;
+      color: #d1e2f7;
+      font-size: 13px;
       font-weight: bold;
       text-align: center;
       cursor: pointer;
-      transition: all 0.2s ease;
       border-bottom: 3px solid transparent;
+      transition: all 0.2s ease-in-out;
     }
-    .top-tab-btn.active {
-      background-color: #083c6c;
+    .master-tab-btn.active {
+      background-color: #043166;
       color: #ffffff;
-      border-bottom: 3px solid #ffcc00;
+      border-bottom: 3px solid #ffca28;
     }
 
-    /* टॅबच्या अंतर्गत कंटेनर */
-    .tab-content {
+    /* टॅबच्या अंतर्गत जागा */
+    .tab-section {
       display: none;
       padding: 12px;
-      animation: fadeIn 0.2s ease-in;
     }
-    .tab-content.active {
+    .tab-section.active {
       display: block;
     }
-    @keyframes fadeIn {
-      from { opacity: 0; }
-      to { opacity: 1; }
-    }
 
-    /* इतर रिकाम्या टॅबसाठी कार्ड */
-    .placeholder-card {
-      background: #fff;
+    /* इतर रिकाम्या टॅबसाठी डिझाईन */
+    .empty-card {
+      background: #ffffff;
+      border-radius: 12px;
       padding: 40px 20px;
       text-align: center;
-      border-radius: 10px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
       margin-top: 15px;
     }
 
-    /* MB टॅबसाठी घटक डिझाइन (मूळ ॲप लेआउट) */
-    .mbms-header {
-      background: linear-gradient(135deg, #135b9c, #073a6a);
-      color: #fff;
-      padding: 15px;
+    /* २. MB टॅबमधील मूळ ॲपची रचना */
+    .mb-header {
+      background: linear-gradient(135deg, #0d47a1, #1565c0);
+      color: #ffffff;
+      padding: 14px;
       border-radius: 12px;
       text-align: center;
       margin-bottom: 12px;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+      box-shadow: 0 3px 8px rgba(0,0,0,0.12);
     }
-    .mbms-header h2 { font-size: 18px; margin-bottom: 4px; }
-    .mbms-header h4 { font-size: 13px; font-weight: normal; opacity: 0.9; }
+    .mb-header h2 { font-size: 18px; margin-bottom: 3px; }
+    .mb-header h4 { font-size: 13px; font-weight: normal; opacity: 0.9; }
 
     /* ६ रंगीत डॅशबोर्ड बटणे */
     .quick-grid {
       display: grid;
       grid-template-columns: repeat(6, 1fr);
       gap: 6px;
-      margin-bottom: 15px;
+      margin-bottom: 14px;
     }
     .quick-btn {
-      padding: 10px 2px;
+      padding: 8px 2px;
       border-radius: 10px;
-      color: #fff;
+      color: #ffffff;
       text-align: center;
       font-size: 11px;
       font-weight: bold;
       border: none;
       cursor: pointer;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.15);
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
-    .btn-je { background-color: #1e88e5; }
+    .btn-je { background-color: #1976d2; }
     .btn-mb { background-color: #2e7d32; }
-    .btn-work { background-color: #00acc1; }
-    .btn-bill { background-color: #fb8c00; }
-    .btn-assign { background-color: #8e24aa; }
-    .btn-setting { background-color: #e91e63; }
+    .btn-work { background-color: #00838f; }
+    .btn-bill { background-color: #ef6c00; }
+    .btn-assign { background-color: #7b1fa2; }
+    .btn-setting { background-color: #c2185b; }
 
     /* M.B. Summary कार्ड */
     .summary-card {
-      background: #fff;
+      background: #ffffff;
       border-radius: 12px;
       padding: 12px;
-      margin-bottom: 15px;
+      margin-bottom: 14px;
       box-shadow: 0 2px 8px rgba(0,0,0,0.06);
     }
     .summary-title {
       font-size: 13px;
       font-weight: bold;
       text-align: center;
-      margin-bottom: 10px;
-      color: #0f4c81;
+      margin-bottom: 8px;
+      color: #0d47a1;
     }
     .summary-grid {
       display: grid;
@@ -130,41 +125,38 @@
       gap: 8px;
     }
     .summary-box {
-      border: 1px solid #e0e6ed;
+      border: 1px solid #e0e0e0;
       border-radius: 8px;
       text-align: center;
-      padding: 8px 4px;
-      background: #fafbfc;
+      padding: 6px 2px;
+      background: #fbfcfd;
     }
-    .summary-box .count { font-size: 18px; font-weight: bold; color: #0b4f8a; }
-    .summary-box .label { font-size: 11px; color: #666; margin-top: 2px; }
+    .summary-box .count { font-size: 18px; font-weight: bold; color: #0d47a1; }
+    .summary-box .label { font-size: 11px; color: #616161; }
 
     /* सविस्तर शोध व अहवाल फॉर्म */
     .filter-card {
-      background: #fff;
+      background: #ffffff;
       border-radius: 12px;
-      padding: 15px;
+      padding: 14px;
       box-shadow: 0 2px 8px rgba(0,0,0,0.06);
     }
     .filter-title {
       font-size: 14px;
       font-weight: bold;
       color: #0d47a1;
-      margin-bottom: 12px;
-      display: flex;
-      align-items: center;
-      gap: 6px;
+      margin-bottom: 10px;
     }
     .form-group { margin-bottom: 10px; }
     .form-control {
       width: 100%;
       height: 40px;
       border-radius: 8px;
-      border: 1px solid #cdd5df;
+      border: 1px solid #cfd8dc;
       padding: 0 10px;
       font-size: 13px;
       outline: none;
-      background-color: #fff;
+      background-color: #ffffff;
     }
     .form-control:focus { border-color: #1976d2; }
     .date-row {
@@ -173,18 +165,18 @@
       gap: 8px;
     }
 
-    .btn-report-main {
+    .btn-report-submit {
       width: 100%;
       height: 42px;
       background-color: #0d47a1;
-      color: #fff;
+      color: #ffffff;
       border: none;
       border-radius: 8px;
       font-size: 14px;
       font-weight: bold;
       cursor: pointer;
       margin-top: 6px;
-      box-shadow: 0 3px 6px rgba(13, 71, 161, 0.3);
+      box-shadow: 0 3px 6px rgba(13, 71, 161, 0.25);
     }
 
     /* प्रिंट अहवाल CSS */
@@ -209,41 +201,40 @@
 </head>
 <body>
 
-  <!-- ==================== १. मुख्य ५ टॅब बार ==================== -->
-  <div class="top-tab-container">
-    <button class="top-tab-btn" onclick="openMainTab(event, 'tabEstablishment')">Establishment</button>
-    <button class="top-tab-btn" onclick="openMainTab(event, 'tabPay')">Pay</button>
-    <button class="top-tab-btn active" onclick="openMainTab(event, 'tabMB')">MB</button>
-    <button class="top-tab-btn" onclick="openMainTab(event, 'tabFour')">टॅब ४</button>
-    <button class="top-tab-btn" onclick="openMainTab(event, 'tabFive')">टॅब ५</button>
+  <!-- ==================== मुख्य ५ टॅब बार ==================== -->
+  <div class="master-tab-bar">
+    <button class="master-tab-btn" onclick="switchTab(event, 'tabEstablishment')">एस्टॅब्लिशमेंट</button>
+    <button class="master-tab-btn" onclick="switchTab(event, 'tabPay')">Pay</button>
+    <button class="master-tab-btn active" onclick="switchTab(event, 'tabMB')">MB</button>
+    <button class="master-tab-btn" onclick="switchTab(event, 'tabFour')">टॅब ४</button>
+    <button class="master-tab-btn" onclick="switchTab(event, 'tabFive')">टॅब ५</button>
   </div>
 
-  <!-- ==================== २. टॅब १: Establishment ==================== -->
-  <div id="tabEstablishment" class="tab-content">
-    <div class="placeholder-card">
-      <h3>Establishment (आस्थापना विभाग)</h3>
-      <p style="margin-top: 8px; color: #666;">येथे आस्थापना विभागाशी संबंधित सर्व नोंदी व कामे जोडता येतील.</p>
+  <!-- टॅब १: एस्टॅब्लिशमेंट -->
+  <div id="tabEstablishment" class="tab-section">
+    <div class="empty-card">
+      <h3>एस्टॅब्लिशमेंट विभाग</h3>
+      <p style="margin-top: 8px; color: #757575;">येथे आस्थापना विभागाचे कामकाज व फॉर्म जोडता येतील.</p>
     </div>
   </div>
 
-  <!-- ==================== ३. टॅब २: Pay ==================== -->
-  <div id="tabPay" class="tab-content">
-    <div class="placeholder-card">
-      <h3>Pay (वेतन व देयके विभाग)</h3>
-      <p style="margin-top: 8px; color: #666;">येथे पगार, बिले व इतर देयकांची व्यवस्था जोडता येईल.</p>
+  <!-- टॅब २: Pay -->
+  <div id="tabPay" class="tab-section">
+    <div class="empty-card">
+      <h3>Pay विभाग</h3>
+      <p style="margin-top: 8px; color: #757575;">येथे वेतन, भत्ते आणि देयके संबंधित कामकाज जोडता येईल.</p>
     </div>
   </div>
 
-  <!-- ==================== ४. टॅब ३: MB (आपले मूळ ॲप) ==================== -->
-  <div id="tabMB" class="tab-content active">
+  <!-- टॅब ३: MB (आपली मुख्य मोजमाप पुस्तिका नियंत्रण प्रणाली) -->
+  <div id="tabMB" class="tab-section active">
     
-    <!-- हेडर -->
-    <div class="mbms-header">
+    <div class="mb-header">
       <h2>मोजमाप पुस्तिका नियंत्रण प्रणाली</h2>
       <h4>सार्वजनिक बांधकाम विभाग</h4>
     </div>
 
-    <!-- ६ मुख्य ऑप्शन्स -->
+    <!-- ६ मुख्य बटणे -->
     <div class="quick-grid">
       <button class="quick-btn btn-je">👷<br>JE</button>
       <button class="quick-btn btn-mb">📖<br>M.B.</button>
@@ -278,18 +269,18 @@
 
       <div class="form-group date-row">
         <div>
-          <label style="font-size: 11px; color:#555;">दिनांक पासून</label>
+          <label style="font-size: 11px; color:#616161;">दिनांक पासून</label>
           <input type="date" class="form-control" id="fromDate" value="2026-09-01">
         </div>
         <div>
-          <label style="font-size: 11px; color:#555;">दिनांक पर्यंत</label>
+          <label style="font-size: 11px; color:#616161;">दिनांक पर्यंत</label>
           <input type="date" class="form-control" id="toDate" value="2026-09-19">
         </div>
       </div>
 
-      <!-- पहिला मुख्य घटक ड्रॉपडाऊन -->
+      <!-- १. मुख्य घटक ड्रॉपडाऊन -->
       <div class="form-group">
-        <select class="form-control" id="mainCategorySelect" onchange="handleCategoryChange()">
+        <select class="form-control" id="mainCatSelect" onchange="onCategorySelectChange()">
           <option value="MB" selected>M.B.</option>
           <option value="JE">Junior Engineer</option>
           <option value="WORK">कामाचे नाव</option>
@@ -298,54 +289,54 @@
         </select>
       </div>
 
-      <!-- दुसरा संबंधित उपघटक ड्रॉपडाऊन (M.B. साठी: सर्व, लहान, मोठी) -->
+      <!-- २. संबंधित उपघटक ड्रॉपडाऊन (M.B. साठी: सर्व, लहान, मोठी) -->
       <div class="form-group">
-        <select class="form-control" id="subCategorySelect">
+        <select class="form-control" id="subCatSelect">
           <option value="सर्व M.B.">सर्व M.B.</option>
           <option value="लहान M.B.">लहान M.B.</option>
           <option value="मोठी M.B.">मोठी M.B.</option>
         </select>
       </div>
 
-      <!-- युनिव्हर्सल स्मार्ट सर्च इनपुट -->
+      <!-- ३. स्मार्ट सर्च इनपुट -->
       <div class="form-group">
-        <input type="text" class="form-control" id="universalSearchInput" placeholder="निवडलेल्या घटकानुसार शोधा / क्रमांक टाका">
+        <input type="text" class="form-control" id="smartInput" placeholder="निवडलेल्या घटकानुसार शोधा / क्रमांक टाका">
       </div>
 
-      <!-- REPORT / PRINT बटण -->
-      <button class="btn-report-main" onclick="onReportClick()">📄 REPORT / PRINT</button>
-      <div style="text-align: center; font-size: 11px; color: #777; margin-top: 8px;">सर्व माहिती किंवा खालील उपघटक निवडा.</div>
+      <!-- ४. REPORT / PRINT बटण -->
+      <button class="btn-report-submit" onclick="executeReportPrint()">📄 REPORT / PRINT</button>
+      <div style="text-align: center; font-size: 11px; color: #757575; margin-top: 8px;">सर्व माहिती किंवा वरील उपघटक निवडा.</div>
     </div>
 
   </div>
 
-  <!-- ==================== ५. टॅब ४ ==================== -->
-  <div id="tabFour" class="tab-content">
-    <div class="placeholder-card">
+  <!-- टॅब ४ -->
+  <div id="tabFour" class="tab-section">
+    <div class="empty-card">
       <h3>टॅब ४</h3>
-      <p style="margin-top: 8px; color: #666;">येथे आवश्यकतेनुसार पुढील नवीन विभाग जोडता येईल.</p>
+      <p style="margin-top: 8px; color: #757575;">येथे पुढील नवीन कामांचे पर्याय जोडता येतील.</p>
     </div>
   </div>
 
-  <!-- ==================== ६. टॅब ५ ==================== -->
-  <div id="tabFive" class="tab-content">
-    <div class="placeholder-card">
+  <!-- टॅब ५ -->
+  <div id="tabFive" class="tab-section">
+    <div class="empty-card">
       <h3>टॅब ५</h3>
-      <p style="margin-top: 8px; color: #666;">येथे भविष्यातील नवीन पर्यायांची रचना जोडता येईल.</p>
+      <p style="margin-top: 8px; color: #757575;">येथे इतर स्वतंत्र मोड्यूल जोडता येईल.</p>
     </div>
   </div>
 
   <!-- प्रिंट एरिया (A4 रिपोर्टसाठी) -->
   <div id="printArea" style="display: none;"></div>
 
-  <!-- ==================== JAVASCRIPT लॉजिक ==================== -->
+  <!-- ==================== जावास्क्रिप्ट लॉजिक ==================== -->
   <script>
-    // १. मुख्य ५ टॅब बदलण्याचे फंक्शन
-    function openMainTab(evt, tabId) {
-      document.querySelectorAll(".tab-content").forEach(function(tab) {
-        tab.classList.remove("active");
+    // १. टॅब स्विच फंक्शन
+    function switchTab(evt, tabId) {
+      document.querySelectorAll(".tab-section").forEach(function(sec) {
+        sec.classList.remove("active");
       });
-      document.querySelectorAll(".top-tab-btn").forEach(function(btn) {
+      document.querySelectorAll(".master-tab-btn").forEach(function(btn) {
         btn.classList.remove("active");
       });
 
@@ -353,10 +344,10 @@
       evt.currentTarget.classList.add("active");
     }
 
-    // २. पहिल्या ड्रॉपडाऊननुसार दुसरा ड्रॉपडाऊन बदलणे
-    function handleCategoryChange() {
-      var cat = document.getElementById("mainCategorySelect").value;
-      var sub = document.getElementById("subCategorySelect");
+    // २. घटक बदलल्यावर उपघटक अपडेट करणे
+    function onCategorySelectChange() {
+      var cat = document.getElementById("mainCatSelect").value;
+      var sub = document.getElementById("subCatSelect");
       sub.innerHTML = "";
 
       if (cat === "MB") {
@@ -379,10 +370,10 @@
       }
     }
 
-    // प्रिंट ट्रिगर फंक्शन
-    function triggerPrint(htmlContent) {
+    // प्रिंट ट्रिगर
+    function printA4Content(html) {
       var pa = document.getElementById("printArea");
-      pa.innerHTML = htmlContent;
+      pa.innerHTML = html;
       pa.style.display = "block";
       setTimeout(function() {
         window.print();
@@ -390,26 +381,28 @@
       }, 150);
     }
 
-    // ३. अहवाल जनरेशन (REPORT / PRINT बटण)
-    function onReportClick() {
-      var searchVal = document.getElementById("universalSearchInput").value.trim();
-      var mainCat = document.getElementById("mainCategorySelect").value;
-      var subVal = document.getElementById("subCategorySelect").value;
+    // ३. अहवाल जनरेशन
+    function executeReportPrint() {
+      var search = document.getElementById("smartInput").value.trim();
+      var cat = document.getElementById("mainCatSelect").value;
+      var sub = document.getElementById("subCatSelect").value;
 
-      // जर सर्च बॉक्समध्ये काही टाकले असेल तर स्मार्ट सर्च चालेल
-      if (searchVal.length > 0) {
-        generateSmartSearchReport(searchVal);
+      if (search.length > 0) {
+        var h = '<div style="text-align: center; margin-bottom: 8px;">';
+        h += '  <h2>सार्वजनिक बांधकाम विभाग - शोध अहवाल</h2>';
+        h += '  <h4>शोध घटक: ' + search + '</h4>';
+        h += '</div><p style="text-align:center;">' + search + ' बाबतची संपूर्ण नोंद उपलब्ध आहे.</p>';
+        printA4Content(h);
         return;
       }
 
-      // M.B. अहवाल
-      if (mainCat === "MB") {
-        var h = '<div style="text-align: center; margin-bottom: 10px;">';
+      if (cat === "MB") {
+        var h = '<div style="text-align: center; margin-bottom: 8px;">';
         h += '  <h2 style="margin: 0; font-size: 17px; font-weight: bold;">सार्वजनिक बांधकाम विभाग</h2>';
         h += '  <h3 style="margin: 3px 0 6px 0; font-size: 14px; text-decoration: underline;">मोजमाप पुस्तिका अहवाल</h3>';
         h += '</div>';
         h += '<div style="display: flex; justify-content: space-between; font-size: 11.5px; margin-bottom: 4px;">';
-        h += '  <span><b>प्रकार:</b> ' + subVal + '</span>';
+        h += '  <span><b>प्रकार:</b> ' + sub + '</span>';
         h += '  <span><b>दिनांक:</b> ' + new Date().toLocaleDateString('en-GB') + '</span>';
         h += '</div>';
         h += '<table class="print-table" border="1">';
@@ -432,19 +425,10 @@
         h += '    <td>स्टॉकमध्ये उपलब्ध</td>';
         h += '  </tr>';
         h += '</tbody></table>';
-        triggerPrint(h);
+        printA4Content(h);
       } else {
-        alert(mainCat + " चा " + subVal + " अहवाल जनरेट होत आहे...");
+        alert(cat + " चा " + sub + " अहवाल जनरेट होत आहे...");
       }
-    }
-
-    function generateSmartSearchReport(query) {
-      var h = '<div style="text-align: center; margin-bottom: 10px;">';
-      h += '  <h2>सार्वजनिक बांधकाम विभाग - शोध अहवाल</h2>';
-      h += '  <h4>शोध घटक: ' + query + '</h4>';
-      h += '</div>';
-      h += '<p style="text-align:center;">' + query + ' बाबतची संपूर्ण माहिती उपलब्ध आहे.</p>';
-      triggerPrint(h);
     }
   </script>
 </body>
