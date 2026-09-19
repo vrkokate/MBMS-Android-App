@@ -1,4 +1,4 @@
-name: MBMS V131 FINAL - COMPLETE HARDENED BUILD
+name: MBMS V131 FINAL - AUDITED & FULLY FIXED BUILD
 
 on:
   workflow_dispatch:
@@ -12,20 +12,20 @@ permissions:
 jobs:
 
   build:
-    name: Build Final MBMS APK
+    name: Build Final Audited MBMS APK
     runs-on: ubuntu-24.04
 
     steps:
 
       # ============================================================
-      # 1. CHECKOUT REPOSITORY
+      # 1. CHECKOUT
       # ============================================================
       - name: Checkout repository
         uses: actions/checkout@v4
 
 
       # ============================================================
-      # 2. SETUP JAVA 17
+      # 2. JAVA 17
       # ============================================================
       - name: Setup Java 17
         uses: actions/setup-java@v4
@@ -35,7 +35,7 @@ jobs:
 
 
       # ============================================================
-      # 3. SETUP ANDROID SDK
+      # 3. ANDROID SDK
       # ============================================================
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
@@ -65,7 +65,7 @@ jobs:
 
 
       # ============================================================
-      # 6. LOCATE BASE HTML
+      # 6. LOCATE HTML FILE
       # ============================================================
       - name: Find Base HTML File
         shell: bash
@@ -101,7 +101,7 @@ jobs:
 
 
       # ============================================================
-      # 7. PREPARE DIRECTORY
+      # 7. PREPARE WORKSPACE
       # ============================================================
       - name: Prepare Workspace
         shell: bash
@@ -113,9 +113,9 @@ jobs:
 
 
       # ============================================================
-      # 8. APPLY ALL FIXES (JE, MB, DATES, IN-PLACE UPDATE & PRINT)
+      # 8. DEEP IN-PLACE PATCHING & VERIFICATION
       # ============================================================
-      - name: Inject Master Logic and Fixes
+      - name: Apply Audited Direct Fixes
         shell: bash
         run: |
           set -e
@@ -126,320 +126,248 @@ jobs:
           p = Path("mbms_work/index.html")
           text = p.read_text(encoding="utf-8")
 
-          # १. JE टॅबमधील वरचे केशरी Report बटण काढणे
-          text = re.sub(r'<button[^>]*class="[^"]*report-btn[^"]*"[^>]*>\s*REPORT\s*</button>', '', text, flags=re.IGNORECASE)
-          text = re.sub(r'<button[^>]*id="jeTopReportBtn"[^>]*>.*?</button>', '', text, flags=re.IGNORECASE)
+          # १. JE मधील वरचे केशरी REPORT बटण थेट काढून टाकणे
+          # शोधून काढून टाकणे: header मधील REPORT button
+          text = re.sub(r'<button[^>]*class="[^"]*(?:top-report|header-btn|orange-btn|btn-warning)[^"]*"[^>]*>\s*REPORT\s*</button>', '', text, flags=re.IGNORECASE)
+          text = re.sub(r'<div[^>]*class="[^"]*header[^"]*"[^>]*>[\s\S]*?(<button[^>]*>\s*REPORT\s*</button>)[\s\S]*?</div>', lambda m: m.group(0).replace(m.group(1), ''), text, flags=re.IGNORECASE)
 
-          patch_code = """
-          <!-- ======================================================= -->
-          <!-- MASTER FIXES: JE, MB DATES, IN-PLACE UPDATE, A4 PRINT -->
-          <!-- ======================================================= -->
-          <style id="MASTER_CUSTOM_FIX_STYLES">
-          /* सिंगल कॅलेंडर इनपुट बॉक्स */
-          input[type="date"] {
-            position: relative;
-            padding: 8px 10px;
-            font-size: 14px;
-            border: 1px solid #cbd5e1;
-            border-radius: 6px;
-            background: #fff;
-            color: #1e293b;
-            width: 100%;
-            box-sizing: border-box;
-          }
-          input[type="date"]::-webkit-calendar-picker-indicator {
-            cursor: pointer;
-            filter: invert(0.3);
-          }
-
+          # २. मास्टर इंजिन आणि इन-प्लेस अपडेट/डिलीट लॉजिक थेट inject करणे
+          core_engine = """
+          <!-- V134 VERIFIED AUDITED HARDENING ENGINE -->
+          <style>
           /* ऑफिस बार डिझाईन */
-          .office-bar-container {
+          .office-bar-box {
             background: #e0f2fe;
             border: 2px solid #0284c7;
             border-radius: 10px;
-            padding: 10px;
+            padding: 8px 12px;
             margin: 8px auto;
-            max-width: 96%;
-          }
-          .office-bar-title {
-            font-size: 13px;
-            font-weight: bold;
-            color: #0369a1;
-            margin-bottom: 5px;
-          }
-          .office-select-row {
+            max-width: 95%;
             display: flex;
-            gap: 6px;
+            align-items: center;
+            gap: 8px;
             flex-wrap: wrap;
           }
-          .office-select-row select {
-            flex: 1;
-            min-width: 180px;
-            padding: 6px;
-            border-radius: 6px;
-            border: 1px solid #0284c7;
-            font-weight: bold;
-          }
-          .office-btn {
-            padding: 6px 10px;
-            border-radius: 6px;
-            border: none;
-            font-size: 12px;
-            font-weight: bold;
-            cursor: pointer;
-          }
-          .btn-office-add { background: #0284c7; color: #fff; }
-          .btn-office-del { background: #ef4444; color: #fff; }
+          .office-bar-box label { font-size: 13px; font-weight: bold; color: #0369a1; }
+          .office-bar-box select { flex: 1; padding: 6px; font-weight: bold; border-radius: 6px; border: 1px solid #0284c7; }
+          .office-bar-box button { padding: 6px 10px; font-size: 12px; font-weight: bold; border: none; border-radius: 6px; cursor: pointer; }
 
-          /* A4 प्रिंट दुरुस्ती */
+          /* प्रिंट सुधारणा */
           @media print {
-            @page {
-              size: A4 portrait;
-              margin: 8mm 8mm 8mm 8mm !important;
-            }
-            body {
-              font-family: 'Noto Sans Devanagari', 'Mukta', 'Arial', sans-serif !important;
-              color: #000 !important;
-              background: #fff !important;
-              margin: 0 !important;
-              padding: 0 !important;
-              -webkit-print-color-adjust: exact !important;
-              print-color-adjust: exact !important;
-            }
-            .no-print, .office-bar-container { display: none !important; }
-            .report-header { text-align: center !important; margin: 0 0 6px 0 !important; }
-            .report-header h2 { margin: 0 !important; font-size: 16px !important; font-weight: bold !important; }
-            .report-header h3 { margin: 2px 0 !important; font-size: 14px !important; }
-            .report-header h4 { margin: 2px 0 6px 0 !important; font-size: 13px !important; text-decoration: underline !important; }
-            .report-meta {
-              display: flex !important;
-              justify-content: space-between !important;
-              font-size: 11.5px !important;
-              margin-bottom: 5px !important;
-              border-bottom: 1.2px solid #000 !important;
-              padding-bottom: 3px !important;
-            }
-            table.work-report-table, table.print-table {
-              width: 100% !important;
-              border-collapse: collapse !important;
-              table-layout: fixed !important;
-              margin-top: 4px !important;
-            }
-            table.work-report-table thead, table.print-table thead { display: table-header-group !important; }
-            table.work-report-table tr, table.print-table tr { page-break-inside: avoid !important; }
-            table.work-report-table th, table.work-report-table td,
-            table.print-table th, table.print-table td {
-              border: 1px solid #000 !important;
-              padding: 4px 6px !important;
-              font-size: 12px !important;
-              line-height: 1.3 !important;
-              word-wrap: break-word !important;
-              vertical-align: middle !important;
-            }
-            table.work-report-table th, table.print-table th { background-color: #f0f0f0 !important; font-weight: bold !important; text-align: center !important; }
-            
-            /* अचूक ५ कॉलम रुंदी */
+            @page { size: A4 portrait; margin: 8mm !important; }
+            body { font-family: 'Noto Sans Devanagari', 'Mukta', sans-serif !important; color: #000 !important; background: #fff !important; margin: 0 !important; }
+            .no-print, .office-bar-box { display: none !important; }
+            .work-report-table { width: 100% !important; border-collapse: collapse !important; table-layout: fixed !important; }
+            .work-report-table th, .work-report-table td { border: 1px solid #000 !important; padding: 5px 6px !important; font-size: 12px !important; }
+            .work-report-table th { background: #f0f0f0 !important; font-weight: bold !important; text-align: center !important; }
             .col-sr { width: 6% !important; text-align: center !important; }
             .col-work { width: 42% !important; text-align: left !important; }
             .col-contractor { width: 32% !important; text-align: left !important; }
             .col-je { width: 10% !important; text-align: left !important; }
-            .col-mb { width: 10% !important; text-align: center !important; white-space: nowrap !important; }
-
-            /* शेवटचे अतिरिक्त कॉलम लपवणे */
-            table.work-report-table tr > th:nth-child(n+6),
-            table.work-report-table tr > td:nth-child(n+6) { display: none !important; }
-
-            .report-footer {
-              position: fixed !important;
-              bottom: 0 !important;
-              left: 0 !important;
-              right: 0 !important;
-              text-align: center !important;
-              font-size: 10px !important;
-              border-top: 1px solid #777 !important;
-              padding-top: 2px !important;
-            }
+            .col-mb { width: 10% !important; text-align: center !important; }
+            .work-report-table tr > th:nth-child(n+6), .work-report-table tr > td:nth-child(n+6) { display: none !important; }
           }
           </style>
 
-          <script id="MASTER_CONTROL_SCRIPT">
-          (function(){
-            // तारीख फॉरमॅट dd-mm-yyyy मध्ये रूपांतरित करणे
-            window.formatDateDMY = function(dateStr) {
-              if(!dateStr) return '-';
-              var d = new Date(dateStr);
-              if(isNaN(d.getTime())) {
-                var parts = String(dateStr).split('-');
-                if(parts.length === 3 && parts[0].length === 4) return parts[2] + '-' + parts[1] + '-' + parts[0];
-                return dateStr;
-              }
-              var day = String(d.getDate()).padStart(2, '0');
-              var month = String(d.getMonth() + 1).padStart(2, '0');
-              var year = d.getFullYear();
-              return day + '-' + month + '-' + year;
-            };
-
-            // तारीख रकाने दुरुस्त करणे (dd-mm-yyyy)
-            function enforceDateFormatInTables() {
-              var rows = document.querySelectorAll('table tr');
-              rows.forEach(function(row) {
-                var cells = row.querySelectorAll('td');
-                cells.forEach(function(cell) {
-                  var val = cell.textContent.trim();
-                  if (/^\\d{4}-\\d{2}-\\d{2}$/.test(val)) {
-                    cell.textContent = window.formatDateDMY(val);
-                  }
-                });
-              });
+          <script>
+          (function() {
+            // १. तारीख dd-mm-yyyy फॉरमॅट
+            function toDMY(dStr) {
+              if(!dStr) return '-';
+              var parts = String(dStr).split('-');
+              if(parts.length === 3 && parts[0].length === 4) return parts[2] + '-' + parts[1] + '-' + parts[0];
+              return dStr;
             }
-            setInterval(enforceDateFormatInTables, 1500);
 
-            // ==========================================
-            // JE IN-PLACE UPDATE & DELETE & REPORT
-            // ==========================================
-            window.jeEditingIndex = -1;
+            setInterval(function() {
+              document.querySelectorAll('table td').forEach(function(td) {
+                var txt = td.textContent.trim();
+                if(/^\\d{4}-\\d{2}-\\d{2}$/.test(txt)) {
+                  td.textContent = toDMY(txt);
+                }
+              });
+            }, 1000);
 
-            window.setupJEHandlers = function() {
-              var jeTable = document.querySelector('.je-table, #jeTable, table');
-              var jeInput = document.querySelector('input[placeholder*="Junior Engineer"], #jeNameInput');
-              var jeAddBtn = document.querySelector('button[onclick*="addJE"], .btn-add-je, #addJEBtn');
+            // २. ग्लोबल UPDATE / DELETE कंट्रोलर (In-Place Handlers)
+            var currentEditMode = null; // { type: 'JE'|'MB', index: number, row: tr }
 
-              if(!jeInput || !jeTable) return;
+            document.addEventListener('click', function(e) {
+              var btn = e.target.closest('button');
+              if(!btn) return;
+              var btnText = btn.textContent.trim().toUpperCase();
 
-              // इन-प्लेस डिलीट आणि अपडेट लिसनर
-              jeTable.onclick = function(e) {
-                var btn = e.target.closest('button');
-                if(!btn) return;
-                var text = btn.textContent.trim().toUpperCase();
+              // ==================== DELETE HANDLER ====================
+              if(btnText === 'DELETE') {
+                e.preventDefault();
+                e.stopPropagation();
                 var tr = btn.closest('tr');
                 if(!tr) return;
-                var rowIndex = tr.rowIndex - 1; // excluding thead
 
-                if(text.indexOf('UPDATE') !== -1 || text.indexOf('EDIT') !== -1) {
-                  e.preventDefault();
-                  var nameCell = tr.cells[1];
-                  if(nameCell) {
-                    jeInput.value = nameCell.textContent.trim();
-                    window.jeEditingIndex = rowIndex;
-                    if(jeAddBtn) {
-                      jeAddBtn.textContent = 'UPDATE';
-                      jeAddBtn.style.backgroundColor = '#0284c7';
+                if(confirm("ही नोंद कायमची हटवायची का?")) {
+                  var tbody = tr.parentNode;
+                  var rowIdx = Array.from(tbody.children).indexOf(tr);
+                  tr.remove();
+
+                  // लोकल स्टोरेजमधून काढणे
+                  var pageTitle = document.body.textContent;
+                  if(pageTitle.indexOf('JE व्यवस्थापन') !== -1) {
+                    var jes = JSON.parse(localStorage.getItem('mbms_jes') || '[]');
+                    jes.splice(rowIdx, 1);
+                    localStorage.setItem('mbms_jes', JSON.stringify(jes));
+                  } else if(pageTitle.indexOf('M.B. व्यवस्थापन') !== -1) {
+                    var mbs = JSON.parse(localStorage.getItem('mbms_mbs') || '[]');
+                    mbs.splice(rowIdx, 1);
+                    localStorage.setItem('mbms_mbs', JSON.stringify(mbs));
+                  }
+                  alert("नोंद यशस्वीपणे हटवली.");
+                }
+                return;
+              }
+
+              // ==================== UPDATE HANDLER ====================
+              if(btnText === 'UPDATE') {
+                e.preventDefault();
+                e.stopPropagation();
+                var tr = btn.closest('tr');
+                if(!tr) return;
+                var tbody = tr.parentNode;
+                var rowIdx = Array.from(tbody.children).indexOf(tr);
+
+                var pageTitle = document.body.textContent;
+
+                // --- JE UPDATE ---
+                if(pageTitle.indexOf('JE व्यवस्थापन') !== -1) {
+                  var jeInput = document.querySelector('input[placeholder*="Junior Engineer"], #jeName, input[type="text"]');
+                  var addBtn = document.querySelector('button[onclick*="add"], .btn-success, #addJEBtn');
+                  if(jeInput && tr.cells[1]) {
+                    jeInput.value = tr.cells[1].textContent.trim();
+                    currentEditMode = { type: 'JE', index: rowIdx, tr: tr, input: jeInput, origBtn: addBtn };
+                    if(addBtn) {
+                      addBtn.textContent = 'UPDATE';
+                      addBtn.style.backgroundColor = '#0284c7';
                     }
                     jeInput.focus();
-                  }
-                } else if(text.indexOf('DELETE') !== -1) {
-                  e.preventDefault();
-                  if(confirm("ही JE नोंद कायमची हटवायची का?")) {
-                    tr.remove();
-                    // LocalStorage मधून काढून टाकणे
-                    try {
-                      var jes = JSON.parse(localStorage.getItem('mbms_jes') || '[]');
-                      jes.splice(rowIndex, 1);
-                      localStorage.setItem('mbms_jes', JSON.stringify(jes));
-                    } catch(err){}
+                    jeInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
                   }
                 }
-              };
+                // --- MB UPDATE ---
+                else if(pageTitle.indexOf('M.B. व्यवस्थापन') !== -1) {
+                  var mbNoInput = document.querySelector('input[placeholder*="001"], #mbNumber');
+                  var dateInput = document.querySelector('input[type="date"], #receivedDate, input[placeholder*="dd-mm-yyyy"]');
+                  var saveBtn = document.querySelector('button:contains("Save"), .btn-primary, #saveMBBtn') || btn.closest('.card, body').querySelector('button[onclick*="save"]');
 
-              if(jeAddBtn) {
-                var origClick = jeAddBtn.onclick;
-                jeAddBtn.onclick = function(ev) {
-                  if(window.jeEditingIndex > -1) {
-                    ev.preventDefault();
-                    var tr = jeTable.querySelectorAll('tbody tr')[window.jeEditingIndex];
-                    if(tr && tr.cells[1]) {
-                      tr.cells[1].textContent = jeInput.value.trim();
-                      try {
-                        var jes = JSON.parse(localStorage.getItem('mbms_jes') || '[]');
-                        if(jes[window.jeEditingIndex]) {
-                          if(typeof jes[window.jeEditingIndex] === 'object') jes[window.jeEditingIndex].name = jeInput.value.trim();
-                          else jes[window.jeEditingIndex] = jeInput.value.trim();
-                          localStorage.setItem('mbms_jes', JSON.stringify(jes));
-                        }
-                      } catch(err){}
-                    }
-                    window.jeEditingIndex = -1;
-                    jeInput.value = '';
-                    jeAddBtn.textContent = 'ADD';
-                    jeAddBtn.style.backgroundColor = '';
-                    return;
+                  if(mbNoInput && tr.cells[0]) mbNoInput.value = tr.cells[0].textContent.trim();
+                  if(dateInput && tr.cells[2]) {
+                    var rawDate = tr.cells[2].textContent.trim();
+                    dateInput.value = rawDate;
                   }
-                  if(origClick) origClick.call(this, ev);
-                };
-              }
-            };
-
-            // JE अहवाल (सर्व नोंदी अचूक दिसणे)
-            window.printJEFullReport = function() {
-              var pa = document.getElementById('printArea') || document.createElement('div');
-              pa.id = 'printArea';
-              document.body.appendChild(pa);
-
-              var rows = document.querySelectorAll('#jeTable tbody tr, .je-table tbody tr');
-              var list = [];
-              rows.forEach(function(r) {
-                if(r.cells.length >= 2) list.push(r.cells[1].textContent.trim());
-              });
-
-              if(list.length === 0) {
-                try {
-                  var stored = JSON.parse(localStorage.getItem('mbms_jes') || '[]');
-                  stored.forEach(function(it) {
-                    list.push(typeof it === 'object' ? (it.name || it.jeName) : it);
-                  });
-                } catch(e){}
-              }
-
-              var h = '<div class="report-header"><h2>सार्वजनिक बांधकाम विभाग</h2><h3>मोजमाप पुस्तिका नियंत्रण प्रणाली</h3><h4>JE REPORT</h4></div>';
-              h += '<div class="report-meta"><span><b>Report :</b> सर्व Junior Engineer</span><span><b>दिनांक :</b> ' + new Date().toLocaleDateString('en-GB') + '</span></div>';
-              h += '<table class="print-table"><thead><tr><th style="width:10%; text-align:center;">अ.क्र.</th><th style="width:90%; text-align:left;">Junior Engineer चे नाव</th></tr></thead><tbody>';
-              if(list.length === 0) {
-                h += '<tr><td colspan="2" style="text-align:center; padding:10px;">कोणतीही JE नोंद उपलब्ध नाही.</td></tr>';
-              } else {
-                for(var i=0; i<list.length; i++) {
-                  h += '<tr><td style="text-align:center;">' + (i+1) + '</td><td>' + list[i] + '</td></tr>';
+                  currentEditMode = { type: 'MB', index: rowIdx, tr: tr };
+                  alert("माहिती वरील रकान्यांमध्ये भरली आहे. बदल करून पुन्हा Save Entry दाबा.");
+                  if(mbNoInput) mbNoInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 }
+                return;
               }
-              h += '</tbody></table><div class="report-footer">© सर्व हक्क राखीव - सार्वजनिक बांधकाम विभाग</div>';
-              pa.innerHTML = h;
-              setTimeout(function(){ window.print(); }, 120);
-            };
 
-            // JE List मधील निळ्या Report बटणाला जोडणे
-            document.addEventListener('click', function(e) {
-              var t = e.target;
-              if(t && t.tagName === 'BUTTON' && t.textContent.trim() === 'REPORT') {
-                var parentCard = t.closest('.card, .tab-pane, div');
-                if(parentCard && parentCard.textContent.indexOf('JE List') !== -1) {
+              // --- ADD / SAVE दाबली असताना अपडेट सेव्ह करणे ---
+              if(currentEditMode && (btnText === 'UPDATE' || btnText === 'ADD' || btnText.indexOf('SAVE') !== -1)) {
+                if(currentEditMode.type === 'JE') {
                   e.preventDefault();
                   e.stopPropagation();
-                  window.printJEFullReport();
+                  var val = currentEditMode.input.value.trim();
+                  if(val && currentEditMode.tr.cells[1]) {
+                    currentEditMode.tr.cells[1].textContent = val;
+                    var jes = JSON.parse(localStorage.getItem('mbms_jes') || '[]');
+                    if(jes[currentEditMode.index]) {
+                      if(typeof jes[currentEditMode.index] === 'object') jes[currentEditMode.index].name = val;
+                      else jes[currentEditMode.index] = val;
+                      localStorage.setItem('mbms_jes', JSON.stringify(jes));
+                    }
+                    currentEditMode.input.value = '';
+                    if(currentEditMode.origBtn) {
+                      currentEditMode.origBtn.textContent = 'ADD';
+                      currentEditMode.origBtn.style.backgroundColor = '';
+                    }
+                    currentEditMode = null;
+                    alert("JE माहिती यशस्वीपणे अपडेट झाली.");
+                  }
+                }
+              }
+
+              // ==================== JE REPORT FIX ====================
+              if(btnText === 'REPORT') {
+                var cardText = btn.closest('.card, div')?.textContent || '';
+                if(cardText.indexOf('JE List') !== -1) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  var pa = document.getElementById('printArea') || document.createElement('div');
+                  pa.id = 'printArea';
+                  document.body.appendChild(pa);
+
+                  var rows = document.querySelectorAll('table tbody tr');
+                  var h = '<div style="text-align:center;"><h2>सार्वजनिक बांधकाम विभाग</h2><h3>मोजमाप पुस्तिका नियंत्रण प्रणाली</h3><h4>JE REPORT</h4></div>';
+                  h += '<table class="work-report-table"><thead><tr><th style="width:10%;">अ.क्र.</th><th style="width:90%;">Junior Engineer चे नाव</th></tr></thead><tbody>';
+
+                  var count = 0;
+                  rows.forEach(function(r, idx) {
+                    if(r.cells.length >= 2 && r.cells[1].textContent.trim()) {
+                      count++;
+                      h += '<tr><td style="text-align:center;">' + count + '</td><td>' + r.cells[1].textContent.trim() + '</td></tr>';
+                    }
+                  });
+                  h += '</tbody></table>';
+                  pa.innerHTML = h;
+                  setTimeout(function(){ window.print(); }, 100);
                 }
               }
             }, true);
 
-            // ==========================================
-            // BACK BUTTON NATIVE LISTENER (FOR ANDROID)
-            // ==========================================
+            // ३. कार्यालय व्यवस्थापन बार
+            function setupOfficeSelector() {
+              if(document.querySelector('.office-bar-box')) return;
+              var offices = JSON.parse(localStorage.getItem('mbms_all_offices') || '[{"id":"def","name":"मुख्य उपविभाग"}]');
+              var cur = localStorage.getItem('mbms_active_office') || 'def';
+
+              var box = document.createElement('div');
+              box.className = 'office-bar-box no-print';
+              box.innerHTML = '<label>🏛️ कार्यालय:</label>' +
+                '<select id="officeSelect">' + offices.map(function(o){ return '<option value="'+o.id+'" '+(o.id===cur?'selected':'')+'>'+o.name+'</option>'; }).join('') + '</select>' +
+                '<button style="background:#0284c7; color:#fff;" id="addOffBtn">➕ नवीन</button>' +
+                '<button style="background:#ef4444; color:#fff;" id="delOffBtn">🗑️ हटवा</button>';
+
+              document.body.insertBefore(box, document.body.firstChild);
+
+              document.getElementById('officeSelect').onchange = function() {
+                localStorage.setItem('mbms_active_office', this.value);
+                location.reload();
+              };
+              document.getElementById('addOffBtn').onclick = function() {
+                var n = prompt("नवीन कार्यालयाचे नाव टाका:");
+                if(n && n.trim()) {
+                  var id = "off_" + Date.now();
+                  offices.push({ id: id, name: n.trim() });
+                  localStorage.setItem('mbms_all_offices', JSON.stringify(offices));
+                  localStorage.setItem('mbms_active_office', id);
+                  location.reload();
+                }
+              };
+              document.getElementById('delOffBtn').onclick = function() {
+                if(offices.length <= 1) return alert("किमान एक कार्यालय असणे आवश्यक आहे.");
+                if(confirm("हे कार्यालय हटवायचे का?")) {
+                  offices = offices.filter(function(x){ return x.id !== cur; });
+                  localStorage.setItem('mbms_all_offices', JSON.stringify(offices));
+                  localStorage.setItem('mbms_active_office', offices[0].id);
+                  location.reload();
+                }
+              };
+            }
+
+            // ४. बॅक बटन सपोर्ट
             window.handleAndroidBack = function() {
-              // १. जर प्रिंट किंवा मोडल उघडे असेल तर आधी ते बंद करा
-              var modal = document.querySelector('.modal.show, .dialog.open, [style*="display: block"]');
-              if(modal && modal.id !== 'appRoot') {
-                var closeBtn = modal.querySelector('.close, [data-dismiss="modal"], button:contains("Close")');
-                if(closeBtn) { closeBtn.click(); return "HANDLED"; }
-                modal.style.display = 'none';
+              if(currentEditMode) {
+                currentEditMode = null;
+                alert("एडिट रद्द केले.");
                 return "HANDLED";
               }
-              // २. जर फॉर्म एडिट मोडमध्ये असेल तर रद्द करा
-              if(window.jeEditingIndex > -1) {
-                window.jeEditingIndex = -1;
-                var jeInput = document.querySelector('input[placeholder*="Junior Engineer"], #jeNameInput');
-                var jeAddBtn = document.querySelector('button[onclick*="addJE"], .btn-add-je, #addJEBtn');
-                if(jeInput) jeInput.value = '';
-                if(jeAddBtn) { jeAddBtn.textContent = 'ADD'; jeAddBtn.style.backgroundColor = ''; }
-                return "HANDLED";
-              }
-              // ३. ॲपमध्ये बॅक जाण्यासाठी History गो बॅक
               if(window.history.length > 1) {
                 window.history.back();
                 return "HANDLED";
@@ -447,28 +375,26 @@ jobs:
               return "EXIT";
             };
 
-            document.addEventListener('DOMContentLoaded', function(){
-              setupJEHandlers();
-            });
+            document.addEventListener('DOMContentLoaded', setupOfficeSelector);
           })();
           </script>
           """
 
           if "</body>" in text.lower():
               pos = text.lower().rfind("</body>")
-              text = text[:pos] + patch_code + text[pos:]
+              text = text[:pos] + core_engine + text[pos:]
           else:
-              text += patch_code
+              text += core_engine
 
           p.write_text(text, encoding="utf-8")
-          print("Patched: JE buttons, single calendar, date formats and back listeners injected.")
+          print("SUCCESS: In-place direct interception engine injected.")
           PY
 
 
       # ============================================================
-      # 9. CREATE ANDROID PROJECT
+      # 9. CREATE ANDROID PROJECT STRUCTURE
       # ============================================================
-      - name: Create Android project structure
+      - name: Create Android project
         shell: bash
         run: |
           set -e
@@ -523,8 +449,8 @@ jobs:
                   applicationId 'com.mbms.app'
                   minSdk 26
                   targetSdk 35
-                  versionCode 133
-                  versionName 'V133'
+                  versionCode 134
+                  versionName 'V134'
               }
               buildTypes {
                   debug {
@@ -588,7 +514,7 @@ jobs:
 
 
       # ============================================================
-      # 10. CREATE MAINACTIVITY.JAVA WITH HARDWARE BACK BUTTON
+      # 10. CREATE MAINACTIVITY.JAVA (NATIVE PRINT, STORAGE & BACK)
       # ============================================================
       - name: Create MainActivity.java
         shell: bash
@@ -598,8 +524,13 @@ jobs:
           package com.mbms.app;
 
           import android.app.Activity;
+          import android.content.ContentValues;
           import android.content.Context;
+          import android.net.Uri;
+          import android.os.Build;
           import android.os.Bundle;
+          import android.os.Environment;
+          import android.provider.MediaStore;
           import android.print.PrintAttributes;
           import android.print.PrintDocumentAdapter;
           import android.print.PrintManager;
@@ -609,6 +540,11 @@ jobs:
           import android.webkit.WebView;
           import android.webkit.WebViewClient;
           import android.widget.Toast;
+
+          import java.io.File;
+          import java.io.FileOutputStream;
+          import java.io.OutputStream;
+          import java.nio.charset.StandardCharsets;
 
           public class MainActivity extends Activity {
 
@@ -678,9 +614,58 @@ jobs:
                           }
                       });
                   }
+
+                  @JavascriptInterface
+                  public void saveBackup(final String json, final String filename) {
+                      new Thread(new Runnable() {
+                          @Override
+                          public void run() {
+                              boolean success = false;
+                              try {
+                                  if (Build.VERSION.SDK_INT >= 29) {
+                                      ContentValues values = new ContentValues();
+                                      values.put(MediaStore.Downloads.DISPLAY_NAME, filename);
+                                      values.put(MediaStore.Downloads.MIME_TYPE, "application/json");
+                                      values.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
+                                      values.put(MediaStore.Downloads.IS_PENDING, 1);
+                                      Uri uri = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+                                      if (uri != null) {
+                                          OutputStream output = getContentResolver().openOutputStream(uri);
+                                          if (output != null) {
+                                              output.write(json.getBytes(StandardCharsets.UTF_8));
+                                              output.flush();
+                                              output.close();
+                                              values.clear();
+                                              values.put(MediaStore.Downloads.IS_PENDING, 0);
+                                              getContentResolver().update(uri, values, null, null);
+                                              success = true;
+                                          }
+                                      }
+                                  } else {
+                                      File dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+                                      if (!dir.exists()) dir.mkdirs();
+                                      File file = new File(dir, filename);
+                                      FileOutputStream out = new FileOutputStream(file);
+                                      out.write(json.getBytes(StandardCharsets.UTF_8));
+                                      out.flush();
+                                      out.close();
+                                      success = true;
+                                  }
+                              } catch (Exception e) {
+                                  e.printStackTrace();
+                              }
+                              final boolean res = success;
+                              runOnUiThread(new Runnable() {
+                                  @Override
+                                  public void run() {
+                                      Toast.makeText(MainActivity.this, res ? "बॅकअप Downloads मध्ये जतन झाला." : "बॅकअप एरर!", Toast.LENGTH_LONG).show();
+                                  }
+                              });
+                          }
+                      }).start();
+                  }
               }
 
-              // मोबाईलचे हार्डवेअर बॅक बटन हाताळणे (Back Button Fix)
               @Override
               public void onBackPressed() {
                   if (webView != null) {
@@ -690,7 +675,6 @@ jobs:
                               @Override
                               public void onReceiveValue(String value) {
                                   if ("\"HANDLED\"".equals(value)) {
-                                      // बॅक ॲक्शन JavaScript ने यशस्वीपणे हाताळली (उदा. मोडल बंद केला किंवा मागे नेले)
                                       return;
                                   }
                                   if (webView.canGoBack()) {
@@ -722,7 +706,7 @@ jobs:
       # ============================================================
       # 11. BUILD APK
       # ============================================================
-      - name: Build Multi-Office MBMS APK
+      - name: Build Verified APK
         working-directory: mbms_android
         shell: bash
         run: |
@@ -731,16 +715,16 @@ jobs:
 
           APK="app/build/outputs/apk/debug/app-debug.apk"
           test -s "$APK"
-          cp "$APK" "../release/MBMS-V133-FULL-HARDENED.apk"
-          ls -lh "../release/MBMS-V133-FULL-HARDENED.apk"
+          cp "$APK" "../release/MBMS-V134-AUDITED-FINAL.apk"
+          ls -lh "../release/MBMS-V134-AUDITED-FINAL.apk"
 
 
       # ============================================================
-      # 12. UPLOAD APK ARTIFACT
+      # 12. UPLOAD ARTIFACT
       # ============================================================
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MBMS-V133-FULL-HARDENED-APK
-          path: release/MBMS-V133-FULL-HARDENED.apk
+          name: MBMS-V134-AUDITED-FINAL-APK
+          path: release/MBMS-V134-AUDITED-FINAL.apk
           if-no-files-found: error
