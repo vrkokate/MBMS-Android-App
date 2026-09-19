@@ -140,9 +140,9 @@ jobs:
 
 
       # ============================================================
-      # 9. APPLY WORK LIST 5-COLUMN A4 PRINT FIX
+      # 9. FIX 5-COLUMN WORK LIST PRINT & REMOVE EXTRA COLUMNS
       # ============================================================
-      - name: Apply Work List 5-Column A4 Print Fix
+      - name: Fix 5-Column Work List Print & Remove Extra Columns
         shell: bash
         run: |
           set -e
@@ -154,27 +154,50 @@ jobs:
           p = Path("mbms_work/index.html")
           text = p.read_text(encoding="utf-8")
 
-          print_patch = """
-          <!-- V131 WORK LIST 5-COLUMN A4 PRINT HARDENED PATCH -->
-          <style>
+          # सीएसएस: कॉम्पॅक्ट वर-खाली मार्जिन, ५ फिक्स कॉलम
+          patch = """
+          <!-- V131 WORK LIST 5-COLUMN COMPACT A4 PRINT OVERRIDE -->
+          <style id="WORK_LIST_PRINT_OVERRIDE_CSS">
           @media print {
             @page {
               size: A4 portrait;
-              margin: 12mm 10mm 15mm 10mm !important;
+              margin: 8mm 10mm 10mm 10mm !important; /* वर-खाली जागा कमी केली */
             }
             body {
               font-family: 'Noto Sans Devanagari', 'Mukta', 'Arial', sans-serif !important;
               color: #000 !important;
               background: #fff !important;
+              margin: 0 !important;
+              padding: 0 !important;
               -webkit-print-color-adjust: exact !important;
               print-color-adjust: exact !important;
             }
             .no-print { display: none !important; }
+
+            .report-header {
+              text-align: center !important;
+              margin-top: 0 !important;
+              margin-bottom: 8px !important;
+            }
+            .report-header h2 { margin: 0 !important; font-size: 17px !important; font-weight: bold !important; }
+            .report-header h3 { margin: 2px 0 !important; font-size: 15px !important; }
+            .report-header h4 { margin: 2px 0 6px 0 !important; font-size: 13px !important; text-decoration: underline !important; }
+
+            .report-meta {
+              display: flex !important;
+              justify-content: space-between !important;
+              font-size: 12px !important;
+              margin-bottom: 6px !important;
+              border-bottom: 1.5px solid #000 !important;
+              padding-bottom: 3px !important;
+            }
+
+            /* फक्त ५ कॉलम आणि अचूक रुंदी */
             .work-report-table {
               width: 100% !important;
               border-collapse: collapse !important;
               table-layout: fixed !important;
-              margin-top: 10px !important;
+              margin-top: 4px !important;
               page-break-inside: auto !important;
             }
             .work-report-table thead {
@@ -186,9 +209,9 @@ jobs:
             .work-report-table th,
             .work-report-table td {
               border: 1px solid #000 !important;
-              padding: 6px 8px !important;
-              font-size: 13px !important;
-              line-height: 1.4 !important;
+              padding: 5px 6px !important;
+              font-size: 12.5px !important;
+              line-height: 1.35 !important;
               word-wrap: break-word !important;
               overflow-wrap: break-word !important;
               vertical-align: middle !important;
@@ -198,77 +221,118 @@ jobs:
               font-weight: bold !important;
               text-align: center !important;
             }
+
+            /* शेवटचे ३ अतिरिक्त कॉलम लपवण्यासाठी सेफ्टी नियम */
+            .work-report-table tr > th:nth-child(n+6),
+            .work-report-table tr > td:nth-child(n+6) {
+              display: none !important;
+            }
+
             .col-sr { width: 6% !important; text-align: center !important; }
-            .col-work { width: 34% !important; text-align: left !important; }
-            .col-contractor { width: 28% !important; text-align: left !important; }
-            .col-je { width: 20% !important; text-align: left !important; }
+            .col-work { width: 36% !important; text-align: left !important; } /* मोठी रुंदी */
+            .col-contractor { width: 28% !important; text-align: left !important; } /* मोठी रुंदी */
+            .col-je { width: 18% !important; text-align: left !important; }
             .col-mb { width: 12% !important; text-align: center !important; white-space: nowrap !important; }
+
+            .report-footer {
+              position: fixed !important;
+              bottom: 0 !important;
+              left: 0 !important;
+              right: 0 !important;
+              text-align: center !important;
+              font-size: 10.5px !important;
+              border-top: 1px solid #666 !important;
+              padding-top: 3px !important;
+            }
           }
           </style>
-          <script id="WORK_LIST_PRINT_FIX">
-          window.printWorkListReportA4 = function(works, title, fromDate, toDate) {
-            var pa = document.getElementById('printArea');
-            if (!pa) {
-              pa = document.createElement('div');
-              pa.id = 'printArea';
-              document.body.appendChild(pa);
-            }
-            var h = '';
-            h += '<div style="text-align:center; margin-bottom:12px;">';
-            h += '  <h2 style="margin:0; font-size:18px;">सार्वजनिक बांधकाम विभाग</h2>';
-            h += '  <h3 style="margin:4px 0; font-size:15px;">मोजमाप पुस्तिका नियंत्रण प्रणाली</h3>';
-            h += '  <h4 style="margin:4px 0 10px 0; font-size:14px; text-decoration:underline;">WORK LIST REPORT</h4>';
-            h += '</div>';
-            h += '<div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:6px; border-bottom:1px solid #000; padding-bottom:4px;">';
-            h += '  <span><b>Report :</b> ' + (title || 'सर्व Work List') + '</span>';
-            h += '  <span><b>दिनांक :</b> ' + (fromDate && toDate ? (fromDate + ' ते ' + toDate) : new Date().toLocaleDateString('en-GB')) + '</span>';
-            h += '</div>';
-            h += '<table class="work-report-table">';
-            h += '  <thead><tr>';
-            h += '    <th class="col-sr">अ.क्र.</th>';
-            h += '    <th class="col-work">कामाचे नाव</th>';
-            h += '    <th class="col-contractor">कॉन्ट्रॅक्टर / एजन्सीचे नाव</th>';
-            h += '    <th class="col-je">ज्युनियर इंजिनिअर</th>';
-            h += '    <th class="col-mb">MB क्रमांक</th>';
-            h += '  </tr></thead>';
-            h += '  <tbody>';
-            var list = Array.isArray(works) ? works : [];
-            if(list.length === 0){
-              h += '<tr><td colspan="5" style="text-align:center; padding:15px;">कोणतीही नोंद उपलब्ध नाही.</td></tr>';
-            } else {
-              for(var i=0; i<list.length; i++){
-                var w = list[i];
-                var wn = w.workName || w.name || w.work || '-';
-                var co = w.contractor || w.agency || w.contractorName || '-';
-                var je = w.je || w.jeName || w.juniorEngineer || '-';
-                var mb = w.mb || w.number || w.mbNumber || '-';
-                h += '<tr>';
-                h += '  <td class="col-sr">' + (i+1) + '</td>';
-                h += '  <td class="col-work">' + wn + '</td>';
-                h += '  <td class="col-contractor">' + co + '</td>';
-                h += '  <td class="col-je">' + je + '</td>';
-                h += '  <td class="col-mb">' + mb + '</td>';
-                h += '</tr>';
+
+          <script id="WORK_LIST_PRINT_OVERRIDE_JS">
+          // जुन्या फंक्शनला ओव्हरराइड करून ५ कॉलमचा लेआउट तयार करणे
+          (function(){
+            function sanitizeRow(tr) {
+              // ५ पेक्षा जास्त असणारे सर्व जास्तीचे td काढून टाकणे
+              var cells = tr.querySelectorAll('th, td');
+              for (var i = 5; i < cells.length; i++) {
+                cells[i].remove();
               }
             }
-            h += '  </tbody></table>';
-            h += '<div style="position:fixed; bottom:0; left:0; right:0; text-align:center; font-size:11px; border-top:1px solid #888; padding-top:4px;">';
-            h += '  © सर्व हक्क राखीव - सार्वजनिक बांधकाम विभाग';
-            h += '</div>';
-            pa.innerHTML = h;
-            setTimeout(function(){ window.print(); }, 120);
-          };
+
+            window.printWorkListCleanReport = function(works, title, fromDate, toDate) {
+              var pa = document.getElementById('printArea');
+              if (!pa) {
+                pa = document.createElement('div');
+                pa.id = 'printArea';
+                document.body.appendChild(pa);
+              }
+              var h = '';
+              h += '<div class="report-header">';
+              h += '  <h2>सार्वजनिक बांधकाम विभाग</h2>';
+              h += '  <h3>मोजमाप पुस्तिका नियंत्रण प्रणाली</h3>';
+              h += '  <h4>WORK LIST REPORT</h4>';
+              h += '</div>';
+              h += '<div class="report-meta">';
+              h += '  <span><b>Report :</b> ' + (title || 'सर्व Work List') + '</span>';
+              h += '  <span><b>दिनांक :</b> ' + (fromDate && toDate ? (fromDate + ' ते ' + toDate) : new Date().toLocaleDateString('en-GB')) + '</span>';
+              h += '</div>';
+              h += '<table class="work-report-table">';
+              h += '  <thead><tr>';
+              h += '    <th class="col-sr">अ.क्र.</th>';
+              h += '    <th class="col-work">कामाचे नाव</th>';
+              h += '    <th class="col-contractor">कॉन्ट्रॅक्टर / एजन्सीचे नाव</th>';
+              h += '    <th class="col-je">ज्युनियर इंजिनिअर</th>';
+              h += '    <th class="col-mb">MB क्रमांक</th>';
+              h += '  </tr></thead>';
+              h += '  <tbody>';
+              var list = Array.isArray(works) ? works : [];
+              if (list.length === 0) {
+                h += '<tr><td colspan="5" style="text-align:center; padding:12px;">कोणतीही नोंद उपलब्ध नाही.</td></tr>';
+              } else {
+                for (var i = 0; i < list.length; i++) {
+                  var w = list[i];
+                  var wn = w.workName || w.name || w.work || '-';
+                  var co = w.contractor || w.agency || w.contractorName || '-';
+                  var je = w.je || w.jeName || w.juniorEngineer || '-';
+                  var mb = w.mb || w.number || w.mbNumber || '-';
+                  h += '<tr>';
+                  h += '  <td class="col-sr">' + (i + 1) + '</td>';
+                  h += '  <td class="col-work">' + wn + '</td>';
+                  h += '  <td class="col-contractor">' + co + '</td>';
+                  h += '  <td class="col-je">' + je + '</td>';
+                  h += '  <td class="col-mb">' + mb + '</td>';
+                  h += '</tr>';
+                }
+              }
+              h += '  </tbody></table>';
+              h += '<div class="report-footer">';
+              h += '  © सर्व हक्क राखीव - सार्वजनिक बांधकाम विभाग';
+              h += '</div>';
+
+              pa.innerHTML = h;
+              setTimeout(function(){ window.print(); }, 120);
+            };
+
+            // आधीच्या प्रिंट फंक्शनमध्ये जास्तीचे कॉलम असल्यास त्यांना रिमूव्ह करणे
+            window.addEventListener('beforeprint', function() {
+              var tables = document.querySelectorAll('#printArea table, table');
+              tables.forEach(function(tbl) {
+                tbl.classList.add('work-report-table');
+                var rows = tbl.querySelectorAll('tr');
+                rows.forEach(sanitizeRow);
+              });
+            });
+          })();
           </script>
           """
 
           if "</body>" in text.lower():
               pos = text.lower().rfind("</body>")
-              text = text[:pos] + print_patch + text[pos:]
+              text = text[:pos] + patch + text[pos:]
           else:
-              text += print_patch
+              text += patch
 
           p.write_text(text, encoding="utf-8")
-          print("Work List 5-Column A4 format successfully injected.")
+          print("Patched: Extra 3 columns removed, compact margins applied, work & contractor width expanded.")
           PY
 
 
