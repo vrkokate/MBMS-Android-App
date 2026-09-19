@@ -74,20 +74,18 @@ jobs:
           html_file = Path("mbms_work/index.html")
           raw_html = html_file.read_text(encoding="utf-8")
 
-          # १. JE हेडरमधील वरचे केशरी REPORT बटण कायमचे नष्ट करणे
-          raw_html = re.sub(r'<button[^>]*class="[^"]*(?:report-btn|header-btn|btn-warning|orange)[^"]*"[^>]*>\s*REPORT\s*</button>', '', raw_html, flags=re.I)
-          raw_html = re.sub(r'<div[^>]*class="[^"]*(?:header|top-bar)[^"]*"[^>]*>[\s\S]*?(<button[^>]*>\s*REPORT\s*</button>)[\s\S]*?</div>', lambda m: m.group(0).replace(m.group(1), ''), raw_html, flags=re.I)
+          # १. मूळ HTML मधून वरचे केशरी REPORT बटण कायमचे काढून टाकणे
+          if "Add JE" in raw_html:
+              parts = raw_html.split("Add JE", 1)
+              parts[0] = re.sub(r'<button[^>]*>[\s\S]*?REPORT[\s\S]*?</button>', '', parts[0], flags=re.I)
+              raw_html = "Add JE".join(parts)
+          elif "Junior Engineer" in raw_html:
+              parts = raw_html.split("Junior Engineer", 1)
+              parts[0] = re.sub(r'<button[^>]*>[\s\S]*?REPORT[\s\S]*?</button>', '', parts[0], flags=re.I)
+              raw_html = "Junior Engineer".join(parts)
 
           master_styles = """
           <style id="MBMS_HARDENED_CSS">
-          .header button:contains("REPORT"),
-          .header .report-btn,
-          button.report-btn,
-          div[class*="header"] button:has-text("REPORT") {
-            display: none !important;
-            visibility: hidden !important;
-          }
-
           @media print {
             @page {
               size: A4 portrait;
@@ -158,54 +156,61 @@ jobs:
           master_script = """
           <script id="MBMS_JE_DIRECT_CONTROLLER">
           (function() {
-            // १. स्क्रीनवरून सर्व JE नावे थेट मिळवणे (जेणेकरून रिपोर्ट कधीच रिकामा येणार नाही)
-            function getJEListFromDOM() {
-              var list = [];
-              var seen = new Set();
-              var actionBtns = Array.from(document.querySelectorAll('button')).filter(function(b) {
-                var txt = b.textContent.trim().toUpperCase();
-                return txt === 'DELETE' || txt === 'UPDATE';
-              });
-
-              actionBtns.forEach(function(btn) {
-                var tr = btn.closest('tr');
-                if (tr && !seen.has(tr)) {
-                  seen.add(tr);
-                  if (tr.cells && tr.cells.length >= 2) {
-                    var n = tr.cells[1].textContent.trim();
-                    if (n && n !== 'JE नाव' && n !== 'Junior Engineer चे नाव') {
-                      list.push(n);
-                    }
+            // वरचे केशरी REPORT बटण कायमचे नष्ट करणे
+            setInterval(function() {
+              document.querySelectorAll('button, a').forEach(function(b) {
+                if (b.textContent.trim().toUpperCase() === 'REPORT') {
+                  var rect = b.getBoundingClientRect();
+                  if (rect.top < 85) {
+                    b.style.display = 'none';
+                    b.remove();
                   }
-                } else if (!tr) {
-                  var row = btn.closest('[class*="row"]') || btn.parentElement.parentElement;
-                  if (row && !seen.has(row)) {
-                    seen.add(row);
-                    var clone = row.cloneNode(true);
-                    clone.querySelectorAll('button').forEach(function(b){ b.remove(); });
-                    var n = clone.textContent.replace(/^\\s*\\d+\\s*/, '').trim();
-                    if (n) list.push(n);
+                }
+              });
+            }, 200);
+
+            // १. स्क्रीनवरून किंवा स्टोरेजमधून सर्व JE नावे मिळवणे
+            function extractAllJENames() {
+              var names = [];
+              document.querySelectorAll('tr').forEach(function(tr) {
+                var cells = tr.querySelectorAll('td');
+                if (cells.length >= 2) {
+                  var name = cells[1].textContent.trim();
+                  name = name.replace(/UPDATE|DELETE/gi, '').trim();
+                  if (name && name !== 'JE नाव' && !name.includes('Add केलेले नाही') && !name.includes('उपलब्ध नाही')) {
+                    names.push(name);
                   }
                 }
               });
 
-              if (list.length === 0) {
+              if (names.length === 0) {
+                document.querySelectorAll('[class*="row"]').forEach(function(row) {
+                  if (row.textContent.includes('UPDATE') && row.textContent.includes('DELETE')) {
+                    var clone = row.cloneNode(true);
+                    clone.querySelectorAll('button, a').forEach(function(b){ b.remove(); });
+                    var text = clone.textContent.replace(/^\\s*\\d+\\s*/, '').trim();
+                    if (text && text.length > 1) names.push(text);
+                  }
+                });
+              }
+
+              if (names.length === 0) {
                 for (var i = 0; i < localStorage.length; i++) {
                   var k = localStorage.key(i);
                   try {
-                    var parsed = JSON.parse(localStorage.getItem(k));
-                    if (Array.isArray(parsed)) {
-                      parsed.forEach(function(item) {
+                    var arr = JSON.parse(localStorage.getItem(k));
+                    if (Array.isArray(arr)) {
+                      arr.forEach(function(item) {
                         var val = typeof item === 'object' ? (item.name || item.jeName || item.je) : item;
-                        if (val && typeof val === 'string' && (k.toLowerCase().includes('je') || val.includes('श्री'))) {
-                          if (!list.includes(val)) list.push(val);
+                        if (typeof val === 'string' && val.trim() && (k.toLowerCase().includes('je') || val.includes('श्री'))) {
+                          if (!names.includes(val.trim())) names.push(val.trim());
                         }
                       });
                     }
                   } catch(e){}
                 }
               }
-              return list;
+              return names;
             }
 
             function updateStorageOnDelete(name) {
@@ -254,35 +259,36 @@ jobs:
             }
 
             function renumberRows() {
-              var rows = document.querySelectorAll('table tbody tr');
-              rows.forEach(function(r, idx) {
-                if (r.cells && r.cells[0]) {
-                  r.cells[0].textContent = (idx + 1);
-                }
+              document.querySelectorAll('table tbody tr').forEach(function(r, idx) {
+                var c = r.querySelectorAll('td');
+                if (c.length > 0) c[0].textContent = (idx + 1);
               });
             }
 
             // २. UPDATE आणि DELETE बटणांचे थेट नियंत्रण
-            var currentEdit = null;
+            window.activeEditingRow = null;
+            window.activeOldName = null;
+            window.activeInput = null;
+            window.activeAddBtn = null;
 
-            document.addEventListener('click', function(e) {
-              var btn = e.target.closest('button');
-              if (!btn) return;
-              var action = btn.textContent.trim().toUpperCase();
+            window.addEventListener('click', function(e) {
+              var el = e.target.closest('button, a, input[type="button"]') || e.target;
+              var action = (el.value || el.textContent || '').trim().toUpperCase();
 
               // ---------- DELETE बटण ----------
               if (action === 'DELETE') {
                 e.preventDefault();
                 e.stopPropagation();
-                var tr = btn.closest('tr') || btn.closest('[class*="row"]') || btn.parentElement.parentElement;
+                var tr = el.closest('tr') || el.closest('[class*="row"]') || el.parentElement.parentElement;
                 if (!tr) return;
 
                 var jeName = '';
-                if (tr.cells && tr.cells[1]) {
-                  jeName = tr.cells[1].textContent.trim();
+                var cells = tr.querySelectorAll('td');
+                if (cells.length >= 2) {
+                  jeName = cells[1].textContent.trim();
                 } else {
                   var cl = tr.cloneNode(true);
-                  cl.querySelectorAll('button').forEach(function(b){ b.remove(); });
+                  cl.querySelectorAll('button, a').forEach(function(b){ b.remove(); });
                   jeName = cl.textContent.replace(/^\\s*\\d+\\s*/, '').trim();
                 }
 
@@ -292,37 +298,42 @@ jobs:
                 return;
               }
 
-              // ---------- UPDATE बटण ----------
+              // ---------- UPDATE बटण (यादीतील) ----------
               if (action === 'UPDATE') {
-                var card = btn.closest('div');
-                var isRowBtn = btn.closest('tr') || (card && card.textContent.indexOf('JE List') !== -1);
-                
-                if (isRowBtn && btn.textContent.trim() === 'UPDATE') {
+                var isRowBtn = el.closest('tr') || el.closest('tbody') || el.closest('[class*="row"]');
+                if (isRowBtn) {
                   e.preventDefault();
                   e.stopPropagation();
-                  var tr = btn.closest('tr') || btn.closest('[class*="row"]') || btn.parentElement.parentElement;
+                  var tr = el.closest('tr') || el.closest('[class*="row"]') || el.parentElement.parentElement;
                   if (!tr) return;
 
                   var jeName = '';
-                  if (tr.cells && tr.cells[1]) {
-                    jeName = tr.cells[1].textContent.trim();
+                  var cells = tr.querySelectorAll('td');
+                  if (cells.length >= 2) {
+                    jeName = cells[1].textContent.trim();
                   }
 
                   var jeInput = document.querySelector('input[placeholder*="Junior Engineer"]') ||
+                                document.querySelector('input[placeholder*="नाव"]') ||
                                 document.querySelector('#jeName') ||
                                 document.querySelector('input[type="text"]');
 
-                  var addBtn = Array.from(document.querySelectorAll('button')).find(function(b) {
-                    var t = b.textContent.trim().toUpperCase();
-                    return t === 'ADD' || (t === 'UPDATE' && b !== btn);
+                  var addBtn = Array.from(document.querySelectorAll('button, a, input[type="button"]')).find(function(b) {
+                    var t = (b.value || b.textContent || '').trim().toUpperCase();
+                    return (t === 'ADD' || t === 'UPDATE') && b !== el;
                   });
 
                   if (jeInput && jeName) {
                     jeInput.value = jeName;
-                    currentEdit = { tr: tr, oldName: jeName, input: jeInput, btn: addBtn };
+                    window.activeEditingRow = tr;
+                    window.activeOldName = jeName;
+                    window.activeInput = jeInput;
+                    window.activeAddBtn = addBtn;
+
                     if (addBtn) {
                       addBtn.textContent = 'UPDATE';
                       addBtn.style.backgroundColor = '#0284c7';
+                      addBtn.style.color = '#ffffff';
                     }
                     jeInput.focus();
                     jeInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -332,31 +343,32 @@ jobs:
               }
 
               // ---------- इनपुट समोरील ADD / UPDATE सेव्ह करणे ----------
-              if (currentEdit && (action === 'UPDATE' || action === 'ADD')) {
-                var jeInput = currentEdit.input;
-                if (btn === currentEdit.btn || btn.closest('.card')?.contains(jeInput)) {
+              if (window.activeEditingRow && (action === 'UPDATE' || action === 'ADD')) {
+                if (el === window.activeAddBtn || el.closest('.card')?.contains(window.activeInput)) {
                   e.preventDefault();
                   e.stopPropagation();
-                  var val = jeInput.value.trim();
-                  if (val && currentEdit.tr) {
-                    if (currentEdit.tr.cells && currentEdit.tr.cells[1]) {
-                      currentEdit.tr.cells[1].textContent = val;
+                  var val = window.activeInput.value.trim();
+                  if (val && window.activeEditingRow) {
+                    var cells = window.activeEditingRow.querySelectorAll('td');
+                    if (cells.length >= 2) {
+                      cells[1].textContent = val;
                     }
-                    updateStorageOnEdit(currentEdit.oldName, val);
-                    jeInput.value = '';
-                    if (currentEdit.btn) {
-                      currentEdit.btn.textContent = 'ADD';
-                      currentEdit.btn.style.backgroundColor = '';
+                    updateStorageOnEdit(window.activeOldName, val);
+                    window.activeInput.value = '';
+                    if (window.activeAddBtn) {
+                      window.activeAddBtn.textContent = 'ADD';
+                      window.activeAddBtn.style.backgroundColor = '';
                     }
-                    currentEdit = null;
+                    window.activeEditingRow = null;
+                    window.activeOldName = null;
                   }
                 }
               }
 
               // ---------- निळ्या REPORT बटणावर क्लिक (JE REPORT) ----------
               if (action === 'REPORT') {
-                var parentCard = btn.closest('div')?.textContent || '';
-                if (parentCard.indexOf('JE List') !== -1 || parentCard.indexOf('JE') !== -1) {
+                var rect = el.getBoundingClientRect();
+                if (rect.top > 85) {
                   e.preventDefault();
                   e.stopPropagation();
                   printJEA4Report();
@@ -373,7 +385,7 @@ jobs:
                 document.body.appendChild(pa);
               }
 
-              var list = getJEListFromDOM();
+              var list = extractAllJENames();
 
               var h = '<div class="report-header">';
               h += '  <h2>सार्वजनिक बांधकाम विभाग</h2>';
@@ -428,7 +440,7 @@ jobs:
               raw_html += master_script
 
           html_file.write_text(raw_html, encoding="utf-8")
-          print("SUCCESS: JE In-place Update/Delete and Full DOM Print Engine patched.")
+          print("SUCCESS: Full JE Engine Patched.")
           PY
 
       - name: Create Android project structure
@@ -475,8 +487,8 @@ jobs:
                   applicationId 'com.mbms.app'
                   minSdk 26
                   targetSdk 35
-                  versionCode 137
-                  versionName 'V137'
+                  versionCode 138
+                  versionName 'V138'
               }
               buildTypes {
                   debug { minifyEnabled false; shrinkResources false }
@@ -648,12 +660,12 @@ jobs:
 
           APK="app/build/outputs/apk/debug/app-debug.apk"
           test -s "$APK"
-          cp "$APK" "../release/MBMS-V137-JE-FIXED.apk"
-          ls -lh "../release/MBMS-V137-JE-FIXED.apk"
+          cp "$APK" "../release/MBMS-V138-JE-PERFECT.apk"
+          ls -lh "../release/MBMS-V138-JE-PERFECT.apk"
 
       - name: Upload Final APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MBMS-V137-JE-FIXED-APK
-          path: release/MBMS-V137-JE-FIXED.apk
+          name: MBMS-V138-JE-PERFECT-APK
+          path: release/MBMS-V138-JE-PERFECT.apk
           if-no-files-found: error
