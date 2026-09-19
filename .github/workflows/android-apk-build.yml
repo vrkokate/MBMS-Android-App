@@ -48,254 +48,6 @@ jobs:
           cp "$TARGET_HTML" mbms_work/index.html
           test -s mbms_work/index.html
 
-      - name: Clean Orange Report Button and Inject Exactly 2 Fixes
-        shell: bash
-        run: |
-          set -e
-          python3 <<'PY'
-          from pathlib import Path
-          import re
-
-          html_file = Path("mbms_work/index.html")
-          raw_html = html_file.read_text(encoding="utf-8")
-
-          # १. हेडरमधील वरचे केशरी REPORT बटण थेट HTML मधून कायमचे काढून टाकणे
-          raw_html = re.sub(r'<button[^>]*class="[^"]*btn-warning[^"]*"[^>]*>[\s\S]*?REPORT[\s\S]*?</button>', '', raw_html, flags=re.I)
-          raw_html = re.sub(r'<button[^>]*style="[^"]*background[^"]*(?:#ff9800|orange|rgb\(255,\s*152,\s*0\))[^"]*"[^>]*>[\s\S]*?REPORT[\s\S]*?</button>', '', raw_html, flags=re.I)
-
-          patch_code = """
-          <!-- ==================== 2 EXACT FIXES & BUTTON REMOVAL ==================== -->
-          <style id="MBMS_PERFECT_CLEANUP">
-          /* हेडरमधील वरचे केशरी बटण नष्ट करणे */
-          header button, .navbar button, div[class*="header"] button {
-            display: none !important;
-          }
-          header button:first-child, .navbar button:first-child, div[class*="header"] button:first-child {
-            display: inline-block !important; /* फक्त बॅक एरो दिसण्यासाठी */
-          }
-
-          @media print {
-            @page { size: A4 portrait; margin: 8mm !important; }
-            body { background: #fff !important; color: #000 !important; }
-            body > *:not(#printArea) { display: none !important; }
-            #printArea { display: block !important; width: 100% !important; }
-            table.print-table { width: 100% !important; border-collapse: collapse !important; margin-top: 6px !important; }
-            table.print-table th, table.print-table td { border: 1px solid #000 !important; padding: 5px 6px !important; font-size: 11px !important; }
-            table.print-table th { background: #eee !important; font-weight: bold !important; }
-          }
-          </style>
-
-          <div id="printArea" style="display: none;"></div>
-
-          <script id="MBMS_RUNTIME_TWO_FIXES">
-          (function() {
-            // १. वरचे केशरी बटण रनटाईमलाही काढून टाकणे
-            setInterval(function() {
-              document.querySelectorAll('button, a').forEach(function(el) {
-                var txt = (el.textContent || el.value || '').trim().toUpperCase();
-                if (txt === 'REPORT') {
-                  var r = el.getBoundingClientRect();
-                  if (r.top < 85) {
-                    el.remove();
-                  }
-                }
-              });
-            }, 150);
-
-            // २. M.B. List मधील दिनांक dd-mm-yyyy करणे
-            function fixDatesInMBTable() {
-              document.querySelectorAll('table td, [class*="row"] div').forEach(function(el) {
-                var t = el.textContent.trim();
-                var m = t.match(/^(\\d{4})[-/](\\d{2})[-/](\\d{2})$/);
-                if (m) {
-                  el.textContent = m[3] + '-' + m[2] + '-' + m[1];
-                }
-              });
-            }
-            setInterval(fixDatesInMBTable, 300);
-
-            // ३. M.B. निवडल्यावर पुढील रकान्यात 'सर्व M.B., लहान M.B., मोठी M.B.' ऑप्शन्स भरणे
-            function syncMBDropdown() {
-              var selects = Array.from(document.querySelectorAll('select'));
-              if (selects.length >= 2) {
-                // ज्या सिलेक्टमध्ये M.B. सिलेक्ट आहे तो तपासणे
-                var mbMasterSelect = selects.find(function(s) {
-                  return (s.options[s.selectedIndex]?.text || s.value || '').trim().toUpperCase() === 'M.B.';
-                });
-
-                if (mbMasterSelect) {
-                  var targetSubSelect = null;
-                  for (var i = 0; i < selects.length; i++) {
-                    if (selects[i] !== mbMasterSelect) {
-                      var txt = (selects[i].options[0]?.text || '').trim();
-                      if (txt.includes('M.B.') || txt.includes('सर्व') || selects[i].parentElement.textContent.includes('तपशील')) {
-                        targetSubSelect = selects[i];
-                        break;
-                      }
-                    }
-                  }
-                  if (!targetSubSelect && selects.length >= 4) {
-                    targetSubSelect = selects[3]; // स्क्रीनशॉटमधील पिवळा रकाना
-                  }
-
-                  if (targetSubSelect) {
-                    var opts = Array.from(targetSubSelect.options).map(function(o){ return o.text.trim(); });
-                    if (!opts.includes('लहान M.B.') || !opts.includes('मोठी M.B.')) {
-                      var currVal = targetSubSelect.value;
-                      targetSubSelect.innerHTML = '';
-                      var o1 = new Option('सर्व M.B.', 'सर्व M.B.');
-                      var o2 = new Option('लहान M.B.', 'लहान M.B.');
-                      var o3 = new Option('मोठी M.B.', 'मोठी M.B.');
-                      targetSubSelect.add(o1);
-                      targetSubSelect.add(o2);
-                      targetSubSelect.add(o3);
-                      if (currVal === 'लहान M.B.' || currVal === 'मोठी M.B.') {
-                        targetSubSelect.value = currVal;
-                      } else {
-                        targetSubSelect.value = 'सर्व M.B.';
-                      }
-                    }
-                  }
-                }
-              }
-            }
-            setInterval(syncMBDropdown, 300);
-
-            // ४. बॅकअप सेव्ह आणि रिस्टोअर इव्हेंट्स
-            document.addEventListener('click', function(e) {
-              var btn = e.target.closest('button, a');
-              if (!btn) return;
-              var t = (btn.textContent || btn.value || '').trim().toUpperCase();
-
-              // BACKUP SAVE
-              if (t.includes('BACKUP SAVE') || t === 'BACKUP') {
-                e.preventDefault();
-                e.stopPropagation();
-                var data = {};
-                for (var i = 0; i < localStorage.length; i++) {
-                  var k = localStorage.key(i);
-                  data[k] = localStorage.getItem(k);
-                }
-                var json = JSON.stringify(data, null, 2);
-                if (window.MBMSAndroid && window.MBMSAndroid.saveBackupToDownloads) {
-                  window.MBMSAndroid.saveBackupToDownloads(json);
-                } else {
-                  var blob = new Blob([json], { type: 'application/json' });
-                  var a = document.createElement('a');
-                  a.href = URL.createObjectURL(blob);
-                  a.download = 'MBMS_Backup_' + new Date().toISOString().slice(0,10) + '.json';
-                  document.body.appendChild(a);
-                  a.click();
-                  a.remove();
-                }
-                return;
-              }
-
-              // BACKUP RESTORE
-              if (t.includes('BACKUP RESTORE') || t === 'RESTORE') {
-                e.preventDefault();
-                e.stopPropagation();
-                if (window.MBMSAndroid && window.MBMSAndroid.openBackupPicker) {
-                  window.MBMSAndroid.openBackupPicker();
-                }
-                return;
-              }
-
-              // REPORT / PRINT अहवाल
-              if (t.includes('REPORT') || t.includes('PRINT')) {
-                var pa = document.getElementById('printArea');
-                if (pa) {
-                  var selects = Array.from(document.querySelectorAll('select'));
-                  var selectedFilter = 'सर्व M.B.';
-                  selects.forEach(function(s) {
-                    var val = (s.options[s.selectedIndex]?.text || '').trim();
-                    if (val === 'लहान M.B.' || val === 'मोठी M.B.' || val === 'सर्व M.B.') {
-                      selectedFilter = val;
-                    }
-                  });
-
-                  var mbList = [];
-                  try {
-                    mbList = JSON.parse(localStorage.getItem('mb_records')) || [];
-                  } catch(err) { mbList = []; }
-
-                  var filtered = mbList.filter(function(item) {
-                    var s = (item.size || item.mbSize || item.type || '').trim().toLowerCase();
-                    if (selectedFilter === 'लहान M.B.') return s.includes('लहान') || s.includes('small');
-                    if (selectedFilter === 'मोठी M.B.') return s.includes('मोठी') || s.includes('large');
-                    return true;
-                  });
-
-                  e.preventDefault();
-                  e.stopPropagation();
-
-                  var h = '<div style="text-align: center; margin-bottom: 8px;">';
-                  h += '  <h2 style="margin: 0; font-size: 17px; font-weight: bold;">सार्वजनिक बांधकाम विभाग</h2>';
-                  h += '  <h3 style="margin: 3px 0 6px 0; font-size: 14px; text-decoration: underline;">मोजमाप पुस्तिका अहवाल</h3>';
-                  h += '</div>';
-                  h += '<div style="display: flex; justify-content: space-between; font-size: 11.5px; margin-bottom: 4px;">';
-                  h += '  <span><b>निवडलेला प्रकार:</b> ' + selectedFilter + '</span>';
-                  h += '  <span><b>दिनांक:</b> ' + new Date().toLocaleDateString('en-GB') + '</span>';
-                  h += '</div>';
-                  h += '<table class="print-table">';
-                  h += '  <thead><tr>';
-                  h += '    <th style="width: 1%; white-space: nowrap; text-align: center;">अ.क्र.</th>';
-                  h += '    <th style="width: 1%; white-space: nowrap; text-align: center;">M.B. क्रमांक</th>';
-                  h += '    <th style="width: 1%; white-space: nowrap; text-align: center;">M.B. ची साईज</th>';
-                  h += '    <th style="text-align: left;">सध्या कोणाकडे आहे (JE चे नाव)</th>';
-                  h += '  </tr></thead><tbody>';
-
-                  if (filtered.length === 0) {
-                    h += '<tr><td colspan="4" style="text-align: center; padding: 10px;">नोंद उपलब्ध नाही.</td></tr>';
-                  } else {
-                    for (var i = 0; i < filtered.length; i++) {
-                      var r = filtered[i];
-                      h += '<tr>';
-                      h += '  <td style="text-align: center; white-space: nowrap;">' + (i + 1) + '</td>';
-                      h += '  <td style="text-align: center; white-space: nowrap;">' + (r.mbNumber || r.mbNo || "-") + '</td>';
-                      h += '  <td style="text-align: center; white-space: nowrap;">' + (r.size || r.mbSize || "लहान") + '</td>';
-                      h += '  <td style="text-align: left;">' + (r.assignedTo || r.jeName || "स्टॉकमध्ये उपलब्ध") + '</td>';
-                      h += '</tr>';
-                    }
-                  }
-                  h += '</tbody></table>';
-
-                  pa.innerHTML = h;
-                  pa.style.display = 'block';
-                  setTimeout(function() {
-                    window.print();
-                    setTimeout(function() { pa.style.display = 'none'; }, 500);
-                  }, 150);
-                }
-              }
-            }, true);
-
-            window.applyRestoredData = function(jsonStr) {
-              try {
-                var obj = JSON.parse(jsonStr);
-                for (var key in obj) {
-                  localStorage.setItem(key, obj[key]);
-                }
-                alert('डेटा यशस्वीपणे पूर्ववत (Restore) झाला आहे!');
-                location.reload();
-              } catch(err) {
-                alert('त्रुटी: फाईल वाचता आली नाही!');
-              }
-            };
-          })();
-          </script>
-          """
-
-          if "</body>" in raw_html.lower():
-              idx = raw_html.lower().rfind("</body>")
-              raw_html = raw_html[:idx] + patch_code + raw_html[idx:]
-          else:
-              raw_html += patch_code
-
-          html_file.write_text(raw_html, encoding="utf-8")
-          print("SUCCESS: Clean patch applied.")
-          PY
-
       - name: Create Android project structure
         shell: bash
         run: |
@@ -338,14 +90,21 @@ jobs:
               compileSdk 35
               defaultConfig {
                   applicationId 'com.mbms.app'
-                  minSdk 26
+                  minSdk 24
                   targetSdk 35
-                  versionCode 145
-                  versionName 'V145'
+                  versionCode 150
+                  versionName 'V150'
               }
               buildTypes {
-                  debug { minifyEnabled false; shrinkResources false }
-                  release { minifyEnabled false; shrinkResources false }
+                  debug {
+                      minifyEnabled false
+                      shrinkResources false
+                      debuggable true
+                  }
+                  release {
+                      minifyEnabled false
+                      shrinkResources false
+                  }
               }
               compileOptions {
                   sourceCompatibility JavaVersion.VERSION_17
@@ -394,7 +153,7 @@ jobs:
           </manifest>
           EOF
 
-      - name: Generate MainActivity.java with Fixed Storage & Picker
+      - name: Generate MainActivity.java
         shell: bash
         run: |
           set -e
@@ -447,6 +206,8 @@ jobs:
                   settings.setDatabaseEnabled(true);
                   settings.setAllowFileAccess(true);
                   settings.setAllowContentAccess(true);
+                  settings.setLoadWithOverviewMode(true);
+                  settings.setUseWideViewPort(true);
                   settings.setTextZoom(100);
 
                   webView.setWebChromeClient(new WebChromeClient());
@@ -459,10 +220,38 @@ jobs:
                       @Override
                       public void onPageFinished(WebView view, String url) {
                           super.onPageFinished(view, url);
-                          webView.evaluateJavascript(
-                              "window.print=function(){ if(window.MBMSAndroid) window.MBMSAndroid.print(); };",
-                              null
-                          );
+
+                          // १. हेडरमधील वरचे केशरी REPORT बटण नष्ट करणे
+                          // २. M.B. List मधील तारीख dd-mm-yyyy करणे
+                          // ३. M.B. निवडल्यावर 'सर्व, लहान, मोठी' पर्याय सेट करणे
+                          String injectorCode = 
+                              "(function() {" +
+                              "  setInterval(function() {" +
+                              "    document.querySelectorAll('button, a').forEach(function(b) {" +
+                              "      if ((b.textContent||'').trim().toUpperCase() === 'REPORT') {" +
+                              "        if (b.getBoundingClientRect().top < 85) b.remove();" +
+                              "      }" +
+                              "    });" +
+                              "    document.querySelectorAll('table td, [class*=\"row\"] div').forEach(function(td) {" +
+                              "      var m = td.textContent.trim().match(/^(\\\\d{4})[-/](\\\\d{2})[-/](\\\\d{2})$/);" +
+                              "      if (m) td.textContent = m[3] + '-' + m[2] + '-' + m[1];" +
+                              "    });" +
+                              "    var selects = Array.from(document.querySelectorAll('select'));" +
+                              "    if (selects.length >= 2) {" +
+                              "      var mb = selects.find(function(s){ return (s.options[s.selectedIndex]?.text||s.value||'').trim().toUpperCase() === 'M.B.'; });" +
+                              "      if (mb) {" +
+                              "        var sub = selects.find(function(s){ return s !== mb && ((s.options[0]?.text||'').includes('M.B.') || (s.options[0]?.text||'').includes('सर्व')); });" +
+                              "        if (sub && (!sub.innerHTML.includes('लहान M.B.') || !sub.innerHTML.includes('मोठी M.B.'))) {" +
+                              "          var cur = sub.value;" +
+                              "          sub.innerHTML = '<option value=\"सर्व M.B.\">सर्व M.B.</option><option value=\"लहान M.B.\">लहान M.B.</option><option value=\"मोठी M.B.\">मोठी M.B.</option>';" +
+                              "          if (cur === 'लहान M.B.' || cur === 'मोठी M.B.') sub.value = cur;" +
+                              "        }" +
+                              "      }" +
+                              "    }" +
+                              "  }, 250);" +
+                              "})();";
+
+                          webView.evaluateJavascript(injectorCode, null);
                       }
                   });
 
@@ -494,7 +283,7 @@ jobs:
                               if (fos != null) {
                                   fos.write(jsonString.getBytes(StandardCharsets.UTF_8));
                                   fos.close();
-                                  Toast.makeText(MainActivity.this, "बॅकअप Downloads फोल्डरमध्ये सेव्ह झाला!", Toast.LENGTH_LONG).show();
+                                  Toast.makeText(MainActivity.this, "बॅकअप Downloads मध्ये सेव्ह झाला!", Toast.LENGTH_LONG).show();
                               }
                           } catch (Exception e) {
                               Toast.makeText(MainActivity.this, "बॅकअप एरर: " + e.getMessage(), Toast.LENGTH_SHORT).show();
@@ -602,16 +391,16 @@ jobs:
         shell: bash
         run: |
           set -e
-          gradle --no-daemon --stacktrace clean :app:assembleDebug
+          gradle --no-daemon clean :app:assembleDebug
 
           APK="app/build/outputs/apk/debug/app-debug.apk"
           test -s "$APK"
-          cp "$APK" "../release/MBMS-V145-PERFECT-FIX.apk"
-          ls -lh "../release/MBMS-V145-PERFECT-FIX.apk"
+          cp "$APK" "../release/MBMS-V150-STABLE.apk"
+          ls -lh "../release/MBMS-V150-STABLE.apk"
 
       - name: Upload Final APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MBMS-V145-PERFECT-FIX-APK
-          path: release/MBMS-V145-PERFECT-FIX.apk
+          name: MBMS-V150-STABLE-APK
+          path: release/MBMS-V150-STABLE.apk
           if-no-files-found: error
