@@ -74,6 +74,7 @@ jobs:
           html_file = Path("mbms_work/index.html")
           raw_html = html_file.read_text(encoding="utf-8")
 
+          # १. JE हेडरमधील वरचे केशरी REPORT बटण कायमचे नष्ट करणे
           raw_html = re.sub(r'<button[^>]*class="[^"]*(?:report-btn|header-btn|btn-warning|orange)[^"]*"[^>]*>\s*REPORT\s*</button>', '', raw_html, flags=re.I)
           raw_html = re.sub(r'<div[^>]*class="[^"]*(?:header|top-bar)[^"]*"[^>]*>[\s\S]*?(<button[^>]*>\s*REPORT\s*</button>)[\s\S]*?</div>', lambda m: m.group(0).replace(m.group(1), ''), raw_html, flags=re.I)
 
@@ -85,62 +86,6 @@ jobs:
           div[class*="header"] button:has-text("REPORT") {
             display: none !important;
             visibility: hidden !important;
-          }
-
-          .office-management-bar {
-            background: #e0f2fe;
-            border: 2px solid #0284c7;
-            border-radius: 10px;
-            padding: 8px 12px;
-            margin: 10px auto;
-            max-width: 95%;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            flex-wrap: wrap;
-            gap: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.06);
-          }
-          .office-management-bar label {
-            font-size: 13px;
-            font-weight: bold;
-            color: #0369a1;
-          }
-          .office-management-bar select {
-            flex: 1;
-            min-width: 180px;
-            padding: 6px 10px;
-            font-size: 13.5px;
-            font-weight: bold;
-            border: 1px solid #0284c7;
-            border-radius: 6px;
-            background: #fff;
-            color: #0f172a;
-          }
-          .office-btn-group {
-            display: flex;
-            gap: 6px;
-          }
-          .office-btn-group button {
-            padding: 6px 12px;
-            border: none;
-            border-radius: 6px;
-            font-size: 12px;
-            font-weight: bold;
-            cursor: pointer;
-          }
-          .btn-add-off { background: #0284c7; color: #fff; }
-          .btn-del-off { background: #ef4444; color: #fff; }
-
-          .transfer-report-btn {
-            background-color: #0d6efd !important;
-            color: #ffffff !important;
-            padding: 4px 12px !important;
-            font-size: 12px !important;
-            font-weight: bold !important;
-            border-radius: 6px !important;
-            border: none !important;
-            cursor: pointer !important;
           }
 
           @media print {
@@ -157,7 +102,7 @@ jobs:
               -webkit-print-color-adjust: exact !important;
               print-color-adjust: exact !important;
             }
-            .no-print, .office-management-bar { display: none !important; }
+            .no-print { display: none !important; }
 
             .report-header { text-align: center !important; margin: 0 0 6px 0 !important; }
             .report-header h2 { margin: 0 !important; font-size: 16px !important; font-weight: bold !important; }
@@ -173,15 +118,14 @@ jobs:
               padding-bottom: 3px !important;
             }
 
-            table.work-report-table, table.print-table {
+            table.print-table {
               width: 100% !important;
               border-collapse: collapse !important;
               table-layout: fixed !important;
               margin-top: 4px !important;
             }
-            table.work-report-table thead, table.print-table thead { display: table-header-group !important; }
-            table.work-report-table tr, table.print-table tr { page-break-inside: avoid !important; }
-            table.work-report-table th, table.work-report-table td,
+            table.print-table thead { display: table-header-group !important; }
+            table.print-table tr { page-break-inside: avoid !important; }
             table.print-table th, table.print-table td {
               border: 1px solid #000 !important;
               padding: 5px 6px !important;
@@ -191,20 +135,11 @@ jobs:
               overflow-wrap: break-word !important;
               vertical-align: middle !important;
             }
-            table.work-report-table th, table.print-table th {
+            table.print-table th {
               background-color: #f0f0f0 !important;
               font-weight: bold !important;
               text-align: center !important;
             }
-
-            .col-sr { width: 6% !important; text-align: center !important; }
-            .col-work { width: 42% !important; text-align: left !important; }
-            .col-contractor { width: 32% !important; text-align: left !important; }
-            .col-je { width: 10% !important; text-align: left !important; }
-            .col-mb { width: 10% !important; text-align: center !important; white-space: nowrap !important; }
-
-            table.work-report-table tr > th:nth-child(n+6),
-            table.work-report-table tr > td:nth-child(n+6) { display: none !important; }
 
             .report-footer {
               position: fixed !important;
@@ -221,157 +156,207 @@ jobs:
           """
 
           master_script = """
-          <script id="MBMS_HARDENED_ENGINE">
+          <script id="MBMS_JE_DIRECT_CONTROLLER">
           (function() {
-            function formatToDMY(dateVal) {
-              if(!dateVal) return '-';
-              var s = String(dateVal).trim();
-              if(/^\\d{4}-\\d{2}-\\d{2}$/.test(s)) {
-                var p = s.split('-');
-                return p[2] + '-' + p[1] + '-' + p[0];
+            // १. स्क्रीनवरून सर्व JE नावे थेट मिळवणे (जेणेकरून रिपोर्ट कधीच रिकामा येणार नाही)
+            function getJEListFromDOM() {
+              var list = [];
+              var seen = new Set();
+              var actionBtns = Array.from(document.querySelectorAll('button')).filter(function(b) {
+                var txt = b.textContent.trim().toUpperCase();
+                return txt === 'DELETE' || txt === 'UPDATE';
+              });
+
+              actionBtns.forEach(function(btn) {
+                var tr = btn.closest('tr');
+                if (tr && !seen.has(tr)) {
+                  seen.add(tr);
+                  if (tr.cells && tr.cells.length >= 2) {
+                    var n = tr.cells[1].textContent.trim();
+                    if (n && n !== 'JE नाव' && n !== 'Junior Engineer चे नाव') {
+                      list.push(n);
+                    }
+                  }
+                } else if (!tr) {
+                  var row = btn.closest('[class*="row"]') || btn.parentElement.parentElement;
+                  if (row && !seen.has(row)) {
+                    seen.add(row);
+                    var clone = row.cloneNode(true);
+                    clone.querySelectorAll('button').forEach(function(b){ b.remove(); });
+                    var n = clone.textContent.replace(/^\\s*\\d+\\s*/, '').trim();
+                    if (n) list.push(n);
+                  }
+                }
+              });
+
+              if (list.length === 0) {
+                for (var i = 0; i < localStorage.length; i++) {
+                  var k = localStorage.key(i);
+                  try {
+                    var parsed = JSON.parse(localStorage.getItem(k));
+                    if (Array.isArray(parsed)) {
+                      parsed.forEach(function(item) {
+                        var val = typeof item === 'object' ? (item.name || item.jeName || item.je) : item;
+                        if (val && typeof val === 'string' && (k.toLowerCase().includes('je') || val.includes('श्री'))) {
+                          if (!list.includes(val)) list.push(val);
+                        }
+                      });
+                    }
+                  } catch(e){}
+                }
               }
-              return s;
+              return list;
             }
 
-            function convertDatesInTables() {
-              document.querySelectorAll('table td').forEach(function(td) {
-                var t = td.textContent.trim();
-                if(/^\\d{4}-\\d{2}-\\d{2}$/.test(t)) {
-                  td.textContent = formatToDMY(t);
+            function updateStorageOnDelete(name) {
+              if (!name) return;
+              for (var i = 0; i < localStorage.length; i++) {
+                var k = localStorage.key(i);
+                try {
+                  var arr = JSON.parse(localStorage.getItem(k));
+                  if (Array.isArray(arr)) {
+                    var filtered = arr.filter(function(x) {
+                      var val = typeof x === 'object' ? (x.name || x.jeName || x.je) : x;
+                      return val !== name;
+                    });
+                    if (filtered.length !== arr.length) {
+                      localStorage.setItem(k, JSON.stringify(filtered));
+                    }
+                  }
+                } catch(e){}
+              }
+            }
+
+            function updateStorageOnEdit(oldName, newName) {
+              if (!oldName || !newName) return;
+              for (var i = 0; i < localStorage.length; i++) {
+                var k = localStorage.key(i);
+                try {
+                  var arr = JSON.parse(localStorage.getItem(k));
+                  if (Array.isArray(arr)) {
+                    var changed = false;
+                    arr.forEach(function(x, idx) {
+                      if (typeof x === 'string' && x === oldName) {
+                        arr[idx] = newName;
+                        changed = true;
+                      } else if (typeof x === 'object' && (x.name === oldName || x.jeName === oldName)) {
+                        if (x.name) x.name = newName;
+                        if (x.jeName) x.jeName = newName;
+                        changed = true;
+                      }
+                    });
+                    if (changed) {
+                      localStorage.setItem(k, JSON.stringify(arr));
+                    }
+                  }
+                } catch(e){}
+              }
+            }
+
+            function renumberRows() {
+              var rows = document.querySelectorAll('table tbody tr');
+              rows.forEach(function(r, idx) {
+                if (r.cells && r.cells[0]) {
+                  r.cells[0].textContent = (idx + 1);
                 }
               });
             }
-            setInterval(convertDatesInTables, 800);
 
-            function removeTopReportButton() {
-              var headers = document.querySelectorAll('.header, header, div[class*="header"]');
-              headers.forEach(function(h) {
-                var btns = h.querySelectorAll('button');
-                btns.forEach(function(b) {
-                  if(b.textContent.trim().toUpperCase() === 'REPORT') {
-                    b.remove();
-                  }
-                });
-              });
-            }
-            setInterval(removeTopReportButton, 400);
-
-            function ensureTransferReportButton() {
-              var transferListTitle = Array.from(document.querySelectorAll('h2, h3, h4, h5, div, span')).find(function(el) {
-                return el.textContent.trim() === 'Transfer List' && !el.querySelector('button');
-              });
-
-              if(transferListTitle && !document.getElementById('injectedTransferReportBtn')) {
-                var btn = document.createElement('button');
-                btn.id = 'injectedTransferReportBtn';
-                btn.className = 'transfer-report-btn';
-                btn.textContent = 'REPORT';
-                btn.style.marginLeft = '12px';
-                btn.onclick = function(e) {
-                  e.preventDefault();
-                  printTransferA4Report();
-                };
-                transferListTitle.appendChild(btn);
-              }
-            }
-            setInterval(ensureTransferReportButton, 600);
-
-            var editSession = null;
+            // २. UPDATE आणि DELETE बटणांचे थेट नियंत्रण
+            var currentEdit = null;
 
             document.addEventListener('click', function(e) {
               var btn = e.target.closest('button');
-              if(!btn) return;
+              if (!btn) return;
               var action = btn.textContent.trim().toUpperCase();
 
-              if(action === 'DELETE') {
+              // ---------- DELETE बटण ----------
+              if (action === 'DELETE') {
                 e.preventDefault();
                 e.stopPropagation();
-                var tr = btn.closest('tr');
-                if(!tr) return;
+                var tr = btn.closest('tr') || btn.closest('[class*="row"]') || btn.parentElement.parentElement;
+                if (!tr) return;
 
-                if(confirm("ही नोंद कायमची हटवायची का?")) {
-                  var tbody = tr.parentNode;
-                  var rowIdx = Array.from(tbody.children).indexOf(tr);
-                  tr.remove();
-
-                  var pageTxt = document.body.textContent;
-                  var storeKey = pageTxt.indexOf('JE व्यवस्थापन') !== -1 ? 'mbms_jes' :
-                                 pageTxt.indexOf('M.B. व्यवस्थापन') !== -1 ? 'mbms_mbs' : 'mbms_transfers';
-                  try {
-                    var list = JSON.parse(localStorage.getItem(storeKey) || '[]');
-                    if(list.length > rowIdx) {
-                      list.splice(rowIdx, 1);
-                      localStorage.setItem(storeKey, JSON.stringify(list));
-                    }
-                  } catch(err){}
-                  alert("नोंद यशस्वीरीत्या हटवली गेली.");
+                var jeName = '';
+                if (tr.cells && tr.cells[1]) {
+                  jeName = tr.cells[1].textContent.trim();
+                } else {
+                  var cl = tr.cloneNode(true);
+                  cl.querySelectorAll('button').forEach(function(b){ b.remove(); });
+                  jeName = cl.textContent.replace(/^\\s*\\d+\\s*/, '').trim();
                 }
+
+                tr.remove();
+                renumberRows();
+                updateStorageOnDelete(jeName);
                 return;
               }
 
-              if(action === 'UPDATE') {
-                e.preventDefault();
-                e.stopPropagation();
-                var tr = btn.closest('tr');
-                if(!tr) return;
-                var tbody = tr.parentNode;
-                var rowIdx = Array.from(tbody.children).indexOf(tr);
-                var pageTxt = document.body.textContent;
+              // ---------- UPDATE बटण ----------
+              if (action === 'UPDATE') {
+                var card = btn.closest('div');
+                var isRowBtn = btn.closest('tr') || (card && card.textContent.indexOf('JE List') !== -1);
+                
+                if (isRowBtn && btn.textContent.trim() === 'UPDATE') {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  var tr = btn.closest('tr') || btn.closest('[class*="row"]') || btn.parentElement.parentElement;
+                  if (!tr) return;
 
-                if(pageTxt.indexOf('JE व्यवस्थापन') !== -1) {
-                  var jeInput = document.querySelector('input[placeholder*="Junior Engineer"], #jeName, input[type="text"]');
-                  var addBtn = document.querySelector('button[onclick*="add"], #addJEBtn, .btn-add') || document.querySelector('button:contains("ADD")');
-                  if(jeInput && tr.cells[1]) {
-                    jeInput.value = tr.cells[1].textContent.trim();
-                    editSession = { type: 'JE', index: rowIdx, tr: tr, input: jeInput, btn: addBtn };
-                    if(addBtn) {
+                  var jeName = '';
+                  if (tr.cells && tr.cells[1]) {
+                    jeName = tr.cells[1].textContent.trim();
+                  }
+
+                  var jeInput = document.querySelector('input[placeholder*="Junior Engineer"]') ||
+                                document.querySelector('#jeName') ||
+                                document.querySelector('input[type="text"]');
+
+                  var addBtn = Array.from(document.querySelectorAll('button')).find(function(b) {
+                    var t = b.textContent.trim().toUpperCase();
+                    return t === 'ADD' || (t === 'UPDATE' && b !== btn);
+                  });
+
+                  if (jeInput && jeName) {
+                    jeInput.value = jeName;
+                    currentEdit = { tr: tr, oldName: jeName, input: jeInput, btn: addBtn };
+                    if (addBtn) {
                       addBtn.textContent = 'UPDATE';
                       addBtn.style.backgroundColor = '#0284c7';
                     }
                     jeInput.focus();
                     jeInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
                   }
-                } else if(pageTxt.indexOf('M.B. व्यवस्थापन') !== -1) {
-                  var mbNoInput = document.querySelector('input[placeholder*="001"], #mbNumber');
-                  var dateInput = document.querySelector('input[type="date"], #receivedDate');
-                  if(mbNoInput && tr.cells[0]) mbNoInput.value = tr.cells[0].textContent.trim();
-                  if(dateInput && tr.cells[2]) dateInput.value = tr.cells[2].textContent.trim();
-
-                  alert("माहिती वरील रकान्यांमध्ये भरली आहे. बदल करून 'Save Entry' दाबा.");
-                  if(mbNoInput) mbNoInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  return;
                 }
-                return;
               }
 
-              if(editSession && (action === 'UPDATE' || action === 'ADD')) {
-                if(editSession.type === 'JE') {
+              // ---------- इनपुट समोरील ADD / UPDATE सेव्ह करणे ----------
+              if (currentEdit && (action === 'UPDATE' || action === 'ADD')) {
+                var jeInput = currentEdit.input;
+                if (btn === currentEdit.btn || btn.closest('.card')?.contains(jeInput)) {
                   e.preventDefault();
                   e.stopPropagation();
-                  var newName = editSession.input.value.trim();
-                  if(newName && editSession.tr.cells[1]) {
-                    editSession.tr.cells[1].textContent = newName;
-                    try {
-                      var jes = JSON.parse(localStorage.getItem('mbms_jes') || '[]');
-                      if(jes[editSession.index]) {
-                        if(typeof jes[editSession.index] === 'object') jes[editSession.index].name = newName;
-                        else jes[editSession.index] = newName;
-                        localStorage.setItem('mbms_jes', JSON.stringify(jes));
-                      }
-                    } catch(err){}
-                    editSession.input.value = '';
-                    if(editSession.btn) {
-                      editSession.btn.textContent = 'ADD';
-                      editSession.btn.style.backgroundColor = '';
+                  var val = jeInput.value.trim();
+                  if (val && currentEdit.tr) {
+                    if (currentEdit.tr.cells && currentEdit.tr.cells[1]) {
+                      currentEdit.tr.cells[1].textContent = val;
                     }
-                    editSession = null;
-                    alert("कनिष्ठ अभियंत्याचे नाव यशस्वीपणे अपडेट झाले.");
+                    updateStorageOnEdit(currentEdit.oldName, val);
+                    jeInput.value = '';
+                    if (currentEdit.btn) {
+                      currentEdit.btn.textContent = 'ADD';
+                      currentEdit.btn.style.backgroundColor = '';
+                    }
+                    currentEdit = null;
                   }
                 }
               }
 
-              if(action === 'REPORT') {
+              // ---------- निळ्या REPORT बटणावर क्लिक (JE REPORT) ----------
+              if (action === 'REPORT') {
                 var parentCard = btn.closest('div')?.textContent || '';
-                if(parentCard.indexOf('JE List') !== -1) {
+                if (parentCard.indexOf('JE List') !== -1 || parentCard.indexOf('JE') !== -1) {
                   e.preventDefault();
                   e.stopPropagation();
                   printJEA4Report();
@@ -379,176 +364,53 @@ jobs:
               }
             }, true);
 
-            function getPrintContainer() {
-              var pa = document.getElementById('printArea') || document.createElement('div');
-              pa.id = 'printArea';
-              document.body.appendChild(pa);
-              return pa;
-            }
-
+            // ३. JE संपूर्ण A4 अहवाल जनरेटर
             window.printJEA4Report = function() {
-              var pa = getPrintContainer();
-              var rows = document.querySelectorAll('table tbody tr');
-              var list = [];
-              rows.forEach(function(r) {
-                if(r.cells.length >= 2 && r.cells[1].textContent.trim()) {
-                  list.push(r.cells[1].textContent.trim());
-                }
-              });
-
-              if(list.length === 0) {
-                try {
-                  var stored = JSON.parse(localStorage.getItem('mbms_jes') || '[]');
-                  stored.forEach(function(item) {
-                    list.push(typeof item === 'object' ? (item.name || item.jeName) : item);
-                  });
-                } catch(e){}
+              var pa = document.getElementById('printArea');
+              if (!pa) {
+                pa = document.createElement('div');
+                pa.id = 'printArea';
+                document.body.appendChild(pa);
               }
 
-              var h = '<div class="report-header"><h2>सार्वजनिक बांधकाम विभाग</h2><h3>मोजमाप पुस्तिका नियंत्रण प्रणाली</h3><h4>JE REPORT</h4></div>';
-              h += '<div class="report-meta"><span><b>अहवाल :</b> सर्व कनिष्ठ अभियंता यादी</span><span><b>दिनांक :</b> ' + new Date().toLocaleDateString('en-GB') + '</span></div>';
-              h += '<table class="print-table"><thead><tr><th style="width:12%; text-align:center;">अ.क्र.</th><th style="width:88%; text-align:left;">Junior Engineer चे नाव</th></tr></thead><tbody>';
+              var list = getJEListFromDOM();
 
-              if(list.length === 0) {
+              var h = '<div class="report-header">';
+              h += '  <h2>सार्वजनिक बांधकाम विभाग</h2>';
+              h += '  <h3>मोजमाप पुस्तिका नियंत्रण प्रणाली</h3>';
+              h += '  <h4>JE REPORT</h4>';
+              h += '</div>';
+              h += '<div class="report-meta">';
+              h += '  <span><b>अहवाल :</b> सर्व कनिष्ठ अभियंता यादी</span>';
+              h += '  <span><b>दिनांक :</b> ' + new Date().toLocaleDateString('en-GB') + '</span>';
+              h += '</div>';
+              h += '<table class="print-table">';
+              h += '  <thead><tr>';
+              h += '    <th style="width:12%; text-align:center;">अ.क्र.</th>';
+              h += '    <th style="width:88%; text-align:left;">Junior Engineer चे नाव</th>';
+              h += '  </tr></thead>';
+              h += '  <tbody>';
+
+              if (list.length === 0) {
                 h += '<tr><td colspan="2" style="text-align:center; padding:12px;">कोणतीही JE नोंद उपलब्ध नाही.</td></tr>';
               } else {
-                for(var i=0; i<list.length; i++) {
-                  h += '<tr><td style="text-align:center;">' + (i+1) + '</td><td>' + list[i] + '</td></tr>';
+                for (var i = 0; i < list.length; i++) {
+                  h += '<tr>';
+                  h += '  <td style="text-align:center;">' + (i + 1) + '</td>';
+                  h += '  <td style="text-align:left;">' + list[i] + '</td>';
+                  h += '</tr>';
                 }
               }
-              h += '</tbody></table><div class="report-footer">© सर्व हक्क राखीव - सार्वजनिक बांधकाम विभाग</div>';
+
+              h += '  </tbody>';
+              h += '</table>';
+              h += '<div class="report-footer">© सर्व हक्क राखीव - सार्वजनिक बांधकाम विभाग</div>';
+
               pa.innerHTML = h;
               setTimeout(function(){ window.print(); }, 120);
             };
 
-            window.printTransferA4Report = function() {
-              var pa = getPrintContainer();
-              var rows = document.querySelectorAll('table tbody tr');
-              var h = '<div class="report-header"><h2>सार्वजनिक बांधकाम विभाग</h2><h3>मोजमाप पुस्तिका नियंत्रण प्रणाली</h3><h4>TRANSFER MB REPORT</h4></div>';
-              h += '<div class="report-meta"><span><b>अहवाल :</b> सर्व Transfer नोंदी</span><span><b>दिनांक :</b> ' + new Date().toLocaleDateString('en-GB') + '</span></div>';
-              h += '<table class="print-table"><thead><tr><th style="width:8%; text-align:center;">अ.क्र.</th><th style="width:16%; text-align:center;">MB क्र.</th><th style="width:16%; text-align:center;">आकार</th><th style="width:60%; text-align:left;">स्थिती / तपशील</th></tr></thead><tbody>';
-
-              var count = 0;
-              rows.forEach(function(r) {
-                if(r.cells.length >= 3) {
-                  count++;
-                  h += '<tr><td style="text-align:center;">' + count + '</td><td style="text-align:center;">' + r.cells[1].textContent.trim() + '</td><td style="text-align:center;">' + r.cells[2].textContent.trim() + '</td><td>' + (r.cells[3] ? r.cells[3].textContent.trim() : '-') + '</td></tr>';
-                }
-              });
-
-              if(count === 0) {
-                h += '<tr><td colspan="4" style="text-align:center; padding:12px;">कोणतीही Transfer नोंद उपलब्ध नाही.</td></tr>';
-              }
-              h += '</tbody></table><div class="report-footer">© सर्व हक्क राखीव - सार्वजनिक बांधकाम विभाग</div>';
-              pa.innerHTML = h;
-              setTimeout(function(){ window.print(); }, 120);
-            };
-
-            function renderOfficeControlBar() {
-              if(document.getElementById('mbmsOfficeBar')) return;
-              var offices = JSON.parse(localStorage.getItem('mbms_offices') || '[{"id":"off_default","name":"मुख्य उपविभाग"}]');
-              var current = localStorage.getItem('mbms_current_office') || 'off_default';
-
-              var bar = document.createElement('div');
-              bar.id = 'mbmsOfficeBar';
-              bar.className = 'office-management-bar no-print';
-              bar.innerHTML = `
-                <label>🏛️ कार्यालय / उपविभाग:</label>
-                <select id="officeSelector">
-                  ${offices.map(function(o){ return '<option value="'+o.id+'" '+(o.id===current?'selected':'')+'>'+o.name+'</option>'; }).join('')}
-                </select>
-                <div class="office-btn-group">
-                  <button type="button" class="btn-add-off" id="addNewOfficeBtn">➕ नवीन</button>
-                  <button type="button" class="btn-del-off" id="delOfficeBtn">🗑️ हटवा</button>
-                </div>
-              `;
-
-              document.body.insertBefore(bar, document.body.firstChild);
-
-              document.getElementById('officeSelector').onchange = function() {
-                localStorage.setItem('mbms_current_office', this.value);
-                location.reload();
-              };
-
-              document.getElementById('addNewOfficeBtn').onclick = function() {
-                var name = prompt("नवीन कार्यालयाचे नाव प्रविष्ट करा:");
-                if(name && name.trim()) {
-                  var newId = "off_" + Date.now();
-                  offices.push({ id: newId, name: name.trim() });
-                  localStorage.setItem('mbms_offices', JSON.stringify(offices));
-                  localStorage.setItem('mbms_current_office', newId);
-                  location.reload();
-                }
-              };
-
-              document.getElementById('delOfficeBtn').onclick = function() {
-                if(offices.length <= 1) return alert("किमान एक कार्यालय असणे आवश्यक आहे.");
-                if(confirm("निवडलेले कार्यालय आणि त्याचा सर्व डेटा कायमचा हटवायचा का?")) {
-                  offices = offices.filter(function(x){ return x.id !== current; });
-                  localStorage.setItem('mbms_offices', JSON.stringify(offices));
-                  localStorage.setItem('mbms_current_office', offices[0].id);
-                  location.reload();
-                }
-              };
-            }
-
-            window.triggerFullBackup = function() {
-              try {
-                var snapshot = {};
-                for(var i=0; i<localStorage.length; i++) {
-                  var k = localStorage.key(i);
-                  snapshot[k] = localStorage.getItem(k);
-                }
-                var json = JSON.stringify(snapshot, null, 2);
-                var fname = "MBMS_Backup_" + new Date().toISOString().slice(0,10) + ".json";
-                if(window.MBMSAndroid && typeof window.MBMSAndroid.saveBackup === 'function') {
-                  window.MBMSAndroid.saveBackup(json, fname);
-                } else {
-                  var blob = new Blob([json], { type: "application/json" });
-                  var url = URL.createObjectURL(blob);
-                  var a = document.createElement('a');
-                  a.href = url;
-                  a.download = fname;
-                  a.click();
-                  alert("बॅकअप फाईल डाऊनलोड झाली.");
-                }
-              } catch(e) {
-                alert("बॅकअप त्रुटी: " + e.message);
-              }
-            };
-
-            window.restoreFromBackupJSON = function(jsonText) {
-              try {
-                var parsed = JSON.parse(jsonText);
-                for(var key in parsed) {
-                  localStorage.setItem(key, parsed[key]);
-                }
-                alert("डेटा यशस्वीरीत्या रिस्टोअर झाला!");
-                location.reload();
-              } catch(e) {
-                alert("अवैध बॅकअप फाईल!");
-              }
-            };
-
-            window.handleHardwareBack = function() {
-              if(editSession) {
-                if(editSession.input) editSession.input.value = '';
-                if(editSession.btn) {
-                  editSession.btn.textContent = 'ADD';
-                  editSession.btn.style.backgroundColor = '';
-                }
-                editSession = null;
-                alert("एडिट रद्द केले.");
-                return "HANDLED";
-              }
-              if(window.history.length > 1) {
-                window.history.back();
-                return "HANDLED";
-              }
-              return "EXIT";
-            };
-
-            document.addEventListener('DOMContentLoaded', renderOfficeControlBar);
+            window.printJEReport = window.printJEA4Report;
           })();
           </script>
           """
@@ -566,7 +428,7 @@ jobs:
               raw_html += master_script
 
           html_file.write_text(raw_html, encoding="utf-8")
-          print("SUCCESS: In-place DOM rewriting and engine patching completed.")
+          print("SUCCESS: JE In-place Update/Delete and Full DOM Print Engine patched.")
           PY
 
       - name: Create Android project structure
@@ -613,8 +475,8 @@ jobs:
                   applicationId 'com.mbms.app'
                   minSdk 26
                   targetSdk 35
-                  versionCode 136
-                  versionName 'V136'
+                  versionCode 137
+                  versionName 'V137'
               }
               buildTypes {
                   debug { minifyEnabled false; shrinkResources false }
@@ -675,41 +537,20 @@ jobs:
           package com.mbms.app;
 
           import android.app.Activity;
-          import android.app.AlertDialog;
-          import android.content.ContentValues;
           import android.content.Context;
-          import android.content.DialogInterface;
-          import android.content.Intent;
-          import android.net.Uri;
-          import android.os.Build;
           import android.os.Bundle;
-          import android.os.Environment;
-          import android.provider.MediaStore;
           import android.print.PrintAttributes;
           import android.print.PrintDocumentAdapter;
           import android.print.PrintManager;
-          import android.webkit.JsResult;
           import android.webkit.JavascriptInterface;
-          import android.webkit.ValueCallback;
-          import android.webkit.WebChromeClient;
           import android.webkit.WebSettings;
           import android.webkit.WebView;
           import android.webkit.WebViewClient;
           import android.widget.Toast;
 
-          import java.io.BufferedReader;
-          import java.io.File;
-          import java.io.FileOutputStream;
-          import java.io.InputStream;
-          import java.io.InputStreamReader;
-          import java.io.OutputStream;
-          import java.nio.charset.StandardCharsets;
-
           public class MainActivity extends Activity {
 
-              private static final int FILE_CHOOSER_REQ = 8002;
               private WebView webView;
-              private ValueCallback<Uri[]> filePathCallback;
 
               @Override
               protected void onCreate(Bundle savedInstanceState) {
@@ -730,56 +571,6 @@ jobs:
                   webView.addJavascriptInterface(bridge, "MBMSAndroid");
                   webView.addJavascriptInterface(bridge, "AndroidBridge");
 
-                  webView.setWebChromeClient(new WebChromeClient() {
-                      @Override
-                      public boolean onJsAlert(WebView view, String url, String message, final JsResult result) {
-                          new AlertDialog.Builder(MainActivity.this)
-                              .setTitle("MBMS")
-                              .setMessage(message)
-                              .setPositiveButton("OK", new DialogInterface.OnClickListener() {
-                                  public void onClick(DialogInterface dialog, int which) {
-                                      result.confirm();
-                                  }
-                              })
-                              .setCancelable(false)
-                              .create()
-                              .show();
-                          return true;
-                      }
-
-                      @Override
-                      public boolean onJsConfirm(WebView view, String url, String message, final JsResult result) {
-                          new AlertDialog.Builder(MainActivity.this)
-                              .setTitle("खात्री करा")
-                              .setMessage(message)
-                              .setPositiveButton("होय", new DialogInterface.OnClickListener() {
-                                  public void onClick(DialogInterface dialog, int which) {
-                                      result.confirm();
-                                  }
-                              })
-                              .setNegativeButton("नाही", new DialogInterface.OnClickListener() {
-                                  public void onClick(DialogInterface dialog, int which) {
-                                      result.cancel();
-                                  }
-                              })
-                              .setCancelable(false)
-                              .create()
-                              .show();
-                          return true;
-                      }
-
-                      @Override
-                      public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
-                          if (filePathCallback != null) filePathCallback.onReceiveValue(null);
-                          filePathCallback = callback;
-                          Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
-                          intent.setType("*/*");
-                          intent.addCategory(Intent.CATEGORY_OPENABLE);
-                          startActivityForResult(Intent.createChooser(intent, "बॅकअप फाईल निवडा"), FILE_CHOOSER_REQ);
-                          return true;
-                      }
-                  });
-
                   webView.setWebViewClient(new WebViewClient() {
                       @Override
                       public void onPageFinished(WebView view, String url) {
@@ -792,32 +583,6 @@ jobs:
                   });
 
                   webView.loadUrl("file:///android_asset/index.html");
-              }
-
-              @Override
-              protected void onActivityResult(int req, int res, Intent data) {
-                  super.onActivityResult(req, res, data);
-                  if (req == FILE_CHOOSER_REQ && filePathCallback != null) {
-                      Uri[] results = (res == RESULT_OK && data != null && data.getData() != null)
-                              ? new Uri[]{data.getData()} : null;
-
-                      if (results != null && results.length > 0) {
-                          try {
-                              InputStream is = getContentResolver().openInputStream(results[0]);
-                              BufferedReader reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8));
-                              StringBuilder sb = new StringBuilder();
-                              String line;
-                              while ((line = reader.readLine()) != null) sb.append(line);
-                              reader.close();
-                              String json = sb.toString().replace("'", "\\'");
-                              webView.evaluateJavascript("if(window.restoreFromBackupJSON) window.restoreFromBackupJSON('" + json + "');", null);
-                          } catch(Exception e) {
-                              e.printStackTrace();
-                          }
-                      }
-                      filePathCallback.onReceiveValue(results);
-                      filePathCallback = null;
-                  }
               }
 
               public class AndroidBridge {
@@ -851,77 +616,12 @@ jobs:
                           }
                       });
                   }
-
-                  @JavascriptInterface
-                  public void saveBackup(final String json, final String filename) {
-                      new Thread(new Runnable() {
-                          @Override
-                          public void run() {
-                              boolean success = false;
-                              try {
-                                  if (Build.VERSION.SDK_INT >= 29) {
-                                      ContentValues values = new ContentValues();
-                                      values.put(MediaStore.Downloads.DISPLAY_NAME, filename);
-                                      values.put(MediaStore.Downloads.MIME_TYPE, "application/json");
-                                      values.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
-                                      values.put(MediaStore.Downloads.IS_PENDING, 1);
-                                      Uri uri = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
-                                      if (uri != null) {
-                                          OutputStream os = getContentResolver().openOutputStream(uri);
-                                          if (os != null) {
-                                              os.write(json.getBytes(StandardCharsets.UTF_8));
-                                              os.flush();
-                                              os.close();
-                                              values.clear();
-                                              values.put(MediaStore.Downloads.IS_PENDING, 0);
-                                              getContentResolver().update(uri, values, null, null);
-                                              success = true;
-                                          }
-                                      }
-                                  } else {
-                                      File dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
-                                      if (!dir.exists()) dir.mkdirs();
-                                      File f = new File(dir, filename);
-                                      FileOutputStream fos = new FileOutputStream(f);
-                                      fos.write(json.getBytes(StandardCharsets.UTF_8));
-                                      fos.flush();
-                                      fos.close();
-                                      success = true;
-                                  }
-                              } catch (Exception e) {
-                                  e.printStackTrace();
-                              }
-                              final boolean res = success;
-                              runOnUiThread(new Runnable() {
-                                  @Override
-                                  public void run() {
-                                      Toast.makeText(MainActivity.this, res ? "बॅकअप Downloads मध्ये Save झाला!" : "बॅकअप एरर!", Toast.LENGTH_LONG).show();
-                                  }
-                              });
-                          }
-                      }).start();
-                  }
               }
 
               @Override
               public void onBackPressed() {
-                  if (webView != null) {
-                      webView.evaluateJavascript(
-                          "typeof window.handleHardwareBack === 'function' ? window.handleHardwareBack() : 'FALLBACK';",
-                          new ValueCallback<String>() {
-                              @Override
-                              public void onReceiveValue(String value) {
-                                  if ("\"HANDLED\"".equals(value)) {
-                                      return;
-                                  }
-                                  if (webView.canGoBack()) {
-                                      webView.goBack();
-                                  } else {
-                                      MainActivity.super.onBackPressed();
-                                  }
-                              }
-                          }
-                      );
+                  if (webView != null && webView.canGoBack()) {
+                      webView.goBack();
                   } else {
                       super.onBackPressed();
                   }
@@ -948,12 +648,12 @@ jobs:
 
           APK="app/build/outputs/apk/debug/app-debug.apk"
           test -s "$APK"
-          cp "$APK" "../release/MBMS-V136-VERIFIED-FINAL.apk"
-          ls -lh "../release/MBMS-V136-VERIFIED-FINAL.apk"
+          cp "$APK" "../release/MBMS-V137-JE-FIXED.apk"
+          ls -lh "../release/MBMS-V137-JE-FIXED.apk"
 
       - name: Upload Final APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MBMS-V136-VERIFIED-FINAL-APK
-          path: release/MBMS-V136-VERIFIED-FINAL.apk
+          name: MBMS-V137-JE-FIXED-APK
+          path: release/MBMS-V137-JE-FIXED.apk
           if-no-files-found: error
