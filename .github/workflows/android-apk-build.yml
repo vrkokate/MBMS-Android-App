@@ -1,435 +1,297 @@
-<!DOCTYPE html>
-<html lang="mr">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>सार्वजनिक बांधकाम विभाग प्रणाली</title>
-  <style>
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-      font-family: 'Noto Sans Devanagari', Arial, sans-serif;
-    }
-    body {
-      background-color: #eef2f6;
-      color: #333;
-    }
+name: MBMS Android APK Build
 
-    /* १. मुख्य ५ टॅबची नेव्हिगेशन पट्टी (एकाच ओळीत ५ टॅब) */
-    .master-tab-bar {
-      display: flex;
-      background-color: #06458e;
-      overflow-x: auto;
-      white-space: nowrap;
-      position: sticky;
-      top: 0;
-      z-index: 1000;
-      box-shadow: 0 2px 5px rgba(0,0,0,0.15);
-    }
-    .master-tab-btn {
-      flex: 1;
-      min-width: 70px;
-      padding: 12px 6px;
-      background: transparent;
-      border: none;
-      color: #d1e2f7;
-      font-size: 13px;
-      font-weight: bold;
-      text-align: center;
-      cursor: pointer;
-      border-bottom: 3px solid transparent;
-      transition: all 0.2s ease-in-out;
-    }
-    .master-tab-btn.active {
-      background-color: #043166;
-      color: #ffffff;
-      border-bottom: 3px solid #ffca28;
-    }
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
 
-    /* टॅबच्या अंतर्गत जागा */
-    .tab-section {
-      display: none;
-      padding: 12px;
-    }
-    .tab-section.active {
-      display: block;
-    }
+permissions:
+  contents: read
 
-    /* इतर रिकाम्या टॅबसाठी डिझाईन */
-    .empty-card {
-      background: #ffffff;
-      border-radius: 12px;
-      padding: 40px 20px;
-      text-align: center;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-      margin-top: 15px;
-    }
+jobs:
+  build:
+    name: Build Verified MBMS Android APK
+    runs-on: ubuntu-latest
 
-    /* २. MB टॅबमधील मूळ ॲपची रचना */
-    .mb-header {
-      background: linear-gradient(135deg, #0d47a1, #1565c0);
-      color: #ffffff;
-      padding: 14px;
-      border-radius: 12px;
-      text-align: center;
-      margin-bottom: 12px;
-      box-shadow: 0 3px 8px rgba(0,0,0,0.12);
-    }
-    .mb-header h2 { font-size: 18px; margin-bottom: 3px; }
-    .mb-header h4 { font-size: 13px; font-weight: normal; opacity: 0.9; }
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    /* ६ रंगीत डॅशबोर्ड बटणे */
-    .quick-grid {
-      display: grid;
-      grid-template-columns: repeat(6, 1fr);
-      gap: 6px;
-      margin-bottom: 14px;
-    }
-    .quick-btn {
-      padding: 8px 2px;
-      border-radius: 10px;
-      color: #ffffff;
-      text-align: center;
-      font-size: 11px;
-      font-weight: bold;
-      border: none;
-      cursor: pointer;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
-    .btn-je { background-color: #1976d2; }
-    .btn-mb { background-color: #2e7d32; }
-    .btn-work { background-color: #00838f; }
-    .btn-bill { background-color: #ef6c00; }
-    .btn-assign { background-color: #7b1fa2; }
-    .btn-setting { background-color: #c2185b; }
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
 
-    /* M.B. Summary कार्ड */
-    .summary-card {
-      background: #ffffff;
-      border-radius: 12px;
-      padding: 12px;
-      margin-bottom: 14px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-    }
-    .summary-title {
-      font-size: 13px;
-      font-weight: bold;
-      text-align: center;
-      margin-bottom: 8px;
-      color: #0d47a1;
-    }
-    .summary-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 8px;
-    }
-    .summary-box {
-      border: 1px solid #e0e0e0;
-      border-radius: 8px;
-      text-align: center;
-      padding: 6px 2px;
-      background: #fbfcfd;
-    }
-    .summary-box .count { font-size: 18px; font-weight: bold; color: #0d47a1; }
-    .summary-box .label { font-size: 11px; color: #616161; }
+      - name: Locate and Prepare HTML
+        shell: bash
+        run: |
+          set -e
+          mkdir -p mbms_work
 
-    /* सविस्तर शोध व अहवाल फॉर्म */
-    .filter-card {
-      background: #ffffff;
-      border-radius: 12px;
-      padding: 14px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-    }
-    .filter-title {
-      font-size: 14px;
-      font-weight: bold;
-      color: #0d47a1;
-      margin-bottom: 10px;
-    }
-    .form-group { margin-bottom: 10px; }
-    .form-control {
-      width: 100%;
-      height: 40px;
-      border-radius: 8px;
-      border: 1px solid #cfd8dc;
-      padding: 0 10px;
-      font-size: 13px;
-      outline: none;
-      background-color: #ffffff;
-    }
-    .form-control:focus { border-color: #1976d2; }
-    .date-row {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
-    }
+          for z in *.zip; do
+            if [ -f "$z" ]; then
+              echo "Unpacking zip: $z"
+              unzip -q -o "$z" -d extracted_zip || true
+            fi
+          done
 
-    .btn-report-submit {
-      width: 100%;
-      height: 42px;
-      background-color: #0d47a1;
-      color: #ffffff;
-      border: none;
-      border-radius: 8px;
-      font-size: 14px;
-      font-weight: bold;
-      cursor: pointer;
-      margin-top: 6px;
-      box-shadow: 0 3px 6px rgba(13, 71, 161, 0.25);
-    }
+          TARGET_HTML=$(find . -type f -iname "*.html" -not -path "./.git/*" -not -path "./mbms_work/*" -exec ls -S {} + | head -n 1)
 
-    /* प्रिंट अहवाल CSS */
-    @media print {
-      @page { size: A4 portrait; margin: 8mm !important; }
-      body { background: #fff !important; color: #000 !important; }
-      body > *:not(#printArea) { display: none !important; }
-      #printArea { display: block !important; width: 100% !important; }
-      table.print-table {
-        width: 100% !important;
-        border-collapse: collapse !important;
-        margin-top: 6px !important;
-      }
-      table.print-table th, table.print-table td {
-        border: 1px solid #000 !important;
-        padding: 5px 6px !important;
-        font-size: 11px !important;
-      }
-      table.print-table th { background: #eee !important; font-weight: bold !important; }
-    }
-  </style>
-</head>
-<body>
+          if [ -z "$TARGET_HTML" ]; then
+            echo "ERROR: No HTML file found in repository."
+            exit 1
+          fi
 
-  <!-- ==================== मुख्य ५ टॅब बार ==================== -->
-  <div class="master-tab-bar">
-    <button class="master-tab-btn" onclick="switchTab(event, 'tabEstablishment')">एस्टॅब्लिशमेंट</button>
-    <button class="master-tab-btn" onclick="switchTab(event, 'tabPay')">Pay</button>
-    <button class="master-tab-btn active" onclick="switchTab(event, 'tabMB')">MB</button>
-    <button class="master-tab-btn" onclick="switchTab(event, 'tabFour')">टॅब ४</button>
-    <button class="master-tab-btn" onclick="switchTab(event, 'tabFive')">टॅब ५</button>
-  </div>
+          echo "Target HTML detected: $TARGET_HTML"
+          cp "$TARGET_HTML" mbms_work/index.html
+          test -s mbms_work/index.html
 
-  <!-- टॅब १: एस्टॅब्लिशमेंट -->
-  <div id="tabEstablishment" class="tab-section">
-    <div class="empty-card">
-      <h3>एस्टॅब्लिशमेंट विभाग</h3>
-      <p style="margin-top: 8px; color: #757575;">येथे आस्थापना विभागाचे कामकाज व फॉर्म जोडता येतील.</p>
-    </div>
-  </div>
+      - name: Create Android project structure
+        shell: bash
+        run: |
+          set -e
+          rm -rf mbms_android release
+          mkdir -p \
+            mbms_android/app/src/main/assets \
+            mbms_android/app/src/main/java/com/mbms/app \
+            mbms_android/app/src/main/res/values \
+            release
 
-  <!-- टॅब २: Pay -->
-  <div id="tabPay" class="tab-section">
-    <div class="empty-card">
-      <h3>Pay विभाग</h3>
-      <p style="margin-top: 8px; color: #757575;">येथे वेतन, भत्ते आणि देयके संबंधित कामकाज जोडता येईल.</p>
-    </div>
-  </div>
+          cp mbms_work/index.html mbms_android/app/src/main/assets/index.html
 
-  <!-- टॅब ३: MB (आपली मुख्य मोजमाप पुस्तिका नियंत्रण प्रणाली) -->
-  <div id="tabMB" class="tab-section active">
-    
-    <div class="mb-header">
-      <h2>मोजमाप पुस्तिका नियंत्रण प्रणाली</h2>
-      <h4>सार्वजनिक बांधकाम विभाग</h4>
-    </div>
+          cat > mbms_android/settings.gradle <<'EOF'
+          pluginManagement {
+              repositories { google(); mavenCentral(); gradlePluginPortal(); }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories { google(); mavenCentral(); }
+          }
+          rootProject.name = "MBMSAndroid"
+          include(":app")
+          EOF
 
-    <!-- ६ मुख्य बटणे -->
-    <div class="quick-grid">
-      <button class="quick-btn btn-je">👷<br>JE</button>
-      <button class="quick-btn btn-mb">📖<br>M.B.</button>
-      <button class="quick-btn btn-work">📋<br>Work list</button>
-      <button class="quick-btn btn-bill">📄<br>Bill reg.</button>
-      <button class="quick-btn btn-assign">📁<br>Assign</button>
-      <button class="quick-btn btn-setting">⚙️<br>सेटिंग</button>
-    </div>
+          cat > mbms_android/build.gradle <<'EOF'
+          plugins { id 'com.android.application' version '8.6.1' apply false }
+          EOF
 
-    <!-- M.B. Summary -->
-    <div class="summary-card">
-      <div class="summary-title">📖 M.B. Summary</div>
-      <div class="summary-grid">
-        <div class="summary-box">
-          <div class="count" id="countTotalMB">२</div>
-          <div class="label">एकूण M.B.</div>
-        </div>
-        <div class="summary-box">
-          <div class="count" id="countSmallMB">१</div>
-          <div class="label">Small M.B.</div>
-        </div>
-        <div class="summary-box">
-          <div class="count" id="countLargeMB">१</div>
-          <div class="label">Large M.B.</div>
-        </div>
-      </div>
-    </div>
+          cat > mbms_android/gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          android.nonTransitiveRClass=true
+          EOF
 
-    <!-- सविस्तर संबंधित माहिती व रिपोर्ट -->
-    <div class="filter-card">
-      <div class="filter-title">🔍 सविस्तर संबंधित माहिती व रिपोर्ट</div>
+          cat > mbms_android/app/build.gradle <<'EOF'
+          plugins { id 'com.android.application' }
+          android {
+              namespace 'com.mbms.app'
+              compileSdk 35
+              defaultConfig {
+                  applicationId 'com.mbms.app'
+                  minSdk 26
+                  targetSdk 35
+                  versionCode 142
+                  versionName 'V142'
+              }
+              buildTypes {
+                  debug { minifyEnabled false; shrinkResources false }
+                  release { minifyEnabled false; shrinkResources false }
+              }
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+          }
+          EOF
 
-      <div class="form-group date-row">
-        <div>
-          <label style="font-size: 11px; color:#616161;">दिनांक पासून</label>
-          <input type="date" class="form-control" id="fromDate" value="2026-09-01">
-        </div>
-        <div>
-          <label style="font-size: 11px; color:#616161;">दिनांक पर्यंत</label>
-          <input type="date" class="form-control" id="toDate" value="2026-09-19">
-        </div>
-      </div>
+          cat > mbms_android/app/src/main/res/values/strings.xml <<'EOF'
+          <resources><string name="app_name">MBMS</string></resources>
+          EOF
 
-      <!-- १. मुख्य घटक ड्रॉपडाऊन -->
-      <div class="form-group">
-        <select class="form-control" id="mainCatSelect" onchange="onCategorySelectChange()">
-          <option value="MB" selected>M.B.</option>
-          <option value="JE">Junior Engineer</option>
-          <option value="WORK">कामाचे नाव</option>
-          <option value="BILL">बिल (Bill)</option>
-          <option value="CONTRACTOR">कंत्राटदार / एजन्सी</option>
-        </select>
-      </div>
+          cat > mbms_android/app/src/main/res/values/styles.xml <<'EOF'
+          <resources>
+              <style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar">
+                  <item name="android:fontFamily">sans</item>
+                  <item name="android:colorAccent">#1976D2</item>
+                  <item name="android:navigationBarColor">#06458E</item>
+              </style>
+          </resources>
+          EOF
 
-      <!-- २. संबंधित उपघटक ड्रॉपडाऊन (M.B. साठी: सर्व, लहान, मोठी) -->
-      <div class="form-group">
-        <select class="form-control" id="subCatSelect">
-          <option value="सर्व M.B.">सर्व M.B.</option>
-          <option value="लहान M.B.">लहान M.B.</option>
-          <option value="मोठी M.B.">मोठी M.B.</option>
-        </select>
-      </div>
+          cat > mbms_android/app/src/main/AndroidManifest.xml <<'EOF'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
+              <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
 
-      <!-- ३. स्मार्ट सर्च इनपुट -->
-      <div class="form-group">
-        <input type="text" class="form-control" id="smartInput" placeholder="निवडलेल्या घटकानुसार शोधा / क्रमांक टाका">
-      </div>
+              <application
+                  android:allowBackup="true"
+                  android:usesCleartextTraffic="true"
+                  android:label="@string/app_name"
+                  android:theme="@style/AppTheme"
+                  android:hardwareAccelerated="true">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:screenOrientation="portrait"
+                      android:configChanges="orientation|screenSize|keyboardHidden">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
 
-      <!-- ४. REPORT / PRINT बटण -->
-      <button class="btn-report-submit" onclick="executeReportPrint()">📄 REPORT / PRINT</button>
-      <div style="text-align: center; font-size: 11px; color: #757575; margin-top: 8px;">सर्व माहिती किंवा वरील उपघटक निवडा.</div>
-    </div>
+      - name: Generate MainActivity.java
+        shell: bash
+        run: |
+          set -e
+          cat > mbms_android/app/src/main/java/com/mbms/app/MainActivity.java <<'EOF'
+          package com.mbms.app;
 
-  </div>
+          import android.app.Activity;
+          import android.content.Context;
+          import android.os.Bundle;
+          import android.print.PrintAttributes;
+          import android.print.PrintDocumentAdapter;
+          import android.print.PrintManager;
+          import android.webkit.JavascriptInterface;
+          import android.webkit.WebChromeClient;
+          import android.webkit.WebSettings;
+          import android.webkit.WebView;
+          import android.webkit.WebViewClient;
+          import android.widget.Toast;
 
-  <!-- टॅब ४ -->
-  <div id="tabFour" class="tab-section">
-    <div class="empty-card">
-      <h3>टॅब ४</h3>
-      <p style="margin-top: 8px; color: #757575;">येथे पुढील नवीन कामांचे पर्याय जोडता येतील.</p>
-    </div>
-  </div>
+          public class MainActivity extends Activity {
 
-  <!-- टॅब ५ -->
-  <div id="tabFive" class="tab-section">
-    <div class="empty-card">
-      <h3>टॅब ५</h3>
-      <p style="margin-top: 8px; color: #757575;">येथे इतर स्वतंत्र मोड्यूल जोडता येईल.</p>
-    </div>
-  </div>
+              private WebView webView;
 
-  <!-- प्रिंट एरिया (A4 रिपोर्टसाठी) -->
-  <div id="printArea" style="display: none;"></div>
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
 
-  <!-- ==================== जावास्क्रिप्ट लॉजिक ==================== -->
-  <script>
-    // १. टॅब स्विच फंक्शन
-    function switchTab(evt, tabId) {
-      document.querySelectorAll(".tab-section").forEach(function(sec) {
-        sec.classList.remove("active");
-      });
-      document.querySelectorAll(".master-tab-btn").forEach(function(btn) {
-        btn.classList.remove("active");
-      });
+                  webView = new WebView(this);
+                  setContentView(webView);
 
-      document.getElementById(tabId).classList.add("active");
-      evt.currentTarget.classList.add("active");
-    }
+                  WebSettings settings = webView.getSettings();
+                  settings.setJavaScriptEnabled(true);
+                  settings.setDomStorageEnabled(true);
+                  settings.setDatabaseEnabled(true);
+                  settings.setAllowFileAccess(true);
+                  settings.setAllowContentAccess(true);
+                  settings.setLoadWithOverviewMode(true);
+                  settings.setUseWideViewPort(true);
+                  settings.setTextZoom(100);
 
-    // २. घटक बदलल्यावर उपघटक अपडेट करणे
-    function onCategorySelectChange() {
-      var cat = document.getElementById("mainCatSelect").value;
-      var sub = document.getElementById("subCatSelect");
-      sub.innerHTML = "";
+                  webView.setWebChromeClient(new WebChromeClient());
 
-      if (cat === "MB") {
-        sub.innerHTML = `
-          <option value="सर्व M.B.">सर्व M.B.</option>
-          <option value="लहान M.B.">लहान M.B.</option>
-          <option value="मोठी M.B.">मोठी M.B.</option>
-        `;
-      } else if (cat === "JE") {
-        sub.innerHTML = `
-          <option value="सर्व JE">सर्व Junior Engineer</option>
-          <option value="श्री उंबरजे रावसाहेब">श्री उंबरजे रावसाहेब</option>
-        `;
-      } else if (cat === "WORK") {
-        sub.innerHTML = `<option value="सर्व कामे">सर्व कामे</option>`;
-      } else if (cat === "BILL") {
-        sub.innerHTML = `<option value="सर्व बिले">सर्व बिले</option>`;
-      } else if (cat === "CONTRACTOR") {
-        sub.innerHTML = `<option value="सर्व कंत्राटदार">सर्व कंत्राटदार</option>`;
-      }
-    }
+                  AndroidBridge bridge = new AndroidBridge();
+                  webView.addJavascriptInterface(bridge, "MBMSAndroid");
+                  webView.addJavascriptInterface(bridge, "AndroidBridge");
 
-    // प्रिंट ट्रिगर
-    function printA4Content(html) {
-      var pa = document.getElementById("printArea");
-      pa.innerHTML = html;
-      pa.style.display = "block";
-      setTimeout(function() {
-        window.print();
-        setTimeout(function() { pa.style.display = "none"; }, 500);
-      }, 150);
-    }
+                  webView.setWebViewClient(new WebViewClient() {
+                      @Override
+                      public void onPageFinished(WebView view, String url) {
+                          super.onPageFinished(view, url);
+                          webView.evaluateJavascript(
+                              "window.print=function(){ if(window.MBMSAndroid) window.MBMSAndroid.print(); };",
+                              null
+                          );
+                      }
+                  });
 
-    // ३. अहवाल जनरेशन
-    function executeReportPrint() {
-      var search = document.getElementById("smartInput").value.trim();
-      var cat = document.getElementById("mainCatSelect").value;
-      var sub = document.getElementById("subCatSelect").value;
+                  webView.loadUrl("file:///android_asset/index.html");
+              }
 
-      if (search.length > 0) {
-        var h = '<div style="text-align: center; margin-bottom: 8px;">';
-        h += '  <h2>सार्वजनिक बांधकाम विभाग - शोध अहवाल</h2>';
-        h += '  <h4>शोध घटक: ' + search + '</h4>';
-        h += '</div><p style="text-align:center;">' + search + ' बाबतची संपूर्ण नोंद उपलब्ध आहे.</p>';
-        printA4Content(h);
-        return;
-      }
+              public class AndroidBridge {
+                  @JavascriptInterface
+                  public void print() {
+                      runOnUiThread(new Runnable() {
+                          @Override
+                          public void run() {
+                              try {
+                                  PrintManager manager = (PrintManager) getSystemService(Context.PRINT_SERVICE);
+                                  if (manager != null && webView != null) {
+                                      webView.postDelayed(new Runnable() {
+                                          @Override
+                                          public void run() {
+                                              try {
+                                                  PrintDocumentAdapter adapter = webView.createPrintDocumentAdapter("MBMS Report");
+                                                  PrintAttributes attributes = new PrintAttributes.Builder()
+                                                          .setMediaSize(PrintAttributes.MediaSize.ISO_A4)
+                                                          .setMinMargins(PrintAttributes.Margins.NO_MARGINS)
+                                                          .build();
+                                                  manager.print("MBMS Report", adapter, attributes);
+                                              } catch (Exception e) {
+                                                  Toast.makeText(MainActivity.this, "Print अयशस्वी!", Toast.LENGTH_SHORT).show();
+                                              }
+                                          }
+                                      }, 350);
+                                  }
+                              } catch (Exception e) {
+                                  Toast.makeText(MainActivity.this, "Print सुरू करता आले नाही.", Toast.LENGTH_SHORT).show();
+                              }
+                          }
+                      });
+                  }
+              }
 
-      if (cat === "MB") {
-        var h = '<div style="text-align: center; margin-bottom: 8px;">';
-        h += '  <h2 style="margin: 0; font-size: 17px; font-weight: bold;">सार्वजनिक बांधकाम विभाग</h2>';
-        h += '  <h3 style="margin: 3px 0 6px 0; font-size: 14px; text-decoration: underline;">मोजमाप पुस्तिका अहवाल</h3>';
-        h += '</div>';
-        h += '<div style="display: flex; justify-content: space-between; font-size: 11.5px; margin-bottom: 4px;">';
-        h += '  <span><b>प्रकार:</b> ' + sub + '</span>';
-        h += '  <span><b>दिनांक:</b> ' + new Date().toLocaleDateString('en-GB') + '</span>';
-        h += '</div>';
-        h += '<table class="print-table" border="1">';
-        h += '  <thead><tr>';
-        h += '    <th style="width: 1%; white-space: nowrap; text-align: center;">अ.क्र.</th>';
-        h += '    <th style="width: 1%; white-space: nowrap; text-align: center;">M.B. क्रमांक</th>';
-        h += '    <th style="width: 1%; white-space: nowrap; text-align: center;">M.B. ची साईज</th>';
-        h += '    <th style="text-align: left;">सध्या कोणाकडे आहे (JE चे नाव)</th>';
-        h += '  </tr></thead><tbody>';
-        h += '  <tr>';
-        h += '    <td style="text-align: center;">१</td>';
-        h += '    <td style="text-align: center;">00100100</td>';
-        h += '    <td style="text-align: center;">लहान</td>';
-        h += '    <td>श्री उंबरजे रावसाहेब</td>';
-        h += '  </tr>';
-        h += '  <tr>';
-        h += '    <td style="text-align: center;">२</td>';
-        h += '    <td style="text-align: center;">00200200</td>';
-        h += '    <td style="text-align: center;">मोठी</td>';
-        h += '    <td>स्टॉकमध्ये उपलब्ध</td>';
-        h += '  </tr>';
-        h += '</tbody></table>';
-        printA4Content(h);
-      } else {
-        alert(cat + " चा " + sub + " अहवाल जनरेट होत आहे...");
-      }
-    }
-  </script>
-</body>
-</html>
+              @Override
+              public void onBackPressed() {
+                  if (webView != null) {
+                      webView.evaluateJavascript(
+                          "(function(){ return (window.handleAndroidBack && window.handleAndroidBack()); })();",
+                          value -> {
+                              if (!"true".equals(value)) {
+                                  if (webView.canGoBack()) {
+                                      webView.goBack();
+                                  } else {
+                                      super.onBackPressed();
+                                  }
+                              }
+                          }
+                      );
+                  } else {
+                      super.onBackPressed();
+                  }
+              }
+
+              @Override
+              protected void onDestroy() {
+                  if (webView != null) {
+                      webView.stopLoading();
+                      webView.destroy();
+                      webView = null;
+                  }
+                  super.onDestroy();
+              }
+          }
+          EOF
+
+      - name: Setup Gradle 8.7
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Assemble Final Debug APK
+        working-directory: mbms_android
+        shell: bash
+        run: |
+          set -e
+          gradle --no-daemon --stacktrace clean :app:assembleDebug
+
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          cp "$APK" "../release/MBMS-V142-TABS-FIX.apk"
+          ls -lh "../release/MBMS-V142-TABS-FIX.apk"
+
+      - name: Upload Final APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MBMS-V142-TABS-FIX-APK
+          path: release/MBMS-V142-TABS-FIX.apk
+          if-no-files-found: error
