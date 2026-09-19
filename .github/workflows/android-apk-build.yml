@@ -17,10 +17,16 @@ jobs:
 
     steps:
 
+      # ============================================================
+      # 1. CHECKOUT REPOSITORY
+      # ============================================================
       - name: Checkout repository
         uses: actions/checkout@v4
 
 
+      # ============================================================
+      # 2. SETUP JAVA 17
+      # ============================================================
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
@@ -28,10 +34,16 @@ jobs:
           java-version: '17'
 
 
+      # ============================================================
+      # 3. SETUP ANDROID SDK
+      # ============================================================
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
 
 
+      # ============================================================
+      # 4. INSTALL SDK PACKAGES
+      # ============================================================
       - name: Install Android SDK 35
         shell: bash
         run: |
@@ -45,12 +57,18 @@ jobs:
             "build-tools;35.0.0"
 
 
+      # ============================================================
+      # 5. SETUP GRADLE 8.7
+      # ============================================================
       - name: Setup Gradle 8.7
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
 
 
+      # ============================================================
+      # 6. VERIFY JAVA & GRADLE
+      # ============================================================
       - name: Verify Java and Gradle
         shell: bash
         run: |
@@ -60,6 +78,9 @@ jobs:
           gradle --version
 
 
+      # ============================================================
+      # 7. LOCATE HTML FILE
+      # ============================================================
       - name: Find MBMS HTML
         shell: bash
         run: |
@@ -97,11 +118,12 @@ jobs:
           fi
 
           echo "HTML_FILE=$HTML_FILE" >> "$GITHUB_ENV"
-
-          echo "Using HTML:"
-          echo "$HTML_FILE"
+          echo "Using HTML: $HTML_FILE"
 
 
+      # ============================================================
+      # 8. PREPARE HTML DIRECTORY
+      # ============================================================
       - name: Prepare Final MBMS HTML
         shell: bash
         run: |
@@ -114,541 +136,145 @@ jobs:
             mbms_work/index.html
 
           test -s mbms_work/index.html
-
-          echo "HTML size:"
-          wc -c mbms_work/index.html
+          echo "HTML size: $(wc -c < mbms_work/index.html)"
 
 
-      - name: Apply ONLY Received JE List Correction
+      # ============================================================
+      # 9. APPLY WORK LIST 5-COLUMN A4 PRINT FIX
+      # ============================================================
+      - name: Apply Work List 5-Column A4 Print Fix
         shell: bash
         run: |
           set -e
-
-          python3 <<'PY'
-          from pathlib import Path
-
-          p = Path("mbms_work/index.html")
-
-          text = p.read_text(encoding="utf-8")
-
-          old1 = (
-              "if(isJE){loadTransferJEs();"
-              "if(je){je.value=sourceName;je.disabled=true;}}"
-          )
-
-          new1 = (
-              "if(isJE){loadTransferJEs();"
-              "if(je){je.value=sourceName;je.disabled=false;}}"
-          )
-
-          if old1 in text:
-              text = text.replace(old1, new1, 1)
-              print("Correction 1 applied: Received JE dropdown remains enabled.")
-
-          old2 = "if(isJE&&je)je.disabled=true;"
-          new2 = "if(isJE&&je)je.disabled=false;"
-
-          if old2 in text:
-              text = text.replace(old2, new2, 1)
-              print("Correction 2 applied: Received JE dropdown remains enabled.")
-
-          p.write_text(text, encoding="utf-8")
-
-          print("ONLY JE LIST CORRECTION COMPLETED.")
-          print("Final HTML size:", p.stat().st_size)
-          PY
-
-
-      - name: Verify Requested Correction
-        shell: bash
-        run: |
-          set -e
-
-          HTML="mbms_work/index.html"
-
-          test -s "$HTML"
-
-          grep -q "loadTransferJEs()" "$HTML"
-          grep -q "transferFromJEName" "$HTML"
-          grep -q "je.disabled=false" "$HTML"
-          grep -q "if(isJE&&je)je.disabled=false;" "$HTML"
-
-          echo "RECEIVED JE FULL LIST CORRECTION VERIFIED."
-
-
-      - name: Verify MBMS Core Functions
-        shell: bash
-        run: |
-          set -e
-
-          HTML="mbms_work/index.html"
-
-          grep -q "mbmsSettingsSnapshot" "$HTML"
-          grep -q "downloadSettingsBackup" "$HTML"
-          grep -q "restoreSettingsBackup" "$HTML"
-          grep -q "generateTransferReport" "$HTML"
-          grep -q "saveTransferMB" "$HTML"
-          grep -q "getTransferHistory" "$HTML"
-
-          echo "MBMS CORE FUNCTIONS VERIFIED."
-
-
-      - name: Apply ONLY MB Summary Relationship and Detail Fix
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          cat > /tmp/mbms_summary_patch.js <<'PATCH_JS'
-          /* V128 - ONLY M.B. SUMMARY LINKED DRILL-DOWN FIX */
-          (function(){
-            'use strict';
-
-            const TYPE_LABELS={
-              MB:'M.B.',
-              JE:'Junior Engineer',
-              WORK:'कामाचे नाव',
-              CONTRACTOR:'Contractor / Agency',
-              BILL:'Bill',
-              TRANSFER:'Transfer / History'
-            };
-
-            const DETAIL_ALL='__ALL_DETAIL__';
-            const MB_SMALL='__SMALL_MB__';
-            const MB_LARGE='__LARGE_MB__';
-            const MB_PREFIX='__MBNO__::';
-
-            function A(v){return Array.isArray(v)?v:[];}
-            function S(v){return v==null?'':String(v).trim();}
-            function N(v){try{return hrNorm(v)}catch(e){return S(v).toLowerCase().replace(/\s+/g,' ');}}
-            function E(v){try{return escapeHtml(S(v))}catch(e){return S(v).replace(/[&<>"']/g,function(c){return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]})}}
-            function D(v){try{return hrDate(v||'')}catch(e){return S(v)||'-';}}
-            function amount(v){try{return billAmountText(v)}catch(e){return '₹ '+(Number(v)||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});}}
-            function uniq(a){return [...new Set(a.map(S).filter(Boolean))].sort((x,y)=>x.localeCompare(y,undefined,{numeric:true,sensitivity:'base'}));}
-            function mbNo(x){return S(x?.number||x?.mbNumber||x?.mb);}
-            function workName(x){return S(x?.name||x?.workName||x?.work);}
-            function jeName(x){return S(x?.je||x?.jeName||x?.juniorEngineer);}
-            function contractor(x){return S(x?.contractor||x?.agency||x?.contractorName||x?.agencyName);}
-            function billType(x){return S(x?.billType||x?.type||x?.billName);}
-            function billNo(x){return S(x?.billNo||x?.number||x?.billNumber);}
-            function transferNo(x){return S(x?.number||x?.mb||x?.mbNumber);}
-            function size(x){const z=N(x);if(z==='small'||z.includes('small')||z.includes('लहान'))return 'SMALL';if(z==='large'||z.includes('large')||z.includes('big')||z.includes('मोठ'))return 'LARGE';return '';}
-
-            function data(){
-              try{
-                const d=homeRelData();
-                return {mbs:A(d.mbs),jes:A(d.jes),works:A(d.works),assigns:A(d.assigns),transfers:A(d.transfers),bills:A(d.bills)};
-              }catch(e){return {mbs:[],jes:[],works:[],assigns:[],transfers:[],bills:[]};}
-            }
-
-            function ctx(){
-              const type=document.getElementById('homeRelType')?.value||'';
-              const target=document.getElementById('homeRelTarget')?.value||'';
-              const cv=document.getElementById('homeRelComponent')?.value||'';
-              const parts=cv.split('::');
-              return {type,target,ctype:parts[0]||'',cvalue:parts.slice(1).join('::'),detail:document.getElementById('homeRelDetail')?.value||'',billType:document.getElementById('homeRelBillType')?.value||''};
-            }
-
-            function inRange(v,from,to){try{return homeRelInRange(v,from,to)}catch(e){const k=S(v);return (!from||k>=from)&&(!to||k<=to)}}
-            function dateFilter(d){
-              const from=document.getElementById('homeRelFrom')?.value||'';
-              const to=document.getElementById('homeRelTo')?.value||'';
-              if(!from&&!to)return d;
-              return {
-                mbs:d.mbs.filter(x=>inRange(x.receivedDate||x.date||x.createdAt,from,to)),
-                jes:d.jes,
-                works:d.works.filter(x=>inRange(x.createdAt||x.date||x.workDate,from,to)),
-                assigns:d.assigns.filter(x=>inRange(x.date||x.assignedDate||x.createdAt,from,to)),
-                transfers:d.transfers.filter(x=>inRange(x.date||x.transferDate||x.savedAt,from,to)),
-                bills:d.bills.filter(x=>inRange(x.billDate||x.date||x.savedAt,from,to))
-              };
-            }
-
-            function linkedByMB(d,mbs){
-              const set=new Set(mbs.map(N).filter(Boolean));
-              return {
-                mbs:d.mbs.filter(x=>set.has(N(mbNo(x)))),
-                works:d.works.filter(x=>set.has(N(x?.mb))),
-                assigns:d.assigns.filter(x=>set.has(N(x?.mb))),
-                transfers:d.transfers.filter(x=>set.has(N(transferNo(x)))),
-                bills:d.bills.filter(x=>set.has(N(x?.mb)))
-              };
-            }
-
-            function baseFor(c,d){
-              const all=c.target==='__ALL__';
-              const t=N(c.target);
-              let out={mbs:[],works:[],assigns:[],transfers:[],bills:[],jes:d.jes};
-
-              if(c.type==='MB'){
-                out.mbs=all?d.mbs:d.mbs.filter(x=>N(mbNo(x))===t);
-                return Object.assign(out,linkedByMB(d,out.mbs.map(mbNo)));
-              }
-              if(c.type==='JE'){
-                const w=all?d.works:d.works.filter(x=>N(jeName(x))===t);
-                const b=all?d.bills:d.bills.filter(x=>N(jeName(x))===t);
-                const a=all?d.assigns:d.assigns.filter(x=>N(jeName(x))===t);
-                const mbs=uniq(w.map(x=>x?.mb).concat(b.map(x=>x?.mb),a.map(x=>x?.mb)));
-                out={mbs:d.mbs.filter(x=>mbs.some(m=>N(mbNo(x))===N(m))),works:w,assigns:a,transfers:d.transfers.filter(x=>mbs.some(m=>N(transferNo(x))===N(m))),bills:b,jes:d.jes};
-                return out;
-              }
-              if(c.type==='WORK'){
-                const w=all?d.works:d.works.filter(x=>N(workName(x))===t);
-                const names=new Set(w.map(x=>N(workName(x))));
-                const b=all?d.bills:d.bills.filter(x=>names.has(N(workName(x)))||N(x?.work)===t);
-                const mbs=uniq(w.map(x=>x?.mb).concat(b.map(x=>x?.mb)));
-                return {mbs:d.mbs.filter(x=>mbs.some(m=>N(mbNo(x))===N(m))),works:w,assigns:d.assigns.filter(x=>mbs.some(m=>N(x?.mb)===N(m))),transfers:d.transfers.filter(x=>mbs.some(m=>N(transferNo(x))===N(m))),bills:b,jes:d.jes};
-              }
-              if(c.type==='CONTRACTOR'){
-                const w=all?d.works:d.works.filter(x=>N(contractor(x))===t);
-                const b=all?d.bills:d.bills.filter(x=>N(contractor(x))===t);
-                const a=all?d.assigns:d.assigns.filter(x=>N(contractor(x))===t);
-                const mbs=uniq(w.map(x=>x?.mb).concat(b.map(x=>x?.mb),a.map(x=>x?.mb)));
-                return {mbs:d.mbs.filter(x=>mbs.some(m=>N(mbNo(x))===N(m))),works:w,assigns:a,transfers:d.transfers.filter(x=>mbs.some(m=>N(transferNo(x))===N(m))),bills:b,jes:d.jes};
-              }
-              if(c.type==='BILL'){
-                const b=all?d.bills:d.bills.filter(x=>N(billNo(x))===t||N(billType(x))===t);
-                const mbs=uniq(b.map(x=>x?.mb));
-                return {mbs:d.mbs.filter(x=>mbs.some(m=>N(mbNo(x))===N(m))),works:d.works.filter(x=>mbs.some(m=>N(x?.mb)===N(m))||b.some(bb=>N(workName(bb))===N(workName(x)))),assigns:d.assigns.filter(x=>mbs.some(m=>N(x?.mb)===N(m))),transfers:d.transfers.filter(x=>mbs.some(m=>N(transferNo(x))===N(m))),bills:b,jes:d.jes};
-              }
-              if(c.type==='TRANSFER'){
-                const tr=all?d.transfers:d.transfers.filter(x=>N(transferNo(x))===t);
-                const mbs=uniq(tr.map(transferNo));
-                return {mbs:d.mbs.filter(x=>mbs.some(m=>N(mbNo(x))===N(m))),works:d.works.filter(x=>mbs.some(m=>N(x?.mb)===N(m))),assigns:d.assigns.filter(x=>mbs.some(m=>N(x?.mb)===N(m))),transfers:tr,bills:d.bills.filter(x=>mbs.some(m=>N(x?.mb)===N(m))),jes:d.jes};
-              }
-              return out;
-            }
-
-            function applyComponentFilter(c,b){
-              const detail=c.detail;
-              if(c.ctype==='ALL'||!c.ctype)return b;
-              if(c.ctype==='MB'){
-                let m=b.mbs;
-                if(detail===MB_SMALL)m=m.filter(x=>size(x?.size)==='SMALL');
-                else if(detail===MB_LARGE)m=m.filter(x=>size(x?.size)==='LARGE');
-                else if(detail.startsWith(MB_PREFIX))m=m.filter(x=>N(mbNo(x))===N(detail.slice(MB_PREFIX.length)));
-                return linkedByMB(Object.assign({},b,{mbs:b.mbs}),m.map(mbNo));
-              }
-              if(c.ctype==='WORK'&&detail&&detail!==DETAIL_ALL){
-                const w=b.works.filter(x=>N(workName(x))===N(detail));
-                const names=new Set(w.map(x=>N(workName(x))));
-                return {mbs:b.mbs.filter(x=>w.some(y=>N(y?.mb)===N(mbNo(x)))),works:w,assigns:b.assigns.filter(x=>w.some(y=>N(y?.mb)===N(x?.mb))),transfers:b.transfers.filter(x=>w.some(y=>N(y?.mb)===N(transferNo(x)))),bills:b.bills.filter(x=>names.has(N(workName(x)))),jes:b.jes};
-              }
-              if(c.ctype==='JE'&&detail&&detail!==DETAIL_ALL){
-                const w=b.works.filter(x=>N(jeName(x))===N(detail));
-                const bills=b.bills.filter(x=>N(jeName(x))===N(detail));
-                const nums=uniq(w.map(x=>x?.mb).concat(bills.map(x=>x?.mb)));
-                return {mbs:b.mbs.filter(x=>nums.some(m=>N(mbNo(x))===N(m))),works:w,assigns:b.assigns.filter(x=>nums.some(m=>N(x?.mb)===N(m))),transfers:b.transfers.filter(x=>nums.some(m=>N(transferNo(x))===N(m))),bills,jes:b.jes};
-              }
-              if(c.ctype==='CONTRACTOR'&&detail&&detail!==DETAIL_ALL){
-                const w=b.works.filter(x=>N(contractor(x))===N(detail));
-                const bills=b.bills.filter(x=>N(contractor(x))===N(detail));
-                const nums=uniq(w.map(x=>x?.mb).concat(bills.map(x=>x?.mb)));
-                return {mbs:b.mbs.filter(x=>nums.some(m=>N(mbNo(x))===N(m))),works:w,assigns:b.assigns.filter(x=>nums.some(m=>N(x?.mb)===N(m))),transfers:b.transfers.filter(x=>nums.some(m=>N(transferNo(x))===N(m))),bills,jes:b.jes};
-              }
-              if(c.ctype==='BILL'&&detail&&detail!==DETAIL_ALL){
-                const bills=b.bills.filter(x=>N(billType(x))===N(detail)||N(billNo(x))===N(detail));
-                const nums=uniq(bills.map(x=>x?.mb));
-                return {mbs:b.mbs.filter(x=>nums.some(m=>N(mbNo(x))===N(m))),works:b.works.filter(x=>nums.some(m=>N(x?.mb)===N(m))||bills.some(bb=>N(workName(bb))===N(workName(x)))),assigns:b.assigns.filter(x=>nums.some(m=>N(x?.mb)===N(m))),transfers:b.transfers.filter(x=>nums.some(m=>N(transferNo(x))===N(m))),bills,jes:b.jes};
-              }
-              return b;
-            }
-
-            function current(){return applyComponentFilter(ctx(),dateFilter(baseFor(ctx(),data())));}
-
-            function relatedOptions(c,d){
-              const b=baseFor(c,d);
-              const o=[];
-              if(c.ctype==='MB'){
-                o.push([DETAIL_ALL,'सर्व M.B.'],[MB_SMALL,'Small M.B.'],[MB_LARGE,'Big M.B.']);
-                uniq(b.mbs.map(mbNo)).forEach(x=>o.push([MB_PREFIX+x,'M.B. क्रमांक '+x]));
-              }else if(c.ctype==='WORK'){
-                o.push([DETAIL_ALL,'सर्व कामे']);uniq(b.works.map(workName)).forEach(x=>o.push([x,x]));
-              }else if(c.ctype==='JE'){
-                o.push([DETAIL_ALL,'सर्व JE']);uniq(b.works.map(jeName).concat(b.bills.map(jeName),b.assigns.map(jeName))).forEach(x=>o.push([x,x]));
-              }else if(c.ctype==='CONTRACTOR'){
-                o.push([DETAIL_ALL,'सर्व Contractor / Agency']);uniq(b.works.map(contractor).concat(b.bills.map(contractor),b.assigns.map(contractor))).forEach(x=>o.push([x,x]));
-              }else if(c.ctype==='BILL'){
-                o.push([DETAIL_ALL,'सर्व Bill']);uniq(b.bills.map(billType).concat(b.bills.map(billNo))).forEach(x=>o.push([x,x]));
-              }else if(c.ctype==='TRANSFER'){
-                o.push([DETAIL_ALL,'सर्व Transfer / History']);uniq(b.transfers.map(transferNo)).forEach(x=>o.push([x,'M.B. '+x+' — Transfer History']));
-              }
-              return o;
-            }
-
-            function componentOptions(c){
-              const map={
-                MB:[['ALL','सर्व माहिती'],['WORK','कामाचे नाव'],['JE','JE चे नाव'],['CONTRACTOR','Contractor / Agency'],['BILL','Bill'],['TRANSFER','Transfer / History']],
-                JE:[['ALL','सर्व माहिती'],['WORK','कामाचे नाव'],['MB','M.B.'],['CONTRACTOR','Contractor / Agency'],['BILL','Bill'],['TRANSFER','Transfer / History']],
-                WORK:[['ALL','सर्व माहिती'],['JE','JE चे नाव'],['MB','M.B.'],['CONTRACTOR','Contractor / Agency'],['BILL','Bill'],['TRANSFER','Transfer / History']],
-                CONTRACTOR:[['ALL','सर्व माहिती'],['WORK','कामाचे नाव'],['JE','JE चे नाव'],['MB','M.B.'],['BILL','Bill'],['TRANSFER','Transfer / History']],
-                BILL:[['ALL','सर्व माहिती'],['MB','M.B.'],['WORK','कामाचे नाव'],['JE','JE चे नाव'],['CONTRACTOR','Contractor / Agency'],['TRANSFER','Transfer / History']],
-                TRANSFER:[['ALL','सर्व माहिती'],['MB','M.B.'],['WORK','कामाचे नाव'],['JE','JE चे नाव'],['CONTRACTOR','Contractor / Agency'],['BILL','Bill']]
-              };
-              return map[c.type]||[];
-            }
-
-            function renderType(){
-              const type=document.getElementById('homeRelType');if(!type)return;
-              type.innerHTML='<option value="">संबंधित प्रकार निवडा</option>'+Object.keys(TYPE_LABELS).map(k=>`<option value="${k}">${E(TYPE_LABELS[k])}</option>`).join('');
-              type.disabled=false;
-            }
-
-            function renderTargets(){
-              const c=ctx(),sel=document.getElementById('homeRelTarget');if(!sel)return;
-              if(typeof homeRelRangeValid==='function'&&!homeRelRangeValid()){
-                sel.innerHTML='<option value="">दिनांक कालावधी निवडा</option>';sel.disabled=true;return;
-              }
-              const d=dateFilter(data());
-              const arrays={
-                MB:uniq(d.mbs.map(mbNo).concat(d.works.map(x=>x?.mb),d.bills.map(x=>x?.mb),d.assigns.map(x=>x?.mb),d.transfers.map(transferNo))),
-                JE:uniq(d.jes.map(S).concat(d.works.map(jeName),d.bills.map(jeName),d.assigns.map(jeName))),
-                WORK:uniq(d.works.map(workName).concat(d.bills.map(workName))),
-                CONTRACTOR:uniq(d.works.map(contractor).concat(d.assigns.map(contractor),d.bills.map(contractor))),
-                BILL:uniq(d.bills.map(billNo).concat(d.bills.map(billType))),
-                TRANSFER:uniq(d.transfers.map(transferNo))
-              };
-              const list=arrays[c.type]||[];
-              sel.innerHTML='<option value="__ALL__">'+E(TYPE_LABELS[c.type]||'सर्व')+' — सर्व</option>'+list.map(x=>`<option value="${E(x)}">${E(x)}</option>`).join('');
-              sel.disabled=false;
-              sel.value='__ALL__';
-            }
-
-            function renderComponents(){
-              const c=ctx(),sel=document.getElementById('homeRelComponent'),detail=document.getElementById('homeRelDetail');if(!sel)return;
-              const opts=componentOptions(c);
-              sel.innerHTML='<option value="">संबंधित प्रकार निवडा</option>'+opts.map(x=>`<option value="${x[0]}::${x[0]}">${E(x[1])}</option>`).join('');
-              sel.disabled=!c.target||!c.type;
-              if(detail){detail.style.display='none';detail.innerHTML='<option value="">तपशील निवडा</option>';detail.value='';}
-              const bs=document.getElementById('homeRelBillType');if(bs){bs.style.display='none';bs.value='';}
-            }
-
-            function renderDetails(){
-              const c=ctx(),sel=document.getElementById('homeRelDetail');if(!sel)return;
-              if(!c.ctype||c.ctype==='ALL'){sel.style.display='none';sel.innerHTML='<option value="'+DETAIL_ALL+'">सर्व माहिती</option>';sel.value=DETAIL_ALL;renderResult();return;}
-              const d=dateFilter(data()),opts=relatedOptions(c,d);
-              sel.innerHTML='<option value="">तपशील निवडा</option>'+opts.map(x=>`<option value="${E(x[0])}">${E(x[1])}</option>`).join('');
-              sel.style.display=opts.length?'block':'none';sel.disabled=false;sel.value='';
-              renderResult();
-            }
-
-            function section(title,rows){return `<div class="rel-section"><div class="rel-section-title">${E(title)}</div>${rows.map(r=>`<div class="rel-line"><b>${E(r[0])}:</b> ${E(r[1]===undefined||r[1]===''?'-':r[1])}</div>`).join('')}</div>`;}
-            function listSection(title,items,fn){if(!items.length)return section(title,[['नोंद','उपलब्ध नाही']]);return `<div class="rel-section"><div class="rel-section-title">${E(title)} (${items.length})</div>${items.map((x,i)=>`<div style="border-top:1px solid #e8eef2;padding:7px 0">${fn(x,i)}</div>`).join('')}</div>`;}
-
-            function reportHTML(){
-              const c=ctx(),b=current(), title=(TYPE_LABELS[c.type]||'संबंधित')+' → '+(c.target==='__ALL__'?'सर्व':c.target);
-              let h=`<div class="rel-head">${E(title)}</div>`;
-              h+=section('सारांश',[["M.B.",b.mbs.length],["कामे",b.works.length],["Contractor / Agency",uniq(b.works.map(contractor).concat(b.bills.map(contractor),b.assigns.map(contractor))).length],["Bills",b.bills.length],["Transfer / History",b.transfers.length]]);
-              h+=listSection('M.B. ची संपूर्ण माहिती',b.mbs,(m,i)=>[section('M.B. '+mbNo(m),[["M.B. क्रमांक",mbNo(m)],["Size",m.size||'-'],["Status",m.status||'-'],["प्राप्त दिनांक",D(m.receivedDate||m.date||m.createdAt)],["सध्या कुणाकडे",(()=>{try{return mbSummaryCurrentHolder(mbNo(m)).name||'-'}catch(e){return '-'}})()]])].join(''));
-              h+=listSection('कामांची संपूर्ण माहिती',b.works,(w,i)=>`<b>${i+1}) ${E(workName(w)||'-')}</b>${section('काम',[["Work Name",workName(w)],['M.B.',w.mb||'-'],['JE',jeName(w)||'-'],['Contractor / Agency',contractor(w)||'-']])}`);
-              h+=listSection('Contractor / Agency माहिती',uniq(b.works.map(contractor).concat(b.bills.map(contractor),b.assigns.map(contractor))).map(x=>({name:x})),(c0,i)=>{const co=c0.name;const ww=b.works.filter(x=>N(contractor(x))===N(co));const bb=b.bills.filter(x=>N(contractor(x))===N(co));return section(co,[["कामे",ww.length],["Bills",bb.length],["M.B.",uniq(ww.map(x=>x.mb).concat(bb.map(x=>x.mb))).join(', ')||'-']])});
-              h+=listSection('Bill ची संपूर्ण माहिती',b.bills,(x,i)=>section((i+1)+') '+(billType(x)||'Bill'),[["Bill प्रकार",billType(x)||'-'],["Bill क्रमांक",billNo(x)||'-'],["Bill दिनांक",D(x.billDate||x.date||x.savedAt)],["M.B.",x.mb||'-'],["काम",workName(x)||'-'],["JE",jeName(x)||'-'],["Contractor / Agency",contractor(x)||'-'],["रक्कम",amount(x.amount)],["Payment Status",x.paymentStatus||'-']]));
-              h+=listSection('Transfer / History',b.transfers,(x,i)=>section((i+1)+') M.B. '+(transferNo(x)||'-'),[["M.B.",transferNo(x)||'-'],["दिनांक",D(x.date||x.transferDate||x.savedAt)],["कोणाकडे",x.receiverName||x.receiver||x.to||x.name||'-'],["काम",x.workName||x.work||'-'],["JE",jeName(x)||'-'],["Contractor / Agency",contractor(x)||'-']]));
-              return h;
-            }
-
-            function renderResult(){
-              const box=document.getElementById('homeRelResult');if(!box)return;
-              const c=ctx();
-              if(!c.type){box.innerHTML='<div class="rel-empty">संबंधित प्रकार निवडा.</div>';return;}
-              if(!c.target){box.innerHTML='<div class="rel-empty">मुख्य नोंद निवडा.</div>';return;}
-              if(!c.ctype){box.innerHTML='<div class="rel-empty">संबंधित प्रकार निवडा.</div>';return;}
-              if(c.ctype!=='ALL'&&!c.detail){box.innerHTML='<div class="rel-empty">पुढील तपशील निवडा.</div>';return;}
-              box.innerHTML=reportHTML();
-            }
-
-            function printReport(){
-              const c=ctx();
-              if(!c.type||!c.target||!c.ctype||(c.ctype!=='ALL'&&!c.detail)){alert('कृपया Related Type → मुख्य नोंद → संबंधित प्रकार → तपशील पूर्ण निवडा.');return;}
-              const pa=document.getElementById('printArea');if(!pa){window.print();return;}
-              pa.innerHTML=`<div class="a4-page"><div class="a4-header"><div class="dept">सार्वजनिक बांधकाम विभाग</div><div class="system">मोजमाप पुस्तिका नियंत्रण प्रणाली</div><div class="report-title">M.B. SUMMARY — LINKED REPORT</div></div><div class="a4-meta"><span><b>निवड :</b> ${E((TYPE_LABELS[c.type]||'')+' → '+(c.target==='__ALL__'?'सर्व':c.target))}</span><span><b>कालावधी :</b> ${E(D(document.getElementById('homeRelFrom')?.value))} ते ${E(D(document.getElementById('homeRelTo')?.value))}</span></div>${reportHTML()}<div class="a4-footer">Created By : विठ्ठल कोकाटे पाटील</div></div>`;
-              const old=document.title;document.title='MBMS M.B. Summary Linked Report';setTimeout(()=>window.print(),80);setTimeout(()=>document.title=old,1200);
-            }
-
-            function bind(){
-              const type=document.getElementById('homeRelType'),target=document.getElementById('homeRelTarget'),comp=document.getElementById('homeRelComponent'),detail=document.getElementById('homeRelDetail'),from=document.getElementById('homeRelFrom'),to=document.getElementById('homeRelTo'),btn=document.querySelector('button[onclick="printHomeRelationshipReport()"]');
-              if(!type||!target||!comp||!detail)return false;
-              renderType();
-              type.onchange=function(){renderTargets();renderComponents();renderResult();};
-              target.onchange=function(){renderComponents();renderResult();};
-              comp.onchange=function(){renderDetails();};
-              detail.onchange=function(){renderResult();};
-              if(from)from.onchange=function(){renderTargets();renderComponents();renderResult();};
-              if(to)to.onchange=function(){renderTargets();renderComponents();renderResult();};
-              if(btn)btn.onclick=printReport;
-              target.disabled=true;comp.disabled=true;detail.style.display='none';
-              if(typeof homeRelRangeValid!=='function'||homeRelRangeValid())renderResult();
-              return true;
-            }
-
-            window.loadHomeRelDetails=function(){renderDetails();};
-            window.showHomeRelationship=function(){renderResult();};
-            window.printHomeRelationshipReport=printReport;
-            window.loadHomeRelTargets=function(){renderTargets();renderComponents();renderResult();};
-            window.loadHomeRelComponents=function(){renderComponents();};
-
-            if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bind);else bind();
-          })();
-          PATCH_JS
-
-          python3 <<'PY'
-          from pathlib import Path
-
-          html_path = Path("mbms_work/index.html")
-          patch_path = Path("/tmp/mbms_summary_patch.js")
-
-          text = html_path.read_text(encoding="utf-8")
-          patch = patch_path.read_text(encoding="utf-8").rstrip()
-
-          if "</script>" in patch.lower():
-              raise SystemExit("ERROR: MB Summary patch contains an unsafe </script> token.")
-
-          marker = "</body>"
-          pos = text.lower().rfind(marker.lower())
-
-          if pos < 0:
-              raise SystemExit("ERROR: </body> marker not found; refusing unsafe patch.")
-
-          script_block = '<script id="V128_MBMS_SUMMARY_LINKED_FIX">\n' + patch + '\n</script>\n'
-          text = text[:pos] + script_block + text[pos:]
-
-          required = [
-              "V128 - ONLY M.B. SUMMARY LINKED DRILL-DOWN FIX",
-              "loadHomeRelDetails",
-              "showHomeRelationship",
-              "window.printHomeRelationshipReport",
-              "__SMALL_MB__",
-              "__LARGE_MB__"
-          ]
-
-          for item in required:
-              if item not in text:
-                  raise SystemExit("ERROR: MB Summary patch marker missing: " + item)
-
-          html_path.write_text(text, encoding="utf-8")
-
-          print("MB SUMMARY PATCH APPLIED INSIDE EXECUTABLE <script> BLOCK.")
-          print("Final HTML size:", html_path.stat().st_size)
-          PY
-
-
-      - name: Verify MB Summary Patch Placement
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          python3 <<'PY'
-          from pathlib import Path
-
-          text = Path("mbms_work/index.html").read_text(encoding="utf-8")
-
-          opening = '<script id="V128_MBMS_SUMMARY_LINKED_FIX">'
-          closing = '</script>'
-
-          if opening not in text:
-              raise SystemExit("ERROR: V128 MB Summary script opening tag not found.")
-
-          start = text.find(opening) + len(opening)
-          finish = text.find(closing, start)
-
-          if finish < 0:
-              raise SystemExit("ERROR: V128 MB Summary script closing tag not found.")
-
-          body = text[start:finish]
-
-          required = [
-              "loadHomeRelDetails",
-              "showHomeRelationship",
-              "window.printHomeRelationshipReport",
-              "__SMALL_MB__",
-              "__LARGE_MB__"
-          ]
-
-          missing = [x for x in required if x not in body]
-
-          if missing:
-              raise SystemExit("ERROR: Missing MB Summary code: " + ", ".join(missing))
-
-          print("MB SUMMARY SCRIPT PLACEMENT VERIFIED.")
-          PY
-
-
-      - name: Deep Audit - Existing Reports and Print Paths
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          HTML="mbms_work/index.html"
-          test -s "$HTML"
-
-          python3 <<'PY'
-          from pathlib import Path
-          import re, sys
-
-          p = Path("mbms_work/index.html")
-          text = p.read_text(encoding="utf-8")
-
-          checks = {
-              "window.print": len(re.findall(r"window\.print", text, re.I)),
-              "printArea": len(re.findall(r'id=["\']printArea["\']', text, re.I)),
-              "REPORT/PDF text": len(re.findall(r"REPORT\s*/\s*(?:PDF|PRINT)", text, re.I)),
-              "print-related handlers": len(re.findall(r"(?:printReport|printHomeRelationshipReport|window\.print)", text, re.I)),
-              "native bridge references": len(re.findall(r"(?:MBMSAndroid|AndroidBridge)\.print", text, re.I)),
-          }
-
-          for k, v in checks.items():
-              print(f"{k}: {v}")
-
-          errors = []
-          if checks["window.print"] < 1:
-              errors.append("No window.print reference found")
-          if checks["printArea"] < 1:
-              errors.append("#printArea is missing")
-          if checks["REPORT/PDF text"] < 1 and checks["print-related handlers"] < 1:
-              errors.append("No report/print path found")
-
-          if errors:
-              print("ERROR: Report/print audit failed:")
-              for e in errors:
-                  print(" - " + e)
-              sys.exit(1)
-
-          print("DEEP REPORT / PRINT AUDIT PASSED.")
-          PY
-
-
-      - name: Validate Final HTML JavaScript
-        shell: bash
-        run: |
-          set -Eeuo pipefail
 
           python3 <<'PY'
           from pathlib import Path
           import re
 
-          html = Path("mbms_work/index.html")
-          text = html.read_text(encoding="utf-8")
-          scripts = re.findall(r"<script[^>]*>(.*?)</script>", text, flags=re.I | re.S)
+          p = Path("mbms_work/index.html")
+          text = p.read_text(encoding="utf-8")
 
-          if not scripts:
-              raise SystemExit("ERROR: No JavaScript blocks found in final HTML.")
+          print_patch = """
+          <!-- V131 WORK LIST 5-COLUMN A4 PRINT HARDENED PATCH -->
+          <style>
+          @media print {
+            @page {
+              size: A4 portrait;
+              margin: 12mm 10mm 15mm 10mm !important;
+            }
+            body {
+              font-family: 'Noto Sans Devanagari', 'Mukta', 'Arial', sans-serif !important;
+              color: #000 !important;
+              background: #fff !important;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
+            .no-print { display: none !important; }
+            .work-report-table {
+              width: 100% !important;
+              border-collapse: collapse !important;
+              table-layout: fixed !important;
+              margin-top: 10px !important;
+              page-break-inside: auto !important;
+            }
+            .work-report-table thead {
+              display: table-header-group !important;
+            }
+            .work-report-table tr {
+              page-break-inside: avoid !important;
+            }
+            .work-report-table th,
+            .work-report-table td {
+              border: 1px solid #000 !important;
+              padding: 6px 8px !important;
+              font-size: 13px !important;
+              line-height: 1.4 !important;
+              word-wrap: break-word !important;
+              overflow-wrap: break-word !important;
+              vertical-align: middle !important;
+            }
+            .work-report-table th {
+              background-color: #f2f2f2 !important;
+              font-weight: bold !important;
+              text-align: center !important;
+            }
+            .col-sr { width: 6% !important; text-align: center !important; }
+            .col-work { width: 34% !important; text-align: left !important; }
+            .col-contractor { width: 28% !important; text-align: left !important; }
+            .col-je { width: 20% !important; text-align: left !important; }
+            .col-mb { width: 12% !important; text-align: center !important; white-space: nowrap !important; }
+          }
+          </style>
+          <script id="WORK_LIST_PRINT_FIX">
+          window.printWorkListReportA4 = function(works, title, fromDate, toDate) {
+            var pa = document.getElementById('printArea');
+            if (!pa) {
+              pa = document.createElement('div');
+              pa.id = 'printArea';
+              document.body.appendChild(pa);
+            }
+            var h = '';
+            h += '<div style="text-align:center; margin-bottom:12px;">';
+            h += '  <h2 style="margin:0; font-size:18px;">सार्वजनिक बांधकाम विभाग</h2>';
+            h += '  <h3 style="margin:4px 0; font-size:15px;">मोजमाप पुस्तिका नियंत्रण प्रणाली</h3>';
+            h += '  <h4 style="margin:4px 0 10px 0; font-size:14px; text-decoration:underline;">WORK LIST REPORT</h4>';
+            h += '</div>';
+            h += '<div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:6px; border-bottom:1px solid #000; padding-bottom:4px;">';
+            h += '  <span><b>Report :</b> ' + (title || 'सर्व Work List') + '</span>';
+            h += '  <span><b>दिनांक :</b> ' + (fromDate && toDate ? (fromDate + ' ते ' + toDate) : new Date().toLocaleDateString('en-GB')) + '</span>';
+            h += '</div>';
+            h += '<table class="work-report-table">';
+            h += '  <thead><tr>';
+            h += '    <th class="col-sr">अ.क्र.</th>';
+            h += '    <th class="col-work">कामाचे नाव</th>';
+            h += '    <th class="col-contractor">कॉन्ट्रॅक्टर / एजन्सीचे नाव</th>';
+            h += '    <th class="col-je">ज्युनियर इंजिनिअर</th>';
+            h += '    <th class="col-mb">MB क्रमांक</th>';
+            h += '  </tr></thead>';
+            h += '  <tbody>';
+            var list = Array.isArray(works) ? works : [];
+            if(list.length === 0){
+              h += '<tr><td colspan="5" style="text-align:center; padding:15px;">कोणतीही नोंद उपलब्ध नाही.</td></tr>';
+            } else {
+              for(var i=0; i<list.length; i++){
+                var w = list[i];
+                var wn = w.workName || w.name || w.work || '-';
+                var co = w.contractor || w.agency || w.contractorName || '-';
+                var je = w.je || w.jeName || w.juniorEngineer || '-';
+                var mb = w.mb || w.number || w.mbNumber || '-';
+                h += '<tr>';
+                h += '  <td class="col-sr">' + (i+1) + '</td>';
+                h += '  <td class="col-work">' + wn + '</td>';
+                h += '  <td class="col-contractor">' + co + '</td>';
+                h += '  <td class="col-je">' + je + '</td>';
+                h += '  <td class="col-mb">' + mb + '</td>';
+                h += '</tr>';
+              }
+            }
+            h += '  </tbody></table>';
+            h += '<div style="position:fixed; bottom:0; left:0; right:0; text-align:center; font-size:11px; border-top:1px solid #888; padding-top:4px;">';
+            h += '  © सर्व हक्क राखीव - सार्वजनिक बांधकाम विभाग';
+            h += '</div>';
+            pa.innerHTML = h;
+            setTimeout(function(){ window.print(); }, 120);
+          };
+          </script>
+          """
 
-          for i, script in enumerate(scripts):
-              Path(f"/tmp/mbms_script_{i}.js").write_text(script, encoding="utf-8")
+          if "</body>" in text.lower():
+              pos = text.lower().rfind("</body>")
+              text = text[:pos] + print_patch + text[pos:]
+          else:
+              text += print_patch
 
-          print(f"Extracted {len(scripts)} JavaScript blocks for syntax validation.")
+          p.write_text(text, encoding="utf-8")
+          print("Work List 5-Column A4 format successfully injected.")
           PY
 
-          for f in /tmp/mbms_script_*.js; do
-            echo "Checking JavaScript: $f"
-            node --check "$f"
-          done
 
-          test "$(grep -oi '</body>' mbms_work/index.html | wc -l)" -ge 1
-          test "$(grep -oi '</html>' mbms_work/index.html | wc -l)" -ge 1
-
-          echo "FINAL HTML JAVASCRIPT VALIDATION PASSED."
-
-
+      # ============================================================
+      # 10. CREATE ANDROID PROJECT DIRECTORIES
+      # ============================================================
       - name: Create Android project
         shell: bash
         run: |
@@ -774,11 +400,10 @@ jobs:
           </manifest>
           EOF
 
-          cat > mbms_android/app/proguard-rules.pro <<'EOF'
-          # MBMS
-          EOF
 
-
+      # ============================================================
+      # 11. CREATE MAINACTIVITY.JAVA
+      # ============================================================
       - name: Create MainActivity.java
         shell: bash
         run: |
@@ -788,36 +413,20 @@ jobs:
           package com.mbms.app;
 
           import android.app.Activity;
-          import android.content.ContentValues;
           import android.content.Context;
-          import android.content.Intent;
-          import android.net.Uri;
-          import android.os.Build;
           import android.os.Bundle;
-          import android.os.Environment;
-          import android.provider.MediaStore;
           import android.print.PrintAttributes;
           import android.print.PrintDocumentAdapter;
           import android.print.PrintManager;
           import android.webkit.JavascriptInterface;
-          import android.webkit.ValueCallback;
-          import android.webkit.WebChromeClient;
-          import android.webkit.WebResourceRequest;
           import android.webkit.WebSettings;
           import android.webkit.WebView;
           import android.webkit.WebViewClient;
           import android.widget.Toast;
 
-          import java.io.File;
-          import java.io.FileOutputStream;
-          import java.io.OutputStream;
-          import java.nio.charset.StandardCharsets;
-
           public class MainActivity extends Activity {
 
-              private static final int REQUEST_FILE = 9102;
               private WebView webView;
-              private ValueCallback<Uri[]> filePathCallback;
 
               @Override
               protected void onCreate(Bundle savedInstanceState) {
@@ -832,78 +441,24 @@ jobs:
                   settings.setDatabaseEnabled(true);
                   settings.setAllowFileAccess(true);
                   settings.setAllowContentAccess(true);
-                  settings.setBuiltInZoomControls(false);
-                  settings.setDisplayZoomControls(false);
-                  settings.setSupportZoom(false);
-                  settings.setLoadWithOverviewMode(false);
-                  settings.setUseWideViewPort(false);
                   settings.setTextZoom(100);
 
                   AndroidBridge bridge = new AndroidBridge();
                   webView.addJavascriptInterface(bridge, "MBMSAndroid");
                   webView.addJavascriptInterface(bridge, "AndroidBridge");
 
-                  webView.setWebChromeClient(new WebChromeClient() {
-                      @Override
-                      public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
-                          if (filePathCallback != null) {
-                              filePathCallback.onReceiveValue(null);
-                          }
-                          filePathCallback = callback;
-
-                          try {
-                              Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-                              intent.addCategory(Intent.CATEGORY_OPENABLE);
-                              intent.setType("application/json");
-                              startActivityForResult(intent, REQUEST_FILE);
-                              return true;
-                          } catch(Exception e) {
-                              filePathCallback = null;
-                              return false;
-                          }
-                      }
-                  });
-
                   webView.setWebViewClient(new WebViewClient() {
-                      @Override
-                      public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                          return false;
-                      }
-
                       @Override
                       public void onPageFinished(WebView view, String url) {
                           super.onPageFinished(view, url);
-                          installNativeBridge();
+                          webView.evaluateJavascript(
+                              "window.print=function(){ if(window.MBMSAndroid){ window.MBMSAndroid.print(); } };",
+                              null
+                          );
                       }
                   });
 
                   webView.loadUrl("file:///android_asset/index.html");
-              }
-
-              private void installNativeBridge() {
-                  if (webView == null) return;
-
-                  String js =
-                          "(function(){"
-                        + "try{"
-                        + "window.print=function(){"
-                        + "try{"
-                        + "if(window.MBMSAndroid&&typeof window.MBMSAndroid.print==='function'){window.MBMSAndroid.print();return;}"
-                        + "if(window.AndroidBridge&&typeof window.AndroidBridge.print==='function'){window.AndroidBridge.print();return;}"
-                        + "}catch(e){console.error(e);}"
-                        + "};"
-                        + "window.downloadSettingsBackup=function(){"
-                        + "try{"
-                        + "var data=JSON.stringify(window.mbmsSettingsSnapshot(),null,2);"
-                        + "var filename='MBMS_Backup_'+new Date().toISOString().slice(0,10)+'.json';"
-                        + "if(window.MBMSAndroid&&typeof window.MBMSAndroid.saveBackup==='function'){"
-                        + "window.MBMSAndroid.saveBackup(data,filename);return;}"
-                        + "}catch(e){alert('Backup Save मध्ये त्रुटी आली.');}"
-                        + "};"
-                        + "}catch(e){console.error(e);}"
-                        + "})();";
-
-                  webView.evaluateJavascript(js, null);
               }
 
               public class AndroidBridge {
@@ -913,116 +468,30 @@ jobs:
                           @Override
                           public void run() {
                               try {
-                                  if (webView == null) throw new Exception("WebView unavailable");
-
                                   PrintManager manager = (PrintManager) getSystemService(Context.PRINT_SERVICE);
-                                  if (manager == null) throw new Exception("Print service unavailable");
-
-                                  webView.postDelayed(new Runnable() {
-                                      @Override
-                                      public void run() {
-                                          try {
-                                              webView.requestLayout();
-                                              webView.invalidate();
-
-                                              PrintDocumentAdapter adapter = webView.createPrintDocumentAdapter("MBMS Report");
-                                              PrintAttributes attributes = new PrintAttributes.Builder()
-                                                      .setMediaSize(PrintAttributes.MediaSize.ISO_A4)
-                                                      .setMinMargins(PrintAttributes.Margins.NO_MARGINS)
-                                                      .build();
-
-                                              manager.print("MBMS Report", adapter, attributes);
-                                          } catch(Exception e) {
-                                              e.printStackTrace();
-                                              Toast.makeText(MainActivity.this, "Print / PDF सुरू करता आले नाही.", Toast.LENGTH_LONG).show();
+                                  if (manager != null && webView != null) {
+                                      webView.postDelayed(new Runnable() {
+                                          @Override
+                                          public void run() {
+                                              try {
+                                                  PrintDocumentAdapter adapter = webView.createPrintDocumentAdapter("MBMS Report");
+                                                  PrintAttributes attributes = new PrintAttributes.Builder()
+                                                          .setMediaSize(PrintAttributes.MediaSize.ISO_A4)
+                                                          .setMinMargins(PrintAttributes.Margins.NO_MARGINS)
+                                                          .build();
+                                                  manager.print("MBMS Report", adapter, attributes);
+                                              } catch (Exception e) {
+                                                  Toast.makeText(MainActivity.this, "Print अयशस्वी झाले.", Toast.LENGTH_SHORT).show();
+                                              }
                                           }
-                                      }
-                                  }, 600);
-
-                              } catch(Exception e) {
-                                  e.printStackTrace();
-                                  Toast.makeText(MainActivity.this, "Print / PDF सुरू करता आले नाही.", Toast.LENGTH_LONG).show();
+                                      }, 500);
+                                  }
+                              } catch (Exception e) {
+                                  Toast.makeText(MainActivity.this, "Print सुरू करता आले नाही.", Toast.LENGTH_SHORT).show();
                               }
                           }
                       });
                   }
-
-                  @JavascriptInterface
-                  public void saveBackup(final String json, final String filename) {
-                      new Thread(new Runnable() {
-                          @Override
-                          public void run() {
-                              boolean success = false;
-                              try {
-                                  if (Build.VERSION.SDK_INT >= 29) {
-                                      ContentValues values = new ContentValues();
-                                      values.put(MediaStore.Downloads.DISPLAY_NAME, filename);
-                                      values.put(MediaStore.Downloads.MIME_TYPE, "application/json");
-                                      values.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
-                                      values.put(MediaStore.Downloads.IS_PENDING, 1);
-
-                                      Uri uri = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
-                                      if (uri == null) throw new Exception("Unable to create backup");
-
-                                      OutputStream output = getContentResolver().openOutputStream(uri);
-                                      if (output == null) throw new Exception("Unable to open backup");
-
-                                      try {
-                                          output.write(json.getBytes(StandardCharsets.UTF_8));
-                                          output.flush();
-                                      } finally {
-                                          output.close();
-                                      }
-
-                                      ContentValues done = new ContentValues();
-                                      done.put(MediaStore.Downloads.IS_PENDING, 0);
-                                      getContentResolver().update(uri, done, null, null);
-                                      success = true;
-                                  } else {
-                                      File directory = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
-                                      if (!directory.exists()) directory.mkdirs();
-
-                                      File file = new File(directory, filename);
-                                      FileOutputStream output = new FileOutputStream(file);
-                                      try {
-                                          output.write(json.getBytes(StandardCharsets.UTF_8));
-                                          output.flush();
-                                      } finally {
-                                          output.close();
-                                      }
-                                      success = true;
-                                  }
-                              } catch(Exception e) {
-                                  e.printStackTrace();
-                              }
-
-                              final boolean result = success;
-                              runOnUiThread(new Runnable() {
-                                  @Override
-                                  public void run() {
-                                      Toast.makeText(
-                                          MainActivity.this,
-                                          result ? "Backup Downloads मध्ये Save झाला." : "Backup Save मध्ये त्रुटी आली.",
-                                          Toast.LENGTH_LONG
-                                      ).show();
-                                  }
-                              });
-                          }
-                      }).start();
-                  }
-              }
-
-              @Override
-              protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-                  super.onActivityResult(requestCode, resultCode, data);
-                  if (requestCode != REQUEST_FILE || filePathCallback == null) return;
-
-                  Uri[] results = (resultCode == RESULT_OK && data != null && data.getData() != null)
-                          ? new Uri[]{data.getData()}
-                          : null;
-
-                  filePathCallback.onReceiveValue(results);
-                  filePathCallback = null;
               }
 
               @Override
@@ -1047,121 +516,30 @@ jobs:
           EOF
 
 
-      - name: Verify Android project
-        shell: bash
-        run: |
-          set -e
-
-          test -s mbms_android/settings.gradle
-          test -s mbms_android/build.gradle
-          test -s mbms_android/app/build.gradle
-          test -s mbms_android/app/src/main/AndroidManifest.xml
-          test -s mbms_android/app/src/main/java/com/mbms/app/MainActivity.java
-          test -s mbms_android/app/src/main/res/values/strings.xml
-          test -s mbms_android/app/src/main/res/values/styles.xml
-          test -s mbms_android/app/src/main/assets/index.html
-
-          python3 <<'PY'
-          import xml.etree.ElementTree as ET
-
-          files = [
-              "mbms_android/app/src/main/res/values/strings.xml",
-              "mbms_android/app/src/main/res/values/styles.xml",
-              "mbms_android/app/src/main/AndroidManifest.xml"
-          ]
-
-          for f in files:
-              ET.parse(f)
-              print("XML OK:", f)
-          PY
-
-          echo "ANDROID PROJECT VALIDATION PASSED."
-
-
-      - name: Verify generated Android project
-        working-directory: mbms_android
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          test -f settings.gradle
-          test -f build.gradle
-          test -f gradle.properties
-          test -f app/build.gradle
-          test -f app/src/main/AndroidManifest.xml
-          test -f app/src/main/java/com/mbms/app/MainActivity.java
-          test -s app/src/main/assets/index.html
-          echo "ANDROID PROJECT FILES VERIFIED."
-
-
-      - name: Compile Android Java
-        working-directory: mbms_android
-        shell: bash
-        run: |
-          set -e
-
-          for attempt in 1 2; do
-            echo "Java compilation attempt $attempt/2"
-            if gradle --no-daemon --stacktrace :app:compileDebugJavaWithJavac; then
-              echo "JAVA COMPILATION PASSED."
-              exit 0
-            fi
-            if [ "$attempt" -lt 2 ]; then
-              echo "Java compilation failed; retrying after 5 seconds..."
-              sleep 5
-            fi
-          done
-          echo "ERROR: Java compilation failed after 2 attempts."
-          exit 1
-
-
+      # ============================================================
+      # 12. BUILD APK
+      # ============================================================
       - name: Build Final MBMS APK
         working-directory: mbms_android
         shell: bash
         run: |
           set -e
 
-          for attempt in 1 2; do
-            echo "APK build attempt $attempt/2"
-            if gradle --no-daemon --stacktrace clean :app:assembleDebug; then
-              echo "GRADLE APK BUILD PASSED."
-              break
-            fi
-            if [ "$attempt" -lt 2 ]; then
-              echo "APK build failed; retrying after 5 seconds..."
-              sleep 5
-            else
-              echo "ERROR: APK build failed after 2 attempts."
-              exit 1
-            fi
-          done
+          gradle --no-daemon --stacktrace clean :app:assembleDebug
 
           APK="app/build/outputs/apk/debug/app-debug.apk"
           test -s "$APK"
 
-          cp "$APK" "../release/MBMS-V131-FINAL-PRINT-AUDIT-HARDENED.apk"
-          ls -lh "../release/MBMS-V131-FINAL-PRINT-AUDIT-HARDENED.apk"
+          cp "$APK" "../release/MBMS-V131-FINAL.apk"
+          ls -lh "../release/MBMS-V131-FINAL.apk"
 
 
-      - name: Verify APK
-        shell: bash
-        run: |
-          set -e
-
-          APK="release/MBMS-V131-FINAL-PRINT-AUDIT-HARDENED.apk"
-          test -s "$APK"
-
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$APK"
-          unzip -t "$APK" >/dev/null
-          sha256sum "$APK" | tee release/SHA256.txt
-
-          echo "APK SIGNATURE AND ZIP VERIFICATION PASSED."
-
-
+      # ============================================================
+      # 13. UPLOAD APK ARTIFACT
+      # ============================================================
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MBMS-V131-FINAL-PRINT-AUDIT-HARDENED
-          path: |
-            release/MBMS-V131-FINAL-PRINT-AUDIT-HARDENED.apk
-            release/SHA256.txt
+          name: MBMS-V131-FINAL-APK
+          path: release/MBMS-V131-FINAL.apk
           if-no-files-found: error
