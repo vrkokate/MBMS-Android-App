@@ -613,10 +613,10 @@ jobs:
           text = text[:pos] + script_block + text[pos:]
 
           required = [
-              "V124 - ONLY HOME MB SUMMARY RELATIONSHIP REPORT FIX",
-              "loadHomeRelDetailsV124",
-              "showHomeRelationshipV124",
-              "printLinkedRelationshipReport",
+              "V128 - ONLY M.B. SUMMARY LINKED DRILL-DOWN FIX",
+              "loadHomeRelDetails",
+              "showHomeRelationship",
+              "window.printHomeRelationshipReport",
               "__SMALL_MB__",
               "__LARGE_MB__"
           ]
@@ -663,9 +663,9 @@ jobs:
           body = text[start:finish]
 
           required = [
-              "loadHomeRelDetailsV124",
-              "showHomeRelationshipV124",
-              "printLinkedRelationshipReport",
+              "loadHomeRelDetails",
+              "showHomeRelationship",
+              "window.printHomeRelationshipReport",
               "__SMALL_MB__",
               "__LARGE_MB__"
           ]
